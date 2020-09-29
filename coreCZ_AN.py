@@ -123,8 +123,7 @@ stress1 = operators.Gradient(u, c) + operators.TransposeComponents(operators.Gra
 stress2 =  - (2/3)*I_matrix*operators.Divergence(u, index=0)
 stress  = stress1 + stress2
 
-print(stress.evaluate()['g'].shape, I_matrix['g'].shape)
-print(operators.Divergence(stress, index=0).evaluate()['g'].shape)
+#TODO: Viscous heating
 
 u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.interpolate(stress,r=1), index=1))
 
@@ -141,7 +140,6 @@ ddt = lambda A: operators.TimeDerivative(A)
 radComp = lambda A: operators.RadialComponent(A)
 
 
-momentum_stress = div(stress1) + div(stress2)
 
 # Problem
 def eq_eval(eq_str):
@@ -154,8 +152,7 @@ Prandtl=1
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad(ln_ρ)) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(momentum_stress)= - dot(u,grad(u))"), condition = "nθ != 0")
-#problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(div(stress) + dot(stress, grad(ln_ρ)))= - dot(u,grad(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(div(stress) + dot(stress, grad(ln_ρ)))= - dot(u,grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + VH "), condition = "nθ != 0")
 problem.add_equation(eq_eval("ddt(s1)            - (1/Pe)*dot(grad(s1), grad(ln_ρT))  = - dot(u, grad(s1)) + H_eff + VH "), condition = "nθ == 0")
