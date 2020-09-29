@@ -1,3 +1,14 @@
+"""
+Turns a MESA .data file of a massive star into a .h5 file of NCCs for a d3 run.
+
+Usage:
+    make_coreCZ_nccs.py [options]
+
+Options:
+    --Nmax=<N>      Maximum radial coefficients [default: 63]
+    --file=<f>      Path to MESA log file [default: MESA_Models_Dedalus_Full_Sphere/LOGS/h1_0.6.data]
+"""
+import os
 import time
 
 import numpy as np
@@ -7,12 +18,14 @@ import mesa_reader as mr
 import matplotlib.pyplot as plt
 from dedalus.core import coords, distributor, basis, field, operators
 import dedalus.public as de
+from docopt import docopt
 
 from astropy import units as u
 from astropy import constants
 
+args = docopt(__doc__)
 
-def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name=""):
+def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.'):
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
 
@@ -31,14 +44,20 @@ def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name=""):
     ax2.set_xlabel('radius/L')
     ax2.set_yscale('log')
     fig.suptitle('coeff bandwidth = {}'.format(N))
-    fig.savefig('{}.png'.format(fig_name), bbox_inches='tight', dpi=200)
+    fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
 
 #def load_data(nr1, nr2, r_int, get_dimensions=False):
-read_file = "MESA_Models_Dedalus_Full_Sphere/LOGS/h1_0.6.data"
+Nmax = int(args['--Nmax'])
+read_file = args['--file']
+out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '')
+out_file = '{:s}/nccs.h5'.format(out_dir)
+if not os.path.exists('{:s}'.format(out_dir)):
+    os.mkdir('{:s}'.format(out_dir))
+
+
 p = mr.MesaData(read_file)
 
-Nmax = 127
 
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
 d = distributor.Distributor((c,), mesh=None)
@@ -72,7 +91,7 @@ g = cgs_G*mass/r**2
 
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
-core_cz_bound = mass[cz_bool][-1]
+core_cz_bound = 0.99*mass[cz_bool][-1] # 0.99 to avoid some of the cz->rz transition region.
 bound_ind = np.argmin(np.abs(mass - core_cz_bound))
 
 
@@ -91,14 +110,14 @@ ln_rho = np.log(rho[cz_bool]/rho0)
 ln_rho_interp = np.interp(rg, r_cz, ln_rho)
 ln_rho_field['g'] = ln_rho_interp
 ln_rho_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), (-1)+ln_rho_interp.flatten(), (-1)+ln_rho_field['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rho")
+plot_ncc_figure(rg.flatten(), (-1)+ln_rho_interp.flatten(), (-1)+ln_rho_field['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rho", out_dir=out_dir)
 
 grad_ln_rho_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
 grad_ln_rho = np.gradient(ln_rho,r_cz)
 grad_ln_rho_interp = np.interp(rg, r_cz, grad_ln_rho)
 grad_ln_rho_field['g'] = grad(ln_rho_field).evaluate()['g'][-1,:]
 grad_ln_rho_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), grad_ln_rho_interp.flatten(), grad_ln_rho_field['g'].flatten(), N, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho")
+plot_ncc_figure(rg.flatten(), grad_ln_rho_interp.flatten(), grad_ln_rho_field['g'].flatten(), N, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir)
 
 ### log (density * temp)
 N = 20
@@ -107,29 +126,29 @@ ln_rhoT = np.log((rho*T)[cz_bool]/rho0/T0)
 ln_rhoT_interp = np.interp(rg, r_cz, ln_rhoT)
 ln_rhoT_field['g'] = ln_rhoT_interp
 ln_rhoT_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), (-1)+ln_rhoT_interp.flatten(), (-1)+ln_rhoT_field['g'].flatten(), N, ylabel=r"$\ln(\rho T) - 1$", fig_name="ln_rhoT")
+plot_ncc_figure(rg.flatten(), (-1)+ln_rhoT_interp.flatten(), (-1)+ln_rhoT_field['g'].flatten(), N, ylabel=r"$\ln(\rho T) - 1$", fig_name="ln_rhoT", out_dir=out_dir)
 
 
 ### Effective gravity
-N = 64
+N = 40
 g_eff = ((g/cp)*(L/T0))[cz_bool]
 g_eff_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
 g_eff_interp = np.interp(rg, r_cz, g_eff)
 g_eff_field['g'] = g_eff_interp
 g_eff_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), g_eff_interp.flatten(), g_eff_field['g'].flatten(), N, ylabel=r"$g_{eff}$", fig_name="g_eff")
+plot_ncc_figure(rg.flatten(), g_eff_interp.flatten(), g_eff_field['g'].flatten(), N, ylabel=r"$g_{eff}$", fig_name="g_eff", out_dir=out_dir)
 
 
 ### inverse Temperature
-N = 10
-invT_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
-invT_interp = np.interp(rg, r_cz, T0/T[cz_bool])
-invT_field['g'] = invT_interp
-invT_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), invT_interp.flatten(), invT_field['g'].flatten(), N, ylabel=r"$(T/T_c)^{-1}$", fig_name="invT")
+N = 5
+inv_T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
+inv_T_interp = np.interp(rg, r_cz, T0/T[cz_bool])
+inv_T_field['g'] = inv_T_interp
+inv_T_field['c'][:, :, N:] = 0
+plot_ncc_figure(rg.flatten(), inv_T_interp.flatten(), inv_T_field['g'].flatten(), N, ylabel=r"$(T/T_c)^{-1}$", fig_name="inv_T", out_dir=out_dir)
 
 ### effective heating / (rho * T)
-N = 20
+N = 40
 H = rho * eps
 C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
 H_eff = H - C
@@ -139,16 +158,29 @@ H_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
 H_interp = np.interp(rg, r_cz, H_NCC)
 H_field['g'] = H_interp
 H_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), H_interp.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho T))$ (nondimensional)$", fig_name="H_eff")
+plot_ncc_figure(rg.flatten(), H_interp.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir)
 
-#tau = (H0/L**2/rho0)**(-1/3)
+tau = (H0/L**2/rho0)**(-1/3)
+tau = tau.cgs
+print('one time unit is {:.2e}'.format(tau))
 #pomegac = T0*R/mu[0]
 #Ma2 = (H0*L/rho0)**(2/3)/pomegac
 
 #if get_dimensions:
 #    return L, tau, Ma2
 
+with h5py.File('{:s}'.format(out_file), 'w') as f:
+    f['r']     = rg
+    f['g_eff'] = g_eff_field['g']
+    f['ln_ρT'] = ln_rhoT_field['g']
+    f['inv_T'] = inv_T_field['g']
+    f['H_eff'] = H_field['g']
+    f['ln_ρ']  = ln_rho_field['g'] 
 
-
-##return dlogrho_field['g'], dlogP_field['g'], T_field['g'], gradS_field['g'], grav_field['g'], H_field['g'], Ma2, mu[0]
-#
+    f['L']   = L
+    f['g0']  = g0
+    f['ρ0']  = rho0
+    f['P0']  = P0
+    f['T0']  = T0
+    f['H0']  = H0
+    f['tau'] = tau 
