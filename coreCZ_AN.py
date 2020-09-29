@@ -114,7 +114,7 @@ r_hat['g'][2] = 1
 u_r_bc = operators.RadialComponent(operators.interpolate(u,r=1))
 
 
-I_matrix = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
+I_matrix = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c,), dtype=dtype)
 I_matrix['g'] = 0
 for i in range(3):
     I_matrix['g'][i,i,:] = 1
