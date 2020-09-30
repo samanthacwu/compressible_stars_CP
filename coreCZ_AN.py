@@ -29,6 +29,7 @@ Options:
 """
 import time
 
+import h5py
 import numpy as np
 from docopt import docopt
 from configparser import ConfigParser
@@ -64,14 +65,16 @@ Nmax      = int(args['--N'])
 L_dealias = N_dealias = dealias = 3/2
 
 
-dt = 8e-5
-t_end = 0.01
+max_dt = 1e-2
+t_end = 100*max_dt
 if args['--SBDF4']:
     ts = timesteppers.SBDF4
 else:
     ts = timesteppers.SBDF2
 dtype = np.float64
-mesh = None
+mesh = args['--mesh']
+if mesh is not None:
+    mesh = [int(m) for m in mesh.split(',')]
 
 Re  = float(args['--Re'])
 Pr  = 1
@@ -83,7 +86,19 @@ d = distributor.Distributor((c,), mesh=mesh)
 b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
 bNCC = basis.BallBasis(c, (1, 1, Nmax+1), radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
-φ, θ, r = b.local_grids((1, 1, 1))
+φ, θ, r = b.local_grids((dealias, dealias, dealias))
+
+#Operators
+div       = lambda A: operators.Divergence(A, index=0)
+lap       = lambda A: operators.Laplacian(A, c)
+grad      = lambda A: operators.Gradient(A, c)
+dot       = lambda A, B: arithmetic.DotProduct(A, B)
+cross     = lambda A, B: arithmetic.CrossProduct(A, B)
+trace     = lambda A: operators.Trace(A)
+ddt       = lambda A: operators.TimeDerivative(A)
+transpose = lambda A: operators.TransposeComponents(A)
+radComp   = lambda A: operators.RadialComponent(A)
+angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
 # Fields
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -96,22 +111,37 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 VH = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 #nccs
-H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_ρT = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
+H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-for f in [ln_ρ, ln_ρT, H_eff]:
-    f['g'] = r
-g_eff['g'][2] = r
+
+if args['--mesa_file'] is not None:
+    φ1, θ1, r1 = b.local_grids((1, 1, 1))
+    with h5py.File(args['--mesa_file'], 'r') as f:
+        r_file = f['r'][()].flatten()
+        r_slice = np.zeros_like(r_file.flatten(), dtype=bool)
+        for this_r in r1.flatten():
+            r_slice[this_r == r_file] = True
+        ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
+        ln_ρT['g']     = f['ln_ρT'][()][:,:,r_slice]
+        H_eff['g']     = f['H_eff'][()][:,:,r_slice]
+        inv_T['g']     = f['inv_T'][()][:,:,r_slice]
+        g_eff['g'][2]  = f['g_eff'][()][:,:,r_slice]
+else:
+    logger.error("Must specify an initial condition file")
+    import sys
+    sys.exit()
+
+for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff]:
+    f.require_scales(dealias)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+r_vec.require_scales(dealias)
 r_vec['g'][2] = r
 
-r_hat = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-r_hat['g'][2] = 1
-
 # Boundary conditions
-u_r_bc = operators.RadialComponent(operators.interpolate(u,r=1))
 
 
 I_matrix = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c,), dtype=dtype)
@@ -119,43 +149,43 @@ I_matrix['g'] = 0
 for i in range(3):
     I_matrix['g'][i,i,:] = 1
 
-stress1 = operators.Gradient(u, c) + operators.TransposeComponents(operators.Gradient(u, c))
-stress2 =  - (2/3)*I_matrix*operators.Divergence(u, index=0)
+stress1 = grad(u) + transpose(grad(u))
+stress2 = -(2/3)*I_matrix*div(u)
 stress  = stress1 + stress2
+
+VH1 = trace(dot(stress1, stress1))
+VH2 = -(2/3)*(div(u)*div(u))
+VH  = VH1 + VH2
 
 #TODO: Viscous heating
 
-u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.interpolate(stress,r=1), index=1))
+u_r_bc = radComp(u(r=1))
+u_perp_bc = radComp(angComp(stress(r=1), index=1))
 
-# Parameters and operators
-ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-ez['g'][1] = -np.sin(θ)
-ez['g'][2] =  np.cos(θ)
-div = lambda A: operators.Divergence(A, index=0)
-lap = lambda A: operators.Laplacian(A, c)
-grad = lambda A: operators.Gradient(A, c)
-dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: arithmetic.CrossProduct(A, B)
-ddt = lambda A: operators.TimeDerivative(A)
-radComp = lambda A: operators.RadialComponent(A)
+# Initial conditions
+A0   = float(1e-6)
+seed = 42 + d.comm_cart.rank
+rand = np.random.RandomState(seed=seed)
+filter_scale = 0.25
 
-
+# Generate noise & filter it
+s1['g'] = A0*rand.standard_normal(s1['g'].shape)
+s1.require_scales(filter_scale)
+s1['c']
+s1['g']
+s1.require_scales(dealias)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
-Ekman=1
-Rayleigh=1
-Prandtl=1
-
 problem.add_equation(eq_eval("div(u) + dot(u, grad(ln_ρ)) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(div(stress) + dot(stress, grad(ln_ρ)))= - dot(u,grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + VH "), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(s1)            - (1/Pe)*dot(grad(s1), grad(ln_ρT))  = - dot(u, grad(s1)) + H_eff + VH "), condition = "nθ == 0")
+problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
@@ -220,12 +250,74 @@ for subproblem in solver.subproblems:
 # Analysis
 t_list = []
 E_list = []
-weight_θ = b.local_colatitude_weights(1)
-weight_r = b.local_radial_weights(1)
+weight_θ = b.local_colatitude_weights(dealias)
+weight_r = b.local_radial_weights(dealias)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weight_r*weight_θ+0*p['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
+
+#CFL setup
+class BallCFL:
+    """
+    A CFL to calculate the appropriate magnitude of the timestep for a spherical simulation
+    """
+
+    def __init__(self, distributor, r, Lmax, max_dt, safety=0.1, threshold=0.1, cadence=1):
+        """
+        Initialize the CFL class. 
+
+        # Arguments
+            distributor (Dedalus Distributor) :
+                The distributor which guides the d3 simulation
+            r (NumPy array) :
+                The local radial grid points
+            Lmax (float) :
+                The maximum L value achieved by the simulation
+            max_dt (float) :
+                The maximum timestep size allowed, in simulation units.
+            safety (float) :
+                A factor to apply to the CFL calculation to adjust the timestep size
+            threshold (float) :
+                A factor by which the magnitude of dt must change in order for the timestep size to change
+            cadence (int) :
+                the number of iterations to wait between CFL calculations
+        """
+        self.reducer   = GlobalArrayReducer(distributor.comm_cart)
+        self.dr        = np.gradient(r[0,0])
+        self.Lmax      = Lmax
+        self.max_dt    = max_dt
+        self.safety    = safety
+        self.threshold = threshold
+        self.cadence   = cadence
+        logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}".format(max_dt, self.safety, self.threshold))
+
+    def calculate_dt(self, u, dt_old, r_index=2, φ_index=0, θ_index=1):
+        """
+        Calculates what the timestep should be according to the CFL condition
+
+        # Arguments
+            u (Dedalus Field) :
+                A Dedalus tensor field of the velocity
+            dt_old (float) : 
+                The current value of the timestep
+            r_index, φ_index, θ_index (int) :
+                The reference index (0, 1, 2) of the different bases, respectively
+        """
+        u.require_scales(dealias)
+        local_freq  = np.abs(u['g'][r_index]/self.dr) + (np.abs(u['g'][φ_index]) + np.abs(u['g'][θ_index]))*(self.Lmax + 1)
+        global_freq = self.reducer.global_max(local_freq)
+        if global_freq == 0.:
+            dt = np.inf
+        else:
+            dt = 1 / global_freq
+            dt *= self.safety
+            if dt > self.max_dt: dt = self.max_dt
+            if dt < dt_old*(1+self.threshold) and dt > dt_old*(1-self.threshold): dt = dt_old
+        return dt
+
+CFL = BallCFL(d, r, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
+dt = max_dt
 
 # Main loop
 start_time = time.time()
@@ -234,9 +326,11 @@ while solver.ok:
         E0 = np.sum(vol_correction*weight_r*weight_θ*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
-        logger.info("t = %f, E = %e" %(solver.sim_time, E0))
+        logger.info("t = %f, dt = %f, E = %e" %(solver.sim_time, dt, E0))
         t_list.append(solver.sim_time)
         E_list.append(E0)
     solver.step(dt)
+    if solver.iteration % CFL.cadence == 0:
+        dt = CFL.calculate_dt(u, dt)
 end_time = time.time()
 print('Run time:', end_time-start_time)
