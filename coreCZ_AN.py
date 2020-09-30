@@ -31,6 +31,7 @@ import os
 import time
 import sys
 from collections import OrderedDict
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -78,8 +79,6 @@ if MPI.COMM_WORLD.rank == 0:
 
 
 
-max_dt = 1e-2
-t_end = 100*max_dt
 if args['--SBDF4']:
     ts = timesteppers.SBDF4
     timestepper_history = [0, 1, 2, 3]
@@ -125,9 +124,9 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 
 #TODO: do viscous heating right
 VH = field.Field(dist=d, bases=(b,), dtype=dtype)
+ρ  = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 #nccs
-ρ      = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_ρT = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
@@ -146,13 +145,16 @@ if args['--mesa_file'] is not None:
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
         g_eff['g'][2]  = f['g_eff'][()][:,:,r_slice]
-        ρ['g']         = np.exp(ln_ρ['g'])
+        ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
 else:
     logger.error("Must specify an initial condition file")
     import sys
     sys.exit()
+logger.info('buoyancy time is {}'.format(t_buoy))
+max_dt = 0.1*t_buoy
+t_end = 1e3*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
@@ -204,8 +206,8 @@ problem.add_equation(eq_eval("div(u) + dot(u, grad(ln_ρ)) = 0"), condition="nθ
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(div(stress) + dot(stress, grad(ln_ρ)))= - dot(u,grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
+problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + inv_T*VH "))
+#problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
@@ -474,7 +476,8 @@ while solver.ok:
     if solver.iteration % 10 == 0:
         scalarWriter.evaluate_tasks()
         E0  = vol_averager.volume*scalarWriter.tasks['KE']
-        logger.info("t = %f, dt = %f, E = %e" %(solver.sim_time, dt, E0))
+        Re0  = scalarWriter.tasks['Re_rms']
+        logger.info("t = %f, dt = %f, Re = %e, E = %e" %(solver.sim_time, dt, Re0, E0))
     solver.step(dt)
     if solver.iteration % CFL.cadence == 0:
         dt = CFL.calculate_dt(u, dt)
