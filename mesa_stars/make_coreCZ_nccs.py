@@ -51,7 +51,7 @@ def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.'
 Nmax = int(args['--Nmax'])
 read_file = args['--file']
 out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '')
-out_file = '{:s}/nccs.h5'.format(out_dir)
+out_file = '{:s}/nccs_{}.h5'.format(out_dir, Nmax)
 if not os.path.exists('{:s}'.format(out_dir)):
     os.mkdir('{:s}'.format(out_dir))
 

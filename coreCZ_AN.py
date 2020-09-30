@@ -27,7 +27,10 @@ Options:
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
 """
+import os
 import time
+import sys
+from collections import OrderedDict
 
 import h5py
 import numpy as np
@@ -40,6 +43,9 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
+
+from output.averaging    import VolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager
+from output.writing      import ScalarWriter,  RadialProfileWriter, MeridionalSliceWriter, EquatorialSliceWriter, SphericalShellWriter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -64,13 +70,22 @@ Lmax      = int(args['--L'])
 Nmax      = int(args['--N'])
 L_dealias = N_dealias = dealias = 3/2
 
+out_dir = './' + sys.argv[0].split('.py')[0]
+out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
+if MPI.COMM_WORLD.rank == 0:
+    if not os.path.exists('{:s}/'.format(out_dir)):
+        os.makedirs('{:s}/'.format(out_dir))
+
+
 
 max_dt = 1e-2
 t_end = 100*max_dt
 if args['--SBDF4']:
     ts = timesteppers.SBDF4
+    timestepper_history = [0, 1, 2, 3]
 else:
     ts = timesteppers.SBDF2
+    timestepper_history = [0, 1,]
 dtype = np.float64
 mesh = args['--mesh']
 if mesh is not None:
@@ -87,6 +102,7 @@ b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
 bNCC = basis.BallBasis(c, (1, 1, Nmax+1), radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 φ, θ, r = b.local_grids((dealias, dealias, dealias))
+φg, θg, rg = b.global_grids((dealias, dealias, dealias))
 
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
@@ -111,6 +127,7 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 VH = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 #nccs
+ρ      = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_ρT = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
@@ -129,12 +146,15 @@ if args['--mesa_file'] is not None:
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
         g_eff['g'][2]  = f['g_eff'][()][:,:,r_slice]
+        ρ['g']         = np.exp(ln_ρ['g'])
+
+        t_buoy = np.sqrt(1/f['g_eff'][()].max())
 else:
     logger.error("Must specify an initial condition file")
     import sys
     sys.exit()
 
-for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff]:
+for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -247,15 +267,142 @@ for subproblem in solver.subproblems:
     if problem.STORE_EXPANDED_MATRICES:
         subproblem.expand_matrices(['M','L'])
 
-# Analysis
-t_list = []
-E_list = []
-weight_θ = b.local_colatitude_weights(dealias)
-weight_r = b.local_radial_weights(dealias)
-reducer = GlobalArrayReducer(d.comm_cart)
-vol_test = np.sum(weight_r*weight_θ+0*p['g'])*np.pi/(Lmax+1)/L_dealias
-vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
-vol_correction = 4*np.pi/3/vol_test
+# Analysis Setup
+vol_averager       = VolumeAverager(b, d, p, dealias=dealias)
+radial_averager    = PhiThetaAverager(b, d, dealias=dealias)
+azimuthal_averager = PhiAverager(b, d, dealias=dealias)
+equator_slicer     = EquatorSlicer(b, d, dealias=dealias)
+
+def vol_avgmag_scalar(scalar_field, squared=False):
+    if squared:
+        f = scalar_field
+    else:
+        f = scalar_field**2
+    return vol_averager(np.sqrt(f))
+
+def vol_rms_scalar(scalar_field, squared=False):
+    if squared:
+        f = scalar_field
+    else:
+        f = scalar_field**2
+    return np.sqrt(vol_averager(f))
+
+
+class AnelasticSW(ScalarWriter):
+
+    def __init__(self, *args, **kwargs):
+        super(AnelasticSW, self).__init__(*args, **kwargs)
+        self.ops = OrderedDict()
+        self.ops['u·u'] = dot(u, u)
+        self.fields = OrderedDict()
+
+    def evaluate_tasks(self):
+        for f in [s1, u]:
+            s1.require_scales(dealias)
+            u.require_scales(dealias)
+        for k, op in self.ops.items():
+            f = op.evaluate()
+            f.require_scales(dealias)
+            self.fields[k] = f['g']
+        #KE & Reynolds
+        self.tasks['KE']       = vol_averager(ρ['g']*self.fields['u·u']/2)
+        self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['u·u'], squared=True)
+        self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['u·u'], squared=True)
+
+class AnelasticRPW(RadialProfileWriter):
+
+    def __init__(self, *args, **kwargs):
+        super(AnelasticRPW, self).__init__(*args, **kwargs)
+        self.grad_s1_op = grad(s1)
+        self.ds1_dr = field.Field(dist=d, bases=(b,), dtype=dtype)
+
+    def evaluate_tasks(self):
+        for f in [s1, u]:
+            s1.require_scales(dealias)
+            u.require_scales(dealias)
+        self.tasks['s1'] = radial_averager(s1['g'])
+        self.tasks['uφ'] = radial_averager(u['g'][0])
+        self.tasks['uθ'] = radial_averager(u['g'][1])
+        self.tasks['ur'] = radial_averager(u['g'][2])
+
+        #Get fluxes for energy output
+        self.ds1_dr['g'] = self.grad_s_op.evaluate()['g'][2]
+        self.tasks['J_cond'] = radial_averager(ρ['g']*self.ds1_dr['g']/Pe)
+        self.tasks['J_conv'] = radial_averager(ρ['g']*u['g'][2]*s1['g'])
+
+class AnelasticMSW(MeridionalSliceWriter):
+    
+    def evaluate_tasks(self):
+        for f in [s1, u]:
+            s1.require_scales(dealias)
+            u.require_scales(dealias)
+        self.tasks['s1']  = azimuthal_averager(s1['g'],  comm=True)
+        self.tasks['uφ'] = azimuthal_averager(u['g'][0], comm=True)
+        self.tasks['uθ'] = azimuthal_averager(u['g'][1], comm=True)
+        self.tasks['ur'] = azimuthal_averager(u['g'][2], comm=True)
+
+class AnelasticESW(EquatorialSliceWriter):
+
+    def evaluate_tasks(self):
+        for f in [s1, u]:
+            s1.require_scales(dealias)
+            u.require_scales(dealias)
+        self.tasks['s1']  = equator_slicer(s1['g'])
+        self.tasks['uφ'] = equator_slicer(u['g'][0])
+        self.tasks['uθ'] = equator_slicer(u['g'][1])
+        self.tasks['ur'] = equator_slicer(u['g'][2])
+
+class AnelasticSSW(SphericalShellWriter):
+    def __init__(self, *args, **kwargs):
+        super(AnelasticSSW, self).__init__(*args, **kwargs)
+        self.ops = OrderedDict()
+        self.ops['s1_r0.95']  = s1(r=0.95)
+        self.ops['s1_r0.5']   = s1(r=0.5)
+        self.ops['ur_r0.95'] = radComp(u(r=0.95))
+        self.ops['ur_r0.5']  = radComp(u(r=0.5))
+
+        # Logic for local and global slicing
+        φbool = np.zeros_like(φg, dtype=bool)
+        θbool = np.zeros_like(θg, dtype=bool)
+        for φl in φ.flatten():
+            φbool[φl == φg] = 1
+        for θl in θ.flatten():
+            θbool[θl == θg] = 1
+        self.local_slice_indices = φbool*θbool
+        self.local_shape    = (φl*θl).shape
+        self.global_shape   = (φg*θg).shape
+
+        self.local_buff  = np.zeros(self.global_shape)
+        self.global_buff = np.zeros(self.global_shape)
+
+    def evaluate_tasks(self):
+        for f in [s1, u]:
+            s1.require_scales(dealias)
+            u.require_scales(dealias)
+        for k, op in self.ops.items():
+            local_part = op.evaluate()['g'].real
+            self.local_buff *= 0
+            if local_part.shape[-1] == 1:
+                self.local_buff[self.local_slice_indices] = local_part.flatten()
+            d.comm_cart.Allreduce(self.local_buff, self.global_buff, op=MPI.SUM)
+            self.tasks[k] = np.copy(self.global_buff)
+
+
+
+scalarWriter  = AnelasticSW(b, d, out_dir,  write_dt=0.5*t_buoy, dealias=dealias)
+profileWriter = AnelasticRPW(b, d, out_dir, write_dt=2*t_buoy, max_writes=200, dealias=dealias)
+msliceWriter  = AnelasticMSW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
+esliceWriter  = AnelasticESW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
+sshellWriter  = AnelasticSSW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
+writers = [scalarWriter, profileWriter, msliceWriter, esliceWriter, sshellWriter]
+
+checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=2, sim_dt=50*t_buoy)
+checkpoint.add_task(s1, name='s1', scales=1, layout='c')
+checkpoint.add_task(u, name='u', scales=1, layout='c')
+
+
+imaginary_cadence = 100
+
 
 #CFL setup
 class BallCFL:
@@ -319,18 +466,21 @@ class BallCFL:
 CFL = BallCFL(d, r, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
 dt = max_dt
 
+
+
 # Main loop
 start_time = time.time()
 while solver.ok:
     if solver.iteration % 10 == 0:
-        E0 = np.sum(vol_correction*weight_r*weight_θ*u['g'].real**2)
-        E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias
-        E0 = reducer.reduce_scalar(E0, MPI.SUM)
+        scalarWriter.evaluate_tasks()
+        E0  = vol_averager.volume*scalarWriter.tasks['KE']
         logger.info("t = %f, dt = %f, E = %e" %(solver.sim_time, dt, E0))
-        t_list.append(solver.sim_time)
-        E_list.append(E0)
     solver.step(dt)
     if solver.iteration % CFL.cadence == 0:
         dt = CFL.calculate_dt(u, dt)
+
+    if solver.iteration % imaginary_cadence in timestepper_history:
+        for f in solver.state:
+            f.require_grid_space()
 end_time = time.time()
 print('Run time:', end_time-start_time)
