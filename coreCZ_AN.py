@@ -144,7 +144,7 @@ if args['--mesa_file'] is not None:
         ln_ρT['g']     = f['ln_ρT'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
-        g_eff['g'][2]  = f['g_eff'][()][:,:,r_slice]
+        g_eff['g'][2]  = -f['g_eff'][()][:,:,r_slice]
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
@@ -328,7 +328,9 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['ur'] = radial_averager(u['g'][2])
 
         #Get fluxes for energy output
-        self.ds1_dr['g'] = self.grad_s_op.evaluate()['g'][2]
+        self.ds1_dr['g'] = self.grad_s1_op.evaluate()['g'][2]
+        self.ds1_dr.require_scales(dealias)
+        s1.require_scales(dealias)
         self.tasks['J_cond'] = radial_averager(ρ['g']*self.ds1_dr['g']/Pe)
         self.tasks['J_conv'] = radial_averager(ρ['g']*u['g'][2]*s1['g'])
 
@@ -391,12 +393,13 @@ class AnelasticSSW(SphericalShellWriter):
 
 
 
-scalarWriter  = AnelasticSW(b, d, out_dir,  write_dt=0.5*t_buoy, dealias=dealias)
-profileWriter = AnelasticRPW(b, d, out_dir, write_dt=2*t_buoy, max_writes=200, dealias=dealias)
-msliceWriter  = AnelasticMSW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
-esliceWriter  = AnelasticESW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
-sshellWriter  = AnelasticSSW(b, d, out_dir, write_dt=2*t_buoy, max_writes=40, dealias=dealias)
-writers = [scalarWriter, profileWriter, msliceWriter, esliceWriter, sshellWriter]
+scalarWriter  = AnelasticSW(b, d, out_dir,  write_dt=0.25*t_buoy, dealias=dealias)
+profileWriter = AnelasticRPW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
+msliceWriter  = AnelasticMSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
+esliceWriter  = AnelasticESW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
+sshellWriter  = AnelasticSSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
+writers = [scalarWriter, esliceWriter]
+#writers = [scalarWriter, profileWriter, msliceWriter, esliceWriter, sshellWriter]
 
 checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=2, sim_dt=50*t_buoy)
 checkpoint.add_task(s1, name='s1', scales=1, layout='c')
@@ -478,6 +481,8 @@ while solver.ok:
         E0  = vol_averager.volume*scalarWriter.tasks['KE']
         Re0  = scalarWriter.tasks['Re_rms']
         logger.info("t = %f, dt = %f, Re = %e, E = %e" %(solver.sim_time, dt, Re0, E0))
+    for writer in writers:
+        writer.process(solver)
     solver.step(dt)
     if solver.iteration % CFL.cadence == 0:
         dt = CFL.calculate_dt(u, dt)
