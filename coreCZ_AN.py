@@ -157,7 +157,7 @@ else:
     sys.exit()
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.1*t_buoy
-t_end = 1e3*t_buoy
+t_end = 1e5*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
@@ -189,18 +189,6 @@ VH  = VH1 + VH2
 u_r_bc = radComp(u(r=1))
 u_perp_bc = radComp(angComp(stress1(r=1), index=1))
 
-# Initial conditions
-A0   = float(1e-6)
-seed = 42 + d.comm_cart.rank
-rand = np.random.RandomState(seed=seed)
-filter_scale = 0.25
-
-# Generate noise & filter it
-s1['g'] = A0*rand.standard_normal(s1['g'].shape)
-s1.require_scales(filter_scale)
-s1['c']
-s1['g']
-s1.require_scales(dealias)
 
 # Problem
 def eq_eval(eq_str):
@@ -475,6 +463,35 @@ class BallCFL:
 
 CFL = BallCFL(d, r, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
 dt = max_dt
+
+if args['--restart'] is not None:
+    fname = args['--restart']
+    fdir = fname.split('.h5')[0]
+    check_name = fdir.split('/')[-1]
+    #Try to just load the loal piece file
+
+    import h5py
+    with h5py.File('{}/{}_p{}.h5'.format(fdir, check_name, d.comm_cart.rank), 'r') as f:
+        s1.set_scales(1)
+        u.set_scales(1)
+        s1['c'] = f['tasks/s1'][()][-1,:]
+        u['c'] = f['tasks/u'][()][-1,:]
+        s1.require_scales(dealias)
+        u.require_scales(dealias)
+    dt = CFL.calculate_dt(u, dt)
+else:
+    # Initial conditions
+    A0   = float(1e-6)
+    seed = 42 + d.comm_cart.rank
+    rand = np.random.RandomState(seed=seed)
+    filter_scale = 0.25
+
+    # Generate noise & filter it
+    s1['g'] = A0*rand.standard_normal(s1['g'].shape)
+    s1.require_scales(filter_scale)
+    s1['c']
+    s1['g']
+    s1.require_scales(dealias)
 
 
 
