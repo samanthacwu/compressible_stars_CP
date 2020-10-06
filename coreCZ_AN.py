@@ -133,6 +133,9 @@ inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies ot
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 
+grad_ln_ρ  = grad(ln_ρ).evaluate()
+grad_ln_ρT = grad(ln_ρT).evaluate()
+
 if args['--mesa_file'] is not None:
     φ1, θ1, r1 = b.local_grids((1, 1, 1))
     with h5py.File(args['--mesa_file'], 'r') as f:
@@ -144,7 +147,7 @@ if args['--mesa_file'] is not None:
         ln_ρT['g']     = f['ln_ρT'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
-        g_eff['g'][2]  = -f['g_eff'][()][:,:,r_slice]
+        g_eff['g']     = f['g_eff'][()][:,:,:,r_slice]
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
@@ -172,17 +175,19 @@ for i in range(3):
     I_matrix['g'][i,i,:] = 1
 
 stress1 = grad(u) + transpose(grad(u))
-stress2 = -(2/3)*I_matrix*div(u)
-stress  = stress1 + stress2
+stress1.store_last = True
+momentum_viscous_terms = div(stress1) + dot(grad_ln_ρ, stress1) - (2/3)*(grad(div(u)) + grad_ln_ρ*div(u) )
 
+trace_stress = trace(stress1)
+trace_stress.store_last = True
 VH1 = trace(dot(stress1, stress1))
-VH2 = -(2/3)*(div(u)*div(u))
+VH2 = -(1/3)*(trace_stress*trace_stress)
 VH  = VH1 + VH2
 
 #TODO: Viscous heating
 
 u_r_bc = radComp(u(r=1))
-u_perp_bc = radComp(angComp(stress(r=1), index=1))
+u_perp_bc = radComp(angComp(stress1(r=1), index=1))
 
 # Initial conditions
 A0   = float(1e-6)
@@ -202,11 +207,11 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
-problem.add_equation(eq_eval("div(u) + dot(u, grad(ln_ρ)) = 0"), condition="nθ != 0")
+problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) + g_eff*s1 - (1/Re)*(div(stress) + dot(stress, grad(ln_ρ)))= - dot(u,grad(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, stress1)"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad(ln_ρT))) = - dot(u, grad(s1)) + H_eff + inv_T*VH "))
+problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad_ln_ρT)) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
