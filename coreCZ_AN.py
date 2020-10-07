@@ -14,6 +14,7 @@ Options:
     --N=<Nmax>           The value of Nmax   [default: 15]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
+    --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
     --safety=<s>         Timestep CFL safety factor [default: 0.4]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
@@ -157,7 +158,7 @@ else:
     sys.exit()
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
-t_end = 1e5*t_buoy
+t_end = float(args['--buoy_end_time'])*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
