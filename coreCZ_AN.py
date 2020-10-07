@@ -128,13 +128,13 @@ VH = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 #nccs
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-ln_ρT = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 
 grad_ln_ρ  = grad(ln_ρ).evaluate()
-grad_ln_ρT = grad(ln_ρT).evaluate()
+grad_ln_T  = grad(ln_T).evaluate()
 
 if args['--mesa_file'] is not None:
     φ1, θ1, r1 = b.local_grids((1, 1, 1))
@@ -144,7 +144,7 @@ if args['--mesa_file'] is not None:
         for this_r in r1.flatten():
             r_slice[this_r == r_file] = True
         ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
-        ln_ρT['g']     = f['ln_ρT'][()][:,:,r_slice]
+        ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
         g_eff['g']     = f['g_eff'][()][:,:,:,r_slice]
@@ -159,7 +159,7 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.1*t_buoy
 t_end = 1e5*t_buoy
 
-for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff, ρ]:
+for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -199,7 +199,7 @@ problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ 
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, stress1)"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), grad_ln_ρT)) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
+problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")

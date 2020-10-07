@@ -22,6 +22,8 @@ from docopt import docopt
 
 from astropy import units as u
 from astropy import constants
+from scipy.signal import savgol_filter
+from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
 
@@ -92,10 +94,21 @@ L_conv = p.conv_L_div_L[::-1]*Luminosity
 cgs_G = constants.G.to('cm^3/(g*s^2)')
 g = cgs_G*mass/r**2
 
+#test HSE of background
+#gradP = np.gradient(P, r)
+#rhoG  = rho*g
+#plt.figure()
+#plt.plot(r, -gradP)
+#plt.plot(r, rhoG)
+#plt.yscale('log')
+#plt.show()
+#import sys
+#sys.exit()
+
 
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
-core_cz_bound = 0.995*mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
+core_cz_bound = 0.9*mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
 bound_ind = np.argmin(np.abs(mass - core_cz_bound))
 
 
@@ -107,6 +120,19 @@ T0 = T[0]
 
 R     = cp - cv
 gamma = cp/cv
+#plt.figure()
+#plt.plot(r[cz_bool], np.log(rho[cz_bool]/rho0))
+#deg = 10
+#logRho_polyfit = Pfit.fit(r[cz_bool]/L, np.log(rho[cz_bool]/rho0), deg)(r[cz_bool]/L)
+#plt.plot(r[cz_bool], logRho_polyfit)
+#plt.show()
+#diff = 1 - logRho_polyfit/(np.log(rho[cz_bool]/rho0))
+#plt.plot(r[cz_bool], np.abs(diff))
+#plt.yscale('log')
+#plt.show()
+
+
+
 R0     = R[0]
 gamma0 = gamma[0]
 
@@ -117,12 +143,14 @@ r_vec  = field.Field(dist=d, bases=(b,), dtype=np.float64, tensorsig=(c,))
 r_vec['g'][2,:] = 1
 
 ### Log Density
-N = 8
+N = 10
 frac = int((Nmax+1)/N)
 φgf, θgf, rgf = b.global_grids((1, 1, 1/frac))
 ln_rho_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-ln_rho = np.log(rho[cz_bool]/rho0)
-ln_rho_interp = np.interp(rg, r_cz, ln_rho)
+ln_rho = np.log(rho/rho0)[cz_bool]
+deg = 10
+ln_rho_fit = Pfit.fit(r_cz, ln_rho, deg)(r_cz)
+ln_rho_interp = np.interp(rg, r_cz, ln_rho_fit)
 ln_rho_field['g'] = ln_rho_interp
 ln_rho_field['c'][:, :, N:] = 0
 #ln_rho_field.require_scales(1/frac)
@@ -137,21 +165,25 @@ grad_ln_rho_interp = np.interp(rg, r_cz, grad_ln_rho)
 grad_ln_rho_field['g'] = dot(r_vec, grad(ln_rho_field)).evaluate()['g']
 plot_ncc_figure(rg.flatten(), grad_ln_rho_interp.flatten(), grad_ln_rho_field['g'].flatten(), N, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir)
 
-### log (density * temp)
-N = 8
-ln_rhoT_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-ln_rhoT = np.log((rho*T)[cz_bool]/rho0/T0)
-ln_rhoT_interp = np.interp(rg, r_cz, ln_rhoT)
-ln_rhoT_field['g'] = ln_rhoT_interp
-ln_rhoT_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), (-1)+ln_rhoT_interp.flatten(), (-1)+ln_rhoT_field['g'].flatten(), N, ylabel=r"$\ln(\rho T) - 1$", fig_name="ln_rhoT", out_dir=out_dir)
+### log (temp)
+N = 30
+ln_T_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
+ln_T = np.log((T)[cz_bool]/T0)
+deg = 10
+ln_T_fit = Pfit.fit(r_cz, ln_T, deg)(r_cz)
+ln_T_interp = np.interp(rg, r_cz, ln_T_fit)
+ln_T_field['g'] = ln_T_interp
+ln_T_field['c'][:, :, N:] = 0
+plot_ncc_figure(rg.flatten(), (-1)+ln_T_interp.flatten(), (-1)+ln_T_field['g'].flatten(), N, ylabel=r"$\ln(T) - 1$", fig_name="ln_T", out_dir=out_dir)
 
-grad_ln_rhoT_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-grad_ln_rhoT1 = np.gradient(ln_rhoT,r_cz)
-grad_ln_rhoT2 = np.gradient(ln_rhoT_field['g'].flatten(),rg.flatten())
-grad_ln_rhoT_interp = np.interp(rg, r_cz, grad_ln_rhoT1)
-grad_ln_rhoT_field['g'] = dot(r_vec, grad(ln_rhoT_field)).evaluate()['g']
-plot_ncc_figure(rg.flatten(), grad_ln_rhoT2.flatten(), grad_ln_rhoT_field['g'].flatten(), N, ylabel=r"$\nabla\ln(\rho T)$", fig_name="grad_ln_rhoT", out_dir=out_dir)
+grad_ln_T_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
+grad_ln_T = np.gradient(ln_T,r_cz)
+grad_ln_T_interp = np.interp(rg, r_cz, grad_ln_T)
+grad_ln_T_field['g'] = dot(r_vec, grad(ln_T_field)).evaluate()['g']
+grad_ln_T_field['c'][:, :, N:] = 0
+plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_T", out_dir=out_dir)
+
+plt.show()
 
 
 
@@ -212,10 +244,10 @@ plot_ncc_figure(rg.flatten(), g_eff_interp.flatten(), g_eff_field['g'][2].flatte
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['r']     = rg
     f['g_eff'] = g_eff_field['g']
-    f['ln_ρT'] = ln_rhoT_field['g']
     f['inv_T'] = inv_T_field['g']
     f['H_eff'] = H_field['g']
     f['ln_ρ']  = ln_rho_field['g'] 
+    f['ln_T']  = ln_T_field['g']
 
     f['L']   = L
     f['g0']  = g0
