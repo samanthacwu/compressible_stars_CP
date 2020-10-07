@@ -156,7 +156,7 @@ else:
     import sys
     sys.exit()
 logger.info('buoyancy time is {}'.format(t_buoy))
-max_dt = 0.1*t_buoy
+max_dt = 0.5*t_buoy
 t_end = 1e5*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_ρT, inv_T, H_eff, g_eff, ρ]:
@@ -310,22 +310,25 @@ class AnelasticRPW(RadialProfileWriter):
         super(AnelasticRPW, self).__init__(*args, **kwargs)
         self.grad_s1_op = grad(s1)
         self.ds1_dr = field.Field(dist=d, bases=(b,), dtype=dtype)
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv']:
+            self.tasks[k] = np.zeros_like(radial_averager.global_profile)
 
     def evaluate_tasks(self):
         for f in [s1, u]:
             s1.require_scales(dealias)
             u.require_scales(dealias)
-        self.tasks['s1'] = radial_averager(s1['g'])
-        self.tasks['uφ'] = radial_averager(u['g'][0])
-        self.tasks['uθ'] = radial_averager(u['g'][1])
-        self.tasks['ur'] = radial_averager(u['g'][2])
+        self.tasks['s1'][:] = radial_averager(s1['g'])[:]
+        self.tasks['uφ'][:] = radial_averager(u['g'][0])[:]
+        self.tasks['uθ'][:] = radial_averager(u['g'][1])[:]
+        self.tasks['ur'][:] = radial_averager(u['g'][2])[:]
 
         #Get fluxes for energy output
+        self.ds1_dr.require_scales(1)
         self.ds1_dr['g'] = self.grad_s1_op.evaluate()['g'][2]
         self.ds1_dr.require_scales(dealias)
         s1.require_scales(dealias)
-        self.tasks['J_cond'] = radial_averager(ρ['g']*self.ds1_dr['g']/Pe)
-        self.tasks['J_conv'] = radial_averager(ρ['g']*u['g'][2]*s1['g'])
+        self.tasks['J_cond'][:] = radial_averager(ρ['g']*self.ds1_dr['g']/Pe)[:]
+        self.tasks['J_conv'][:] = radial_averager(ρ['g']*u['g'][2]*s1['g'])[:]
 
 class AnelasticMSW(MeridionalSliceWriter):
     
@@ -391,7 +394,7 @@ profileWriter = AnelasticRPW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=200,
 msliceWriter  = AnelasticMSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 esliceWriter  = AnelasticESW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 sshellWriter  = AnelasticSSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-writers = [scalarWriter, esliceWriter]
+writers = [scalarWriter, esliceWriter, profileWriter, msliceWriter]
 #writers = [scalarWriter, profileWriter, msliceWriter, esliceWriter, sshellWriter]
 
 checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=2, sim_dt=50*t_buoy)
