@@ -198,7 +198,7 @@ problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, stress1)"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
@@ -301,6 +301,7 @@ class AnelasticSW(ScalarWriter):
             f.require_scales(dealias)
             self.fields[k] = f['g']
         #KE & Reynolds
+        self.tasks['s1']       = vol_averager(s1['g'])
         self.tasks['KE']       = vol_averager(ρ['g']*self.fields['u·u']/2)
         self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['u·u'], squared=True)
         self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['u·u'], squared=True)
