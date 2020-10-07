@@ -108,7 +108,7 @@ g = cgs_G*mass/r**2
 
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
-core_cz_bound = 0.9*mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
+core_cz_bound = 0.995*mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
 bound_ind = np.argmin(np.abs(mass - core_cz_bound))
 
 
@@ -183,7 +183,7 @@ grad_ln_T_field['g'] = dot(r_vec, grad(ln_T_field)).evaluate()['g']
 grad_ln_T_field['c'][:, :, N:] = 0
 plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_T", out_dir=out_dir)
 
-plt.show()
+#plt.show()
 
 
 
