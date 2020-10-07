@@ -1,0 +1,6 @@
+[parameters]
+nz = 64
+nx = 64
+Re = 1e2
+buoy_end_time = 300
+mesa_file = ./mesa_stars/MESA_Models_Dedalus_Full_Sphere_h1_0.6_core/cartesian_nccs_64.h5
