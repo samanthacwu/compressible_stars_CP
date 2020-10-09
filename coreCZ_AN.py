@@ -210,7 +210,8 @@ problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("s1(r=1) = 0"))
+problem.add_equation(eq_eval("radComp(grad(s1)(r=1)) = 0"))
+#problem.add_equation(eq_eval("s1(r=1) = 0"))
 
 print("Problem built")
 
@@ -298,14 +299,14 @@ class AnelasticSW(ScalarWriter):
         self.fields = OrderedDict()
 
     def evaluate_tasks(self):
-        for f in [s1, u]:
-            s1.require_scales(dealias)
-            u.require_scales(dealias)
+        for f in [s1, u, ρ, T]:
+            f.require_scales(dealias)
         for k, op in self.ops.items():
             f = op.evaluate()
             f.require_scales(dealias)
             self.fields[k] = f['g']
         #KE & Reynolds
+        self.tasks['TE']       = vol_averager(ρ['g']*T['g']*s1['g'])
         self.tasks['s1']       = vol_averager(s1['g'])
         self.tasks['KE']       = vol_averager(ρ['g']*self.fields['u·u']/2)
         self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['u·u'], squared=True)
