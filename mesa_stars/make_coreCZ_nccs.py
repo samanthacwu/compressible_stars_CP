@@ -173,6 +173,17 @@ inv_T_field['g'] = inv_T_interp
 inv_T_field['c'][:, :, N:] = 0
 plot_ncc_figure(rg.flatten(), inv_T_interp.flatten(), inv_T_field['g'].flatten(), N, ylabel=r"$(T/[T_c])^{-1}$", fig_name="inv_T", out_dir=out_dir)
 
+### Temperature
+N = 5
+T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
+T_nondim = (T)[cz_bool] / T0
+T_interp = np.interp(rg, r_cz, T_nondim)
+T_field['g'] = T_interp
+T_field['c'][:, :, N:] = 0
+plot_ncc_figure(rg.flatten(), T_interp.flatten(), T_field['g'].flatten(), N, ylabel=r"$T/T_c$", fig_name="T", out_dir=out_dir)
+
+
+
 ### effective heating / (rho * T)
 N = 40
 H = rho * eps
@@ -203,6 +214,7 @@ print('one time unit is {:.2e}'.format(tau))
 u = L/tau
 
 Ma2 = u**2 / ((gamma0-1)*cp0*T0)
+print(Ma2)
 
 #if get_dimensions:
 #    return L, tau, Ma2
@@ -222,6 +234,7 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['r']     = rg
     f['g_eff'] = g_eff_field['g']
     f['inv_T'] = inv_T_field['g']
+    f['T']     = T_field['g']
     f['H_eff'] = H_field['g']
     f['ln_ρ']  = ln_rho_field['g'] 
     f['ln_T']  = ln_T_field['g']

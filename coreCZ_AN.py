@@ -133,6 +133,7 @@ T   = field.Field(dist=d, bases=(b,), dtype=dtype)
 #nccs
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+T_NCC = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
@@ -149,9 +150,10 @@ if args['--mesa_file'] is not None:
         ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
         inv_T['g']     = f['inv_T'][()][:,:,r_slice]
+        T_NCC['g']     = f['T'][()][:,:,r_slice]
         g_eff['g']     = f['g_eff'][()][:,:,:,r_slice]
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
-        T['g']         = np.exp(f['ln_T'][()][:,:,r_slice].reshape(r1.shape))
+        T['g']         = T_NCC['g']
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
 
@@ -203,7 +205,7 @@ problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, grad(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
@@ -341,7 +343,8 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['ρ_ur'][:] = radial_averager(ρ['g']*u['g'][2])[:]
 
         #Get fluxes for energy output
-        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+#        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
         self.tasks['visc_flux'][:] = radial_averager(ρ['g']*(self.fields['u·σ'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
         self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s'][2]/Pe)
         self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*u['g'][2,:]*self.fields['u·u'])
