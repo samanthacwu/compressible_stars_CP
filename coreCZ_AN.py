@@ -74,6 +74,9 @@ L_dealias = N_dealias = dealias = 3/2
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
+if args['--label'] is not None:
+    out_dir += '_{:s}'.format(args['--label'])
+
 if MPI.COMM_WORLD.rank == 0:
     if not os.path.exists('{:s}/'.format(out_dir)):
         os.makedirs('{:s}/'.format(out_dir))
@@ -124,7 +127,6 @@ tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 
 #TODO: do viscous heating right
-VH = field.Field(dist=d, bases=(b,), dtype=dtype)
 ρ  = field.Field(dist=d, bases=(b,), dtype=dtype)
 T  = field.Field(dist=d, bases=(b,), dtype=dtype)
 
@@ -135,8 +137,6 @@ inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies ot
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 
-grad_ln_ρ  = grad(ln_ρ).evaluate()
-grad_ln_T  = grad(ln_T).evaluate()
 
 if args['--mesa_file'] is not None:
     φ1, θ1, r1 = b.local_grids((1, 1, 1))
@@ -154,6 +154,9 @@ if args['--mesa_file'] is not None:
         T['g']         = np.exp(f['ln_T'][()][:,:,r_slice].reshape(r1.shape))
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
+
+    grad_ln_ρ  = grad(ln_ρ).evaluate()
+    grad_ln_T  = grad(ln_T).evaluate()
 else:
     logger.error("Must specify an initial condition file")
     import sys
@@ -314,13 +317,13 @@ class AnelasticRPW(RadialProfileWriter):
         super(AnelasticRPW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
         self.fields = OrderedDict()
-        self.grad_s1_op = grad(s1)
-        self.ops['u·σ']   = dot(u, stress1)
-        self.ops['u·u']   = dot(u, u)
-        self.ops['div_u'] = div(u)
+        self.ops['u·σ']     = dot(u, stress1)
+        self.ops['u·u']     = dot(u, u)
+        self.ops['div_u']   = div(u)
+        self.ops['grad_s']  = grad(s1)
         self.fields = OrderedDict()
         self.ds1_dr = field.Field(dist=d, bases=(b,), dtype=dtype)
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux']:
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur']:
             self.tasks[k] = np.zeros_like(radial_averager.global_profile)
 
     def evaluate_tasks(self):
@@ -334,19 +337,12 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['s1'][:] = radial_averager(s1['g'])[:]
         self.tasks['uφ'][:] = radial_averager(u['g'][0])[:]
         self.tasks['uθ'][:] = radial_averager(u['g'][1])[:]
-        self.tasks['ur'][:] = radial_averager(u['g'][2])[:]
+        self.tasks['ρ_ur'][:] = radial_averager(ρ['g']*u['g'][2])[:]
 
         #Get fluxes for energy output
-        self.ds1_dr.require_scales(1)
-        self.ds1_dr['g'] = self.grad_s1_op.evaluate()['g'][2]
-        self.ds1_dr.require_scales(dealias)
-        s1.require_scales(dealias)
-        self.tasks['J_cond'][:] = radial_averager(ρ['g']*self.ds1_dr['g']/Pe)[:]
-        self.tasks['J_conv'][:] = radial_averager(ρ['g']*u['g'][2]*s1['g'])[:]
-
-        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
         self.tasks['visc_flux'][:] = radial_averager(ρ['g']*(self.fields['u·σ'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
-        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.ds1_dr['g']/Pe)
+        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s'][2]/Pe)
         self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*u['g'][2,:]*self.fields['u·u'])
 
 class AnelasticMSW(MeridionalSliceWriter):
@@ -415,9 +411,8 @@ msliceWriter  = AnelasticMSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, 
 esliceWriter  = AnelasticESW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 sshellWriter  = AnelasticSSW(b, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 writers = [scalarWriter, esliceWriter, profileWriter, msliceWriter, sshellWriter]
-#writers = [scalarWriter, profileWriter, msliceWriter, esliceWriter, sshellWriter]
 
-checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=2, sim_dt=50*t_buoy)
+checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=50*t_buoy)
 checkpoint.add_task(s1, name='s1', scales=1, layout='c')
 checkpoint.add_task(u, name='u', scales=1, layout='c')
 
