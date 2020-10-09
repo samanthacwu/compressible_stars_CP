@@ -117,6 +117,7 @@ g0 = g[bound_ind]
 rho0 = rho[0]
 P0 = P[0]
 T0 = T[0]
+cp0 = cp[0]
 
 R     = cp - cv
 gamma = cp/cv
@@ -188,13 +189,13 @@ plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'].f
 
 
 
-### inverse Temperature
+### inverse cp Temperature
 N = 5
-inv_T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
-inv_T_interp = np.interp(rg, r_cz, T0/T[cz_bool])
-inv_T_field['g'] = inv_T_interp
-inv_T_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), inv_T_interp.flatten(), inv_T_field['g'].flatten(), N, ylabel=r"$(T/T_c)^{-1}$", fig_name="inv_T", out_dir=out_dir)
+inv_cpT_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
+inv_cpT_interp = np.interp(rg, r_cz, cp0*T0/(T[cz_bool]*cp[cz_bool]))
+inv_cpT_field['g'] = inv_cpT_interp
+inv_cpT_field['c'][:, :, N:] = 0
+plot_ncc_figure(rg.flatten(), inv_cpT_interp.flatten(), inv_cpT_field['g'].flatten(), N, ylabel=r"$(c_pT/[c_{p,c}T_c])^{-1}$", fig_name="inv_cpT", out_dir=out_dir)
 
 ### effective heating / (rho * T)
 N = 40
@@ -211,12 +212,12 @@ H_eff = H - C
 #plt.plot(r/L, sumLum)
 #plt.show()
 H0 = H_eff[0]
-H_NCC = ((H_eff / (rho*T)) * (rho0*T0) / H0)[cz_bool]
+H_NCC = ((H_eff / (rho*T*cp)) * (rho0*T0*cp0) / H0)[cz_bool]
 H_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
 H_interp = np.interp(rg, r_cz, H_NCC)
 H_field['g'] = H_interp
 H_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), H_interp.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir, zero_line=True)
+plot_ncc_figure(rg.flatten(), H_interp.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir, zero_line=True)
 
 
 tau = (H0/L**2/rho0)**(-1/3)
@@ -244,7 +245,7 @@ plot_ncc_figure(rg.flatten(), g_eff_interp.flatten(), g_eff_field['g'][2].flatte
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['r']     = rg
     f['g_eff'] = g_eff_field['g']
-    f['inv_T'] = inv_T_field['g']
+    f['inv_cpT'] = inv_cpT_field['g']
     f['H_eff'] = H_field['g']
     f['ln_ρ']  = ln_rho_field['g'] 
     f['ln_T']  = ln_T_field['g']
