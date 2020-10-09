@@ -129,12 +129,11 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 #TODO: do viscous heating right
 ρ   = field.Field(dist=d, bases=(b,), dtype=dtype)
 T   = field.Field(dist=d, bases=(b,), dtype=dtype)
-cp  = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 #nccs
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-inv_cpT = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
+inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
 g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 
@@ -149,11 +148,10 @@ if args['--mesa_file'] is not None:
         ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
         ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
-        inv_cpT['g']     = f['inv_cpT'][()][:,:,r_slice]
+        inv_T['g']     = f['inv_T'][()][:,:,r_slice]
         g_eff['g']     = f['g_eff'][()][:,:,:,r_slice]
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
         T['g']         = np.exp(f['ln_T'][()][:,:,r_slice].reshape(r1.shape))
-        cp['g']        = (1/inv_cpT['g'])/T['g']
 
         t_buoy = np.sqrt(1/f['g_eff'][()].max())
 
@@ -167,7 +165,7 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
-for f in [u, s1, p, ln_ρ, ln_T, inv_cpT, H_eff, g_eff, ρ]:
+for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, g_eff, ρ]:
     f.require_scales(dealias)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -207,8 +205,8 @@ problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ 
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) - g_eff*s1 - (1/Re)*momentum_viscous_terms = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_cpT*VH "))
-#problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_cpT*VH "), condition = "nθ == 0")
+problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
+#problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
@@ -342,9 +340,9 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['ρ_ur'][:] = radial_averager(ρ['g']*u['g'][2])[:]
 
         #Get fluxes for energy output
-        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g']*cp['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
         self.tasks['visc_flux'][:] = radial_averager(ρ['g']*(self.fields['u·σ'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
-        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*cp['g']*T['g']*self.fields['grad_s'][2]/Pe)
+        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s'][2]/Pe)
         self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*u['g'][2,:]*self.fields['u·u'])
 
 class AnelasticMSW(MeridionalSliceWriter):
