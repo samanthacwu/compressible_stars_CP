@@ -76,7 +76,7 @@ out_dir = './' + sys.argv[0].split('.py')[0]
 out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
-
+logger.info('saving data to {:s}'.format(out_dir))
 if MPI.COMM_WORLD.rank == 0:
     if not os.path.exists('{:s}/'.format(out_dir)):
         os.makedirs('{:s}/'.format(out_dir))
@@ -126,7 +126,6 @@ s1 = field.Field(dist=d, bases=(b,), dtype=dtype)
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 
-#TODO: do viscous heating right
 ρ   = field.Field(dist=d, bases=(b,), dtype=dtype)
 T   = field.Field(dist=d, bases=(b,), dtype=dtype)
 
@@ -136,7 +135,6 @@ ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 T_NCC = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
 H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
-#g_eff = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 
 
 if args['--mesa_file'] is not None:
@@ -149,13 +147,12 @@ if args['--mesa_file'] is not None:
         ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
         ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
-        inv_T['g']     = f['inv_T'][()][:,:,r_slice]
         T_NCC['g']     = f['T'][()][:,:,r_slice]
-#        g_eff['g']     = f['g_eff'][()][:,:,:,r_slice]
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
         T['g']         = f['T'][()][:,:,r_slice].reshape(r1.shape)
+        inv_T['g']     = 1/T['g']
 
-        t_buoy = 1#np.sqrt(1/f['T'][()].max())
+        t_buoy = 1
 
     grad_ln_ρ  = grad(ln_ρ).evaluate()
     grad_ln_T  = grad(ln_T).evaluate()
@@ -167,36 +164,27 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
-for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:#g_eff, ρ]:
+for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
     f.require_scales(dealias)
 
-r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-r_vec.require_scales(dealias)
-r_vec['g'][2] = r
-
-# Boundary conditions
-
-
+# Stress matrices & viscous terms
 I_matrix = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c,), dtype=dtype)
 I_matrix['g'] = 0
 for i in range(3):
     I_matrix['g'][i,i,:] = 1
 
-stress1 = grad(u) + transpose(grad(u))
-stress1.store_last = True
-momentum_viscous_terms = div(stress1) + dot(grad_ln_ρ, stress1) - (2/3)*(grad(div(u)) + grad_ln_ρ*div(u) )
+E = grad(u) + transpose(grad(u))
+E.store_last = True
+σ = E - (2/3)*div(u)*I_matrix
+momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
-trace_stress = trace(stress1)
-trace_stress.store_last = True
-VH1 = trace(dot(stress1, stress1))
-VH2 = (trace_stress*div(u)) #trace_stress != div(u) in spherical coordinates.
-VH  = (1/2)*VH1 - (1/3)*VH2)
+trace_E = trace(E)
+trace_E.store_last = True
+VH  = trace(dot(E, E)) - (2/3)*trace_E*div(u)
 
-#TODO: Viscous heating
-
+#Impenetrable, stress-free boundary conditions
 u_r_bc = radComp(u(r=1))
-u_perp_bc = radComp(angComp(stress1(r=1), index=1))
-
+u_perp_bc = radComp(angComp(E(r=1), index=1))
 
 # Problem
 def eq_eval(eq_str):
@@ -205,7 +193,7 @@ problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms = - dot(u, grad(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
@@ -213,10 +201,8 @@ problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("s1(r=1) = 0"))
-#problem.add_equation(eq_eval("radComp(grad(s1)(r=1)) = 0"))
 
 print("Problem built")
-
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
@@ -320,7 +306,7 @@ class AnelasticRPW(RadialProfileWriter):
         super(AnelasticRPW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
         self.fields = OrderedDict()
-        self.ops['u·σ']     = dot(u, stress1)
+        self.ops['u·E']     = dot(u, E)
         self.ops['u·u']     = dot(u, u)
         self.ops['div_u']   = div(u)
         self.ops['grad_s']  = grad(s1)
@@ -345,7 +331,7 @@ class AnelasticRPW(RadialProfileWriter):
         #Get fluxes for energy output
 #        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
         self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
-        self.tasks['visc_flux'][:] = radial_averager(-ρ['g']*(self.fields['u·σ'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
+        self.tasks['visc_flux'][:] = radial_averager(-ρ['g']*(self.fields['u·E'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
         self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s'][2]/Pe)
         self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*u['g'][2,:]*self.fields['u·u'])
 
@@ -519,12 +505,18 @@ else:
 
 # Main loop
 start_time = time.time()
+profileWriter.evaluate_tasks()
 while solver.ok:
     if solver.iteration % 10 == 0:
         scalarWriter.evaluate_tasks()
-        E0  = vol_averager.volume*scalarWriter.tasks['KE']
+        KE  = vol_averager.volume*scalarWriter.tasks['KE']
+        TE  = vol_averager.volume*scalarWriter.tasks['TE']
         Re0  = scalarWriter.tasks['Re_rms']
-        logger.info("t = %f, dt = %f, Re = %e, E = %e" %(solver.sim_time, dt, Re0, E0))
+        if d.comm_cart.rank == 0:
+            surf_lum = (4*np.pi*rg**2*profileWriter.tasks['cond_flux'])[0,0,-1]
+        else:
+            surf_lum = 0
+        logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e, surf_lum = %e" %(solver.sim_time, dt, Re0, KE, TE, surf_lum))
     for writer in writers:
         writer.process(solver)
     solver.step(dt)
