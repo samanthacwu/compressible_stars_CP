@@ -189,8 +189,8 @@ momentum_viscous_terms = div(stress1) + dot(grad_ln_ρ, stress1) - (2/3)*(grad(d
 trace_stress = trace(stress1)
 trace_stress.store_last = True
 VH1 = trace(dot(stress1, stress1))
-VH2 = (trace_stress*trace_stress)
-VH  = 0.5*(VH1 - (1/3)*VH2)
+VH2 = (trace_stress*div(u)) #trace_stress != div(u) in spherical coordinates.
+VH  = (1/2)*VH1 - (1/3)*VH2)
 
 #TODO: Viscous heating
 

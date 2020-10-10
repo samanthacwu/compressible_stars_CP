@@ -130,7 +130,13 @@ nz     = int(args['--nz'])
 aspect = Lx = float(args['--aspect'])
 
 out_dir = './' + sys.argv[0].split('.py')[0]
-out_dir += '_Re{}_{}x{}/'.format(args['--Re'], args['--nx'], args['--nz'])
+if args['--mesa_file'] is not None and 'polytrope' in args['--mesa_file']:
+    out_dir += '_polytrope'
+out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--nx'], args['--nz'])
+if args['--label'] is not None:
+    out_dir += '_{}'.format(args['--label'])
+out_dir += '/'
+logger.info('saving to {}'.format(out_dir))
 if MPI.COMM_WORLD.rank == 0:
     if not os.path.exists('{:s}/'.format(out_dir)):
         os.makedirs('{:s}/'.format(out_dir))
@@ -164,11 +170,14 @@ r = z = domain.grid(-1)
 
 #nccs
 grad_ln_ρ  = domain.new_field()
+grad_ln_T  = domain.new_field()
 ln_ρ  = domain.new_field()
 ln_T  = domain.new_field()
-inv_T = domain.new_field()
+T = domain.new_field()
 H_eff = domain.new_field()
-g_eff = domain.new_field()
+
+gamma  = domain.new_field()
+gamma['g'] = 5./3
 
 gslices = domain.dist.grid_layout.slices(scales=1)
 
@@ -179,12 +188,16 @@ if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
         ln_ρ['g']      = f['ln_ρ'][()][r_slice]
         ln_T['g']      = f['ln_T'][()][r_slice]
-        H_eff['g']     = 4*np.pi*r**2*f['H_eff'][()][r_slice]
-        inv_T['g']     = f['inv_T'][()][r_slice]
-        g_eff['g']     = f['g_eff'][()][r_slice]
+        if 'polytrope' in args['--mesa_file']:
+            H_factor = 1
+        else:
+            H_factor = 4*np.pi*r**2
+        H_eff['g']     = H_factor*f['H_eff'][()][r_slice]
+        T['g']         = f['T'][()][r_slice]
         ln_ρ.differentiate('z', out=grad_ln_ρ)
+        ln_T.differentiate('z', out=grad_ln_T)
 
-        t_buoy = np.sqrt(1/f['g_eff'][()].max())
+        t_buoy = 1
 else:
     logger.error("Must specify an initial condition file")
     import sys
@@ -199,19 +212,25 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
 
 
-for f in [grad_ln_ρ, ln_ρ, ln_T, inv_T, H_eff, g_eff]:
+for f in [grad_ln_ρ, ln_ρ, ln_T, grad_ln_T, T, H_eff, gamma]:
     f.meta['x']['constant'] = True
 
-problem.parameters['ln_ρ']   = ln_ρ
 problem.parameters['grad_ln_ρ']   = grad_ln_ρ
+problem.parameters['grad_ln_T']   = grad_ln_T
+problem.parameters['ln_ρ']   = ln_ρ
 problem.parameters['ln_T']   = ln_T
-problem.parameters['inv_T']  = inv_T
+problem.parameters['T']      = T
 problem.parameters['H_eff']  = H_eff
-problem.parameters['g_eff']  = g_eff
 problem.parameters['Pe'] = Pe
 problem.parameters['Re'] = Re
 problem.parameters['Lx'] = Lx
 problem.parameters['Lz'] = Lz
+
+problem.parameters['gamma'] = gamma
+problem.parameters['Cv']    = 1/(gamma-1)
+problem.parameters['Cp']    = gamma/(gamma-1)
+
+problem.substitutions['ρ'] = 'exp(ln_ρ)'
 
 problem.substitutions['Lap(A, A_z)']=       '(dx(dx(A)) + dz(A_z))'
 problem.substitutions['UdotGrad(A, A_z)'] = '(u*dx(A) + w*A_z)'
@@ -230,24 +249,32 @@ problem.substitutions['vel_rms'] = 'sqrt(u**2 + v**2 + w**2)'
 problem.substitutions['Re_rms'] = '(vel_rms * Re)'
 problem.substitutions['Pe_rms'] = '(vel_rms * Pe)'
 
-problem.substitutions['σ_xx'] = '(2*dx(u))'
-problem.substitutions['σ_xz'] = '(dx(w) + u_z)'
-problem.substitutions['σ_zz'] = '(2*w_z)'
+problem.substitutions['E_xx'] = '(2*dx(u))'
+problem.substitutions['E_xz'] = '(dx(w) + u_z)'
+problem.substitutions['E_zz'] = '(2*w_z)'
+problem.substitutions['σ_xx'] = '(E_xx - (2/3)*DivU)'
+problem.substitutions['σ_xz'] = '(E_xz)'
+problem.substitutions['σ_zz'] = '(E_zz - (2/3)*DivU)'
 
-problem.substitutions['tr_σ'] = '(σ_xx + σ_xz)'
-problem.substitutions['tr_σ_dot_σ'] = '(σ_xx**2 + σ_xz**2)'
+problem.substitutions['tr_E']       = '(E_xx + E_zz)'
+problem.substitutions['tr_E_dot_E'] = '(E_xx**2 + 2*E_xz**2 + E_zz**2)'
 
-problem.substitutions['viscous_x'] = '(dx(σ_xx) + dz(σ_xz) + dz(ln_ρ)*σ_xz - (2/3)*(dx(DivU)))'
-problem.substitutions['viscous_z'] = '(dx(σ_xz) + dz(σ_zz) + dz(ln_ρ)*σ_zz - (2/3)*(dz(DivU) + DivU*dz(ln_ρ)))'
+problem.substitutions['viscous_x'] = '(dx(σ_xx) + dz(σ_xz) + dz(ln_ρ)*σ_xz)'
+problem.substitutions['viscous_z'] = '(dx(σ_xz) + dz(σ_zz) + dz(ln_ρ)*σ_zz)'
 
-problem.substitutions['VH'] = 'tr_σ_dot_σ - (1/3)*(tr_σ)**2'
+problem.substitutions['VH'] = '((1/2)*tr_E_dot_E - (1/3)*tr_E*DivU)'
+#problem.substitutions['VH'] = '(dx(u)*σ_xx + w_z*σ_zz + σ_xz**2)'
 
+problem.substitutions['enth_flux'] = 'ρ*w*(p)'
+problem.substitutions['visc_flux'] = '-ρ*(σ_xz*u + σ_zz*w)/Re'
+problem.substitutions['cond_flux'] = '-ρ*T*dz(s1)/Pe'
+problem.substitutions['KE_flux']   = '0.5*ρ*w*vel_rms**2'
 
 ### 4.Setup equations and Boundary Conditions
 problem.add_equation("DivU + w*grad_ln_ρ = 0")
-problem.add_equation("dt(u) + dx(p)             - (1/Re)*viscous_x = - UdotGrad(u, u_z)")
-problem.add_equation("dt(w) + dz(p) - g_eff*s1  - (1/Re)*viscous_z = - UdotGrad(w, w_z)")
-problem.add_equation("dt(s1) - (1/Pe)*(dx(dx(s1)) + dz(s1_z) + s1_z*dz(ln_ρ + ln_T)) = -UdotGrad(s1, s1_z) + H_eff + (1/Re)*inv_T*VH")
+problem.add_equation("dt(u) + dx(p) - T*dx(s1)  - (1/Re)*viscous_x = - UdotGrad(u, u_z)")
+problem.add_equation("dt(w) + dz(p) - T*dz(s1)  - (1/Re)*viscous_z = - UdotGrad(w, w_z)")
+problem.add_equation("dt(s1) - (1/Pe)*(dx(dx(s1)) + dz(s1_z) + s1_z*dz(ln_ρ + ln_T)) = -UdotGrad(s1, s1_z) + H_eff + (1/(T*Re))*VH")
 problem.add_equation("dz(u) - u_z = 0")
 problem.add_equation("dz(w) - w_z = 0")
 problem.add_equation("dz(s1) - s1_z = 0")
@@ -257,7 +284,7 @@ problem.add_bc("right(w) = 0", condition="nx != 0")
 problem.add_bc("right(p) = 0", condition="nx == 0")
 problem.add_bc(" left(u_z) = 0")
 problem.add_bc("right(u_z) = 0")
-problem.add_bc(" left(s1) = 0")
+problem.add_bc(" left(s1_z) = 0")
 problem.add_bc("right(s1) = 0")
 
 print("Problem built")
@@ -311,7 +338,7 @@ CFL.add_velocities(('u', 'w'))
 
 
 # Output
-output_dt = t_buoy/5
+output_dt = t_buoy/2
 out_iter = np.inf
 from collections import OrderedDict
 analysis_tasks = OrderedDict()
@@ -319,14 +346,16 @@ profiles = solver.evaluator.add_file_handler(out_dir+'profiles', sim_dt=output_d
 profiles.add_task("plane_avg(s1)", name="s1")
 profiles.add_task("plane_avg(u)", name="u")
 profiles.add_task("plane_avg(w)", name="w")
-profiles.add_task("plane_avg(exp(ln_ρ)*w*s1)", name="enth_flux")
-profiles.add_task("plane_avg(exp(ln_ρ)*exp(ln_T)*dz(s1)/Pe)", name="kappa_flux")
+profiles.add_task("plane_avg(enth_flux)", name="enth_flux")
+profiles.add_task("plane_avg(cond_flux)", name="cond_flux")
+profiles.add_task("plane_avg(visc_flux)", name="visc_flux")
+profiles.add_task("plane_avg(KE_flux)",   name="KE_flux")
 
 analysis_tasks['profiles'] = profiles
 
 scalar = solver.evaluator.add_file_handler(out_dir+'scalar', sim_dt=output_dt, max_writes=np.inf, mode=mode, iter=out_iter)
-scalar.add_task("vol_avg(s1)", name="s1")
-scalar.add_task("vol_avg(0.5*exp(ln_ρ)*vel_rms**2)", name="KE")
+scalar.add_task("vol_avg(ρ*T*s1)",           name="TE")
+scalar.add_task("vol_avg(0.5*ρ*vel_rms**2)", name="KE")
 scalar.add_task("vol_avg(Re_rms)", name="Re_rms")
 scalar.add_task("vol_avg(Pe_rms)", name="Pe_rms")
 scalar.add_task("vol_avg(u)",  name="u")
@@ -347,7 +376,8 @@ checkpoint.add_system(solver.state, layout='c')
 ### 8. Setup flow tracking for terminal output, including rolling averages
 flow = flow_tools.GlobalFlowProperty(solver, cadence=1)
 flow.add_property("Re_rms", name='Re_rms')
-flow.add_property("s1", name='s1')
+flow.add_property("ρ*T*s1", name='TE')
+flow.add_property("0.5*ρ*vel_rms**2", name='KE')
 
 Hermitian_cadence = 100
 # Main loop
@@ -357,7 +387,7 @@ try:
     init_time = last_time = solver.sim_time
     start_iter = solver.iteration
     start_time = time.time()
-    while (solver.ok and np.isfinite(Re_avg)) or first_step:
+    while (solver.ok and np.isfinite(Re_avg)):
         dt = CFL.compute_dt()
         solver.step(dt) #, trim=True)
 
@@ -366,7 +396,7 @@ try:
             log_string =  'Iteration: {:5d}, '.format(solver.iteration)
             log_string += 'Time: {:8.3e}, dt: {:8.3e}, '.format(solver.sim_time,  dt)
             log_string += 'Re: {:8.3e}/{:8.3e}, '.format(Re_avg, flow.max('Re_rms'))
-            log_string += 's1: {:8.3e}, '.format(flow.grid_average('s1'))
+            log_string += 'KE/TE: {:8.3e}/{:8.3e}, '.format(flow.grid_average('KE'), flow.grid_average('TE'))
             logger.info(log_string)
 except:
     raise
