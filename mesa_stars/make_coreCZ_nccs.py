@@ -172,12 +172,13 @@ C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
 H_eff = H - C
 
 H0 = H_eff[0]
-H_NCC = ((H_eff / (rho*T)) * (rho0*T0) / H0)[cz_bool]
+H_NCC = ((H_eff)  / H0)[cz_bool]
 H_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
 H_interp = np.interp(rg, r_cz, H_NCC)
-H_field['g'] = H_interp
+H_interp_plot = np.interp(rg, r_cz, H_NCC * (rho0*T0/rho/T)[cz_bool])
+H_field['g'] = H_interp / T_field['g'] / np.exp(ln_rho_field['g'])
 H_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), H_interp.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir, zero_line=True)
+plot_ncc_figure(rg.flatten(), H_interp_plot.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir, zero_line=True)
 
 
 tau = (H0/L**2/rho0)**(-1/3)
