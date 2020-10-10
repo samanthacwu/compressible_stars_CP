@@ -118,8 +118,6 @@ r_vec['g'][2,:] = 1
 
 ### Log Density
 N = 10
-frac = int((Nmax+1)/N)
-φgf, θgf, rgf = b.global_grids((1, 1, 1/frac))
 ln_rho_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
 ln_rho = np.log(rho/rho0)[cz_bool]
 deg = 10
@@ -128,9 +126,6 @@ ln_rho_interp = np.interp(rg, r_cz, ln_rho_fit)
 ln_rho_interp2 = np.interp(rg, r_cz, ln_rho)
 ln_rho_field['g'] = ln_rho_interp
 ln_rho_field['c'][:, :, N:] = 0
-#ln_rho_field.require_scales(1/frac)
-#ln_rho_field['g'] = ln_rho_interp
-#ln_rho_field['c']
 plot_ncc_figure(rg.flatten(), (-1)+ln_rho_interp2.flatten(), (-1)+ln_rho_field['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rho", out_dir=out_dir)
 ln_rho_field.require_scales(1)
 
@@ -159,20 +154,6 @@ grad_ln_T_field['g'] = dot(r_vec, grad(ln_T_field)).evaluate()['g']
 grad_ln_T_field['c'][:, :, N:] = 0
 plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_T", out_dir=out_dir)
 
-#plt.show()
-
-
-
-
-### inverse Temperature
-N = 5
-inv_T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
-inv_T = (T0) / (T)[cz_bool]
-inv_T_interp = np.interp(rg, r_cz, inv_T)
-inv_T_field['g'] = inv_T_interp
-inv_T_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), inv_T_interp.flatten(), inv_T_field['g'].flatten(), N, ylabel=r"$(T/[T_c])^{-1}$", fig_name="inv_T", out_dir=out_dir)
-
 ### Temperature
 N = 5
 T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
@@ -190,14 +171,6 @@ H = rho * eps
 C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
 H_eff = H - C
 
-#dr = np.gradient(r)
-#dLum = 4*np.pi*r**2 * H_eff
-#sumLum = np.zeros(dLum.shape)
-#for i in range(len(sumLum)-1):
-#    sumLum[i+1] = sumLum[i] + dLum[i].value*dr[i].value
-#plt.figure()
-#plt.plot(r/L, sumLum)
-#plt.show()
 H0 = H_eff[0]
 H_NCC = ((H_eff / (rho*T)) * (rho0*T0) / H0)[cz_bool]
 H_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
@@ -216,24 +189,8 @@ u = L/tau
 Ma2 = u**2 / ((gamma0-1)*cp0*T0)
 print(Ma2)
 
-#if get_dimensions:
-#    return L, tau, Ma2
-
-### Effective gravity
-N = 40
-g_eff = (g[cz_bool]/(cp[cz_bool]/cp0)) * (tau**2/L)*Ma2*(gamma0-1)
-g_eff_field = field.Field(dist=d, bases=(b,), dtype=np.float64, tensorsig=(c,))
-g_eff_interp = np.interp(rg, r_cz, g_eff)
-g_eff_field['g'][2,:] = g_eff_interp
-g_eff_field['c'][:, :, :, N:] = 0
-plot_ncc_figure(rg.flatten(), g_eff_interp.flatten(), g_eff_field['g'][2].flatten(), N, ylabel=r"$g_{eff}$", fig_name="g_eff", out_dir=out_dir)
-
-
-
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['r']     = rg
-    f['g_eff'] = g_eff_field['g']
-    f['inv_T'] = inv_T_field['g']
     f['T']     = T_field['g']
     f['H_eff'] = H_field['g']
     f['ln_ρ']  = ln_rho_field['g'] 

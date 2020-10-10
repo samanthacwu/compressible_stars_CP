@@ -203,6 +203,20 @@ else:
     import sys
     sys.exit()
 
+#import matplotlib
+#import matplotlib.pyplot as plt
+#for f in [T, ln_ρ, H_eff]:
+#    f.set_scales(1, keep_data=True)
+#plt.plot(r[0,:], T['g'][0,:])
+#plt.show()
+#plt.plot(r[0,:], np.exp(ln_ρ['g'][0,:]))
+#plt.show()
+#plt.plot(r[0,:], H_eff['g'][0,:])
+#plt.show()
+#
+#import sys
+#sys.exit()
+
 
 
 variables = ['s1', 's1_z', 'p', 'u', 'u_z', 'w', 'w_z']
@@ -271,19 +285,24 @@ problem.substitutions['cond_flux'] = '-ρ*T*dz(s1)/Pe'
 problem.substitutions['KE_flux']   = '0.5*ρ*w*vel_rms**2'
 
 ### 4.Setup equations and Boundary Conditions
-problem.add_equation("DivU + w*grad_ln_ρ = 0")
-problem.add_equation("dt(u) + dx(p) - T*dx(s1)  - (1/Re)*viscous_x = - UdotGrad(u, u_z)")
-problem.add_equation("dt(w) + dz(p) - T*dz(s1)  - (1/Re)*viscous_z = - UdotGrad(w, w_z)")
+problem.add_equation("DivU + w*grad_ln_ρ = 0", condition="nx != 0")
+problem.add_equation("p = 0", condition="nx == 0")
+problem.add_equation("dt(u) + dx(p) - T*dx(s1)  - (1/Re)*viscous_x = - UdotGrad(u, u_z)", condition="nx != 0")
+problem.add_equation("dt(w) + dz(p) - T*dz(s1)  - (1/Re)*viscous_z = - UdotGrad(w, w_z)", condition="nx != 0")
+problem.add_equation("u = 0", condition="nx == 0")
+problem.add_equation("w = 0", condition="nx == 0")
 problem.add_equation("dt(s1) - (1/Pe)*(dx(dx(s1)) + dz(s1_z) + s1_z*dz(ln_ρ + ln_T)) = -UdotGrad(s1, s1_z) + H_eff + (1/(T*Re))*VH")
-problem.add_equation("dz(u) - u_z = 0")
-problem.add_equation("dz(w) - w_z = 0")
+problem.add_equation("dz(u) - u_z = 0", condition="nx != 0")
+problem.add_equation("dz(w) - w_z = 0", condition="nx != 0")
+problem.add_equation("u_z = 0", condition="nx == 0")
+problem.add_equation("w_z = 0", condition="nx == 0")
 problem.add_equation("dz(s1) - s1_z = 0")
 
-problem.add_bc(" left(w) = 0")
+problem.add_bc(" left(w) = 0", condition="nx != 0")
 problem.add_bc("right(w) = 0", condition="nx != 0")
-problem.add_bc("right(p) = 0", condition="nx == 0")
-problem.add_bc(" left(u_z) = 0")
-problem.add_bc("right(u_z) = 0")
+#problem.add_bc("right(p) = 0", condition="nx == 0")
+problem.add_bc(" left(u_z) = 0", condition="nx != 0")
+problem.add_bc("right(u_z) = 0", condition="nx != 0")
 problem.add_bc(" left(s1_z) = 0")
 problem.add_bc("right(s1) = 0")
 
