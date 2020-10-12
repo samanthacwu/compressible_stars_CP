@@ -173,14 +173,16 @@ I_matrix['g'] = 0
 for i in range(3):
     I_matrix['g'][i,i,:] = 1
 
-E = grad(u) + transpose(grad(u))
+E = 0.5*(grad(u) + transpose(grad(u)))
 E.store_last = True
-σ = E - (2/3)*div(u)*I_matrix
+divU = div(u)
+divU.store_last = True
+σ = 2*(E - (1/3)*divU*I_matrix)
 momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
-trace_E = trace(E)
-trace_E.store_last = True
-VH  = trace(dot(E, E)) - (2/3)*trace_E*div(u)
+#trace_E = trace(E)
+#trace_E.store_last = True
+VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 
 #Impenetrable, stress-free boundary conditions
 u_r_bc = radComp(u(r=1))
