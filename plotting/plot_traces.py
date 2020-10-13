@@ -39,16 +39,16 @@ figs.append(fig2)
 
 
 fig3 = ScalarFigure(1, 1, col_in=6, fig_name='re')
-if 'cartesian' in root_dir:
+if 'cartesian' in root_dir or 'annulus' in root_dir:
     fig3.add_field(0, 'Re_rms')
 else:
     fig3.add_field(0, 'Re_avg')
 figs.append(fig3)
 
 
-fig4 = ScalarFigure(1, 1, col_in=6, fig_name='s')
-fig4.add_field(0, 's1')
-figs.append(fig4)
+#fig4 = ScalarFigure(1, 1, col_in=6, fig_name='s')
+#fig4.add_field(0, 's1')
+#figs.append(fig4)
 
 
 # Load in figures and make plots

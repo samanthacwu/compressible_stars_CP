@@ -21,10 +21,12 @@ Options:
                                             1 - T, velocities, fluxes
                                         [default: 1]
     --mesa_file=<f>                     NCC file for making full flux plot
+    --nr=<nr>                           Number of r-coeffs in problem [default: 64]
 """
 from docopt import docopt
 args = docopt(__doc__)
 from plotpal.profiles import ProfilePlotter
+import dedalus.public as de
 
 # Read in master output directory
 root_dir    = args['<root_dir>']
@@ -65,7 +67,6 @@ if args['--mesa_file'] is not None:
         ρ = np.exp(f['ln_ρ'][()])
         T = np.exp(f['ln_T'][()])
         H = f['H_eff'][()]
-        r = f['r'][()]
 
 
     with h5py.File('{:s}/{:s}/averaged_{:s}.h5'.format(root_dir, fig_name, fig_name), 'r') as f:
@@ -86,13 +87,26 @@ if args['--mesa_file'] is not None:
         rbot = 0.5
         L_S = -(1 - 4*(r_flat-(0.5+rbot))**2)
     else:
-        dr = np.gradient(r.flatten()).reshape(r.shape)
-        d_L_S = (-4*np.pi*r**2*ρ*T*H*dr).flatten()
+        Lbot = 0.5
+        Lr   = 1
+        nr = int(args['--nr'])
+        r_basis = de.Chebyshev('r', nr, interval = [Lbot, Lbot+Lr], dealias=1)
 
-        L_S      = np.zeros_like(d_L_S)
-        L_S[0] = d_L_S[0]
-        for i in range(L_S.shape[-1]-1):
-            L_S[i+1] = L_S[i] + d_L_S[i+1]
+        domain = de.Domain([r_basis,], grid_dtype=np.float64, mesh=None)
+        r = z = domain.grid(-1)
+        dr = np.gradient(r.flatten()).reshape(r.shape)
+
+        H_eff = domain.new_field()
+        d_L_S = domain.new_field()
+        L_S   = domain.new_field()
+        print(r-Lbot)
+        H_factor   = 4*np.pi*(r-Lbot)**2 / (2 * np.pi * r)
+        H_eff['g'] = H_factor*H
+        d_L_S['g'] = ρ*T*(2 * np.pi * r) * H_eff['g']
+        d_L_S.antidifferentiate('r', ('left', 0), out=L_S)
+
+        L_S = -L_S['g']
+ 
 
     L_diff  = L_S + L_enth + L_visc + L_cond + L_KE
     L_tot   = L_enth + L_visc + L_cond + L_KE
@@ -101,7 +115,7 @@ if args['--mesa_file'] is not None:
     plt.axhline(0, c='k', lw=0.25)
     plt.plot(r_flat, L_tot,  label='L tot',  c='k')
     plt.plot(r_flat, L_diff,  label='L diff',  c='k', lw=0.5, ls='--')
-    plt.plot(r_flat, -L_S,   label='-(L source)', c='grey',  lw=1)
+    plt.plot(r_flat, -L_S,   label='-(L source)', c='grey',  lw=0.75)
     plt.plot(r_flat, L_enth, label='L enth', lw=0.5)
     plt.plot(r_flat, L_visc, label='L visc', lw=0.5)
     plt.plot(r_flat, L_cond, label='L cond', lw=0.5)

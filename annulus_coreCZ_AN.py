@@ -187,9 +187,7 @@ if args['--mesa_file'] is not None:
         if 'polytrope' in args['--mesa_file']:
             H_factor = 1
         else:
-            logger.error("Only polytrope implemented")
-            import sys
-            sys.exit()
+            H_factor = 4*np.pi*(r-Lbot)**2 / (2 * np.pi * r)
         H_eff['g']     = H_factor*f['H_eff'][()][r_slice]
         T['g']         = f['T'][()][r_slice]
         ln_ρ.differentiate('r', out=grad_ln_ρ)

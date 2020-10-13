@@ -4,8 +4,8 @@ d3 script for anelastic convection in a massive star's core CZ.
 A config file can be provided which overwrites any number of the options below, but command line flags can also be used if preferred.
 
 Usage:
-    bootstrap_rrbc.py [options]
-    bootstrap_rrbc.py <config> [options]
+    coreCZ_AN.py [options]
+    coreCZ_AN.py <config> [options]
 
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
@@ -73,6 +73,8 @@ Nmax      = int(args['--N'])
 L_dealias = N_dealias = dealias = 3/2
 
 out_dir = './' + sys.argv[0].split('.py')[0]
+if args['--mesa_file'] is None:
+    out_dir += '_polytrope'
 out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
@@ -129,6 +131,11 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 ρ   = field.Field(dist=d, bases=(b,), dtype=dtype)
 T   = field.Field(dist=d, bases=(b,), dtype=dtype)
 
+
+er = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+er.set_scales(dealias)
+er['g'][2,:] = 1
+
 #nccs
 ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
 ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
@@ -154,12 +161,37 @@ if args['--mesa_file'] is not None:
 
         t_buoy = 1
 
-    grad_ln_ρ  = grad(ln_ρ).evaluate()
-    grad_ln_T  = grad(ln_T).evaluate()
 else:
-    logger.error("Must specify an initial condition file")
-    import sys
-    sys.exit()
+#    import matplotlib.pyplot as plt
+    logger.info("Using polytropic initial conditions")
+    n_rho = 1
+    gamma = 5/3
+    gradT = np.exp(n_rho * (1 - gamma)) - 1
+
+    for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
+        f.require_scales(dealias)
+    T['g'] = T_NCC['g'] = 1 + gradT*rg
+    ρ['g'] = T['g']**(1/(gamma-1))
+    inv_T['g'] = 1/T['g']
+    ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
+    ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
+
+    #Gaussian luminosity -- zero at r = 0 and r = 1
+    mu = 0.5
+    sig = 0.15
+    L  = np.exp(-(rg - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
+    dL = -2*(rg - mu)/(2*sig**2) * L 
+    H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*rg**2)
+
+#    plt.plot(rg.flatten(), L.flatten())
+#    plt.show()
+#    plt.plot(rg.flatten(), dL.flatten())
+#    plt.show()
+
+    t_buoy = 1
+grad_ln_ρ  = grad(ln_ρ).evaluate()
+grad_ln_T  = grad(ln_T).evaluate()
+
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
@@ -185,7 +217,7 @@ momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 
 #Impenetrable, stress-free boundary conditions
-u_r_bc = radComp(u(r=1))
+u_r_bc    = radComp(u(r=1))
 u_perp_bc = radComp(angComp(E(r=1), index=1))
 
 # Problem
@@ -308,10 +340,11 @@ class AnelasticRPW(RadialProfileWriter):
         super(AnelasticRPW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
         self.fields = OrderedDict()
-        self.ops['u·E']     = dot(u, E)
+        self.ops['u·σ_r']   = dot(er, dot(u, σ))
         self.ops['u·u']     = dot(u, u)
         self.ops['div_u']   = div(u)
-        self.ops['grad_s']  = grad(s1)
+        self.ops['grad_s']  = dot(er, grad(s1))
+        self.ops['ur']      = dot(er, u)
         self.fields = OrderedDict()
         self.ds1_dr = field.Field(dist=d, bases=(b,), dtype=dtype)
         for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur']:
@@ -332,10 +365,10 @@ class AnelasticRPW(RadialProfileWriter):
 
         #Get fluxes for energy output
 #        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
-        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
-        self.tasks['visc_flux'][:] = radial_averager(-ρ['g']*(self.fields['u·E'][2,:] - (2/3)*u['g'][2,:]*self.fields['div_u'])/Re)
-        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s'][2]/Pe)
-        self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*u['g'][2,:]*self.fields['u·u'])
+        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*self.fields['ur']*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+        self.tasks['visc_flux'][:] = radial_averager(-ρ['g']*(self.fields['u·σ_r'])/Re)
+        self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s']/Pe)
+        self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*self.fields['ur']*self.fields['u·u'])
 
 class AnelasticMSW(MeridionalSliceWriter):
     
