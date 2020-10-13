@@ -170,18 +170,19 @@ else:
 
     for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
         f.require_scales(dealias)
-    T['g'] = T_NCC['g'] = 1 + gradT*rg
+    T['g'] = T_NCC['g'] = 1 + gradT*r
     ρ['g'] = T['g']**(1/(gamma-1))
     inv_T['g'] = 1/T['g']
-    ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
-    ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
+    if np.prod(ln_T['g'].shape) > 0:
+        ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
+        ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
     sig = 0.15
-    L  = np.exp(-(rg - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
-    dL = -2*(rg - mu)/(2*sig**2) * L 
-    H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*rg**2)
+    L  = np.exp(-(r - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
+    dL = -2*(r - mu)/(2*sig**2) * L 
+    H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*r**2)
 
 #    plt.plot(rg.flatten(), L.flatten())
 #    plt.show()
@@ -200,9 +201,12 @@ for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
     f.require_scales(dealias)
 
 # Stress matrices & viscous terms
+I_matrix_post = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
 I_matrix = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c,), dtype=dtype)
+I_matrix_post['g'] = 0
 I_matrix['g'] = 0
 for i in range(3):
+    I_matrix_post['g'][i,i,:] = 1
     I_matrix['g'][i,i,:] = 1
 
 E = 0.5*(grad(u) + transpose(grad(u)))
@@ -210,6 +214,7 @@ E.store_last = True
 divU = div(u)
 divU.store_last = True
 σ = 2*(E - (1/3)*divU*I_matrix)
+σ_post = 2*(E - (1/3)*divU*I_matrix_post)
 momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
 #trace_E = trace(E)
@@ -223,7 +228,7 @@ u_perp_bc = radComp(angComp(E(r=1), index=1))
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
-problem = problems.IVP([p, u, s1, tau_u, tau_T])
+problem = problems.IVP([p, u, s1, tau_u, tau_T], max_ncc_terms=int((Nmax+1)/2))
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
@@ -340,7 +345,7 @@ class AnelasticRPW(RadialProfileWriter):
         super(AnelasticRPW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
         self.fields = OrderedDict()
-        self.ops['u·σ_r']   = dot(er, dot(u, σ))
+        self.ops['u·σ_r']   = dot(er, dot(u, σ_post))
         self.ops['u·u']     = dot(u, u)
         self.ops['div_u']   = div(u)
         self.ops['grad_s']  = dot(er, grad(s1))
