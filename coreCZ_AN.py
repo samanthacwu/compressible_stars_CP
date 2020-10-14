@@ -549,25 +549,46 @@ else:
 # Main loop
 start_time = time.time()
 profileWriter.evaluate_tasks()
-while solver.ok:
-    if solver.iteration % 10 == 0:
-        scalarWriter.evaluate_tasks()
-        KE  = vol_averager.volume*scalarWriter.tasks['KE']
-        TE  = vol_averager.volume*scalarWriter.tasks['TE']
-        Re0  = scalarWriter.tasks['Re_rms']
-        if d.comm_cart.rank == 0:
-            surf_lum = (4*np.pi*rg**2*profileWriter.tasks['cond_flux'])[0,0,-1]
-        else:
-            surf_lum = 0
-        logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
-    for writer in writers:
-        writer.process(solver)
-    solver.step(dt)
-    if solver.iteration % CFL.cadence == 0:
-        dt = CFL.calculate_dt(u, dt)
+start_iter = solver.iteration
+try:
+    while solver.ok:
+        if solver.iteration % 10 == 0:
+            scalarWriter.evaluate_tasks()
+            KE  = vol_averager.volume*scalarWriter.tasks['KE']
+            TE  = vol_averager.volume*scalarWriter.tasks['TE']
+            Re0  = scalarWriter.tasks['Re_rms']
+            if d.comm_cart.rank == 0:
+                surf_lum = (4*np.pi*rg**2*profileWriter.tasks['cond_flux'])[0,0,-1]
+            else:
+                surf_lum = 0
+            logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
+        for writer in writers:
+            writer.process(solver)
+        solver.step(dt)
+        if solver.iteration % CFL.cadence == 0:
+            dt = CFL.calculate_dt(u, dt)
 
-    if solver.iteration % imaginary_cadence in timestepper_history:
-        for f in solver.state:
-            f.require_grid_space()
-end_time = time.time()
-print('Run time:', end_time-start_time)
+        if solver.iteration % imaginary_cadence in timestepper_history:
+            for f in solver.state:
+                f.require_grid_space()
+except:
+    logger.info('something went wrong in main loop, making final checkpoint')
+finally:
+    fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
+    fcheckpoint.add_task(s1, name='s1', scales=1, layout='c')
+    fcheckpoint.add_task(u, name='u', scales=1, layout='c')
+    solver.step(1e-5*dt)
+
+    end_time = time.time()
+    end_iter = solver.iteration
+    cpu_sec  = end_time - start_time
+    n_iter   = end_iter - start_iter
+
+    #TODO: Make the end-of-sim report better
+    n_coeffs = 2*(Nmax+1)*(Lmax+1)**2
+    n_cpu    = d.comm_cart.size
+    dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
+    logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
+    logger.info('Run iterations: {:e}'.format(n_iter))
+    logger.info('Sim end time: {:e}'.format(solver.sim_time))
+    logger.info('Run time: {}'.format(cpu_sec))
