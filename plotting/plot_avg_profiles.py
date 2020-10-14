@@ -95,12 +95,17 @@ if args['--mesa_file'] is not None or args['--polytrope']:
             T = np.exp(f['ln_T'][()])
             H = f['H_eff'][()]
             r = f['r'][()]
-        dr = np.gradient(r.flatten()).reshape(r.shape)
-        d_L_S = -4*np.pi*r**2*ρ*T*H*dr
+        r_dense  = np.linspace(r.min(), r.max(), 2048)
+        dr_dense = np.gradient(r_dense)
+        H_dense  = np.interp(r_dense, r.flatten(), H.flatten())
+        T_dense  = np.interp(r_dense, r.flatten(), T.flatten())
+        ρ_dense  = np.interp(r_dense, r.flatten(), ρ.flatten())
+        d_L_S_dense = -4*np.pi*r_dense**2*ρ_dense*T_dense*H_dense*dr_dense
 
-        L_S      = np.zeros_like(d_L_S)
-        for i in range(L_S.shape[-1]-1):
-            L_S[:,:,i+1] = L_S[:,:,i] + d_L_S[:,:,i]
+        L_S_dense      = np.zeros_like(d_L_S_dense)
+        for i in range(L_S_dense.shape[-1]-1):
+            L_S_dense[i+1] = L_S_dense[i] + d_L_S_dense[i]
+        L_S    = np.interp(r.flatten(), r_dense, L_S_dense)
         L_enth = interp1d(r_flat, L_enth, bounds_error=False, fill_value='extrapolate')(r.flatten())
         L_visc = interp1d(r_flat, L_visc, bounds_error=False, fill_value='extrapolate')(r.flatten())
         L_cond = interp1d(r_flat, L_cond, bounds_error=False, fill_value='extrapolate')(r.flatten())
