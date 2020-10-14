@@ -70,7 +70,7 @@ if args['<config>'] is not None:
 radius    = 1
 Lmax      = int(args['--L'])
 Nmax      = int(args['--N'])
-L_dealias = N_dealias = dealias = 3/2
+L_dealias = N_dealias = dealias = 1
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--mesa_file'] is None:
@@ -224,11 +224,12 @@ VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 #Impenetrable, stress-free boundary conditions
 u_r_bc    = radComp(u(r=1))
 u_perp_bc = radComp(angComp(E(r=1), index=1))
+therm_bc  = s1(r=1)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
-problem = problems.IVP([p, u, s1, tau_u, tau_T], max_ncc_terms=int((Nmax+1)/2))
+problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
@@ -236,10 +237,12 @@ problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentu
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 #problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
-problem.add_equation(eq_eval("u_r_bc = 0"), condition="nθ != 0")
+problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("tau_u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("s1(r=1) = 0"))
+problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("therm_bc  = 0"))
+
+
 
 print("Problem built")
 # Solver
@@ -556,7 +559,7 @@ while solver.ok:
             surf_lum = (4*np.pi*rg**2*profileWriter.tasks['cond_flux'])[0,0,-1]
         else:
             surf_lum = 0
-        logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e, surf_lum = %e" %(solver.sim_time, dt, Re0, KE, TE, surf_lum))
+        logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
     for writer in writers:
         writer.process(solver)
     solver.step(dt)
