@@ -67,7 +67,6 @@ if args['<config>'] is not None:
                 args[k] = v
 
 # Parameters
-radius    = 1
 Lmax      = int(args['--L'])
 Nmax      = int(args['--N'])
 L_dealias = N_dealias = dealias = 1
@@ -100,11 +99,18 @@ Re  = float(args['--Re'])
 Pr  = 1
 Pe  = Pr*Re
 
+
+if args['--mesa_file'] is not None:
+    with h5py.File(args['--mesa_file'], 'r') as f:
+        maxR = f['maxR'][()]
+else:
+    maxR = 1.5
+radius    = maxR
+
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
 b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
-bNCC = basis.BallBasis(c, (1, 1, Nmax+1), radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 φ, θ, r = b.local_grids((dealias, dealias, dealias))
 φg, θg, rg = b.global_grids((dealias, dealias, dealias))
@@ -137,20 +143,29 @@ er.set_scales(dealias)
 er['g'][2,:] = 1
 
 #nccs
-ln_ρ  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-ln_T  = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-T_NCC = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-inv_T = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
-H_eff = field.Field(dist=d, bases=(b,), dtype=dtype)
+grad_ln_ρ    = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_s0      = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_ln_T    = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+ln_ρ    = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+ln_T    = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+T_NCC   = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+inv_T   = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
+H_eff   = field.Field(dist=d, bases=(b,), dtype=dtype)
+grad_s0_RHS      = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 
 
 if args['--mesa_file'] is not None:
     φ1, θ1, r1 = b.local_grids((1, 1, 1))
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_file = f['r'][()].flatten()
+        print(r_file, r1)
         r_slice = np.zeros_like(r_file.flatten(), dtype=bool)
         for this_r in r1.flatten():
             r_slice[this_r == r_file] = True
+        print(r_slice)
+        grad_s0['g']        = f['grad_s0'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
+        grad_ln_ρ['g']      = f['grad_ln_ρ'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
+        grad_ln_T['g']      = f['grad_ln_T'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
         ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
         ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
@@ -158,15 +173,22 @@ if args['--mesa_file'] is not None:
         ρ['g']         = np.exp(f['ln_ρ'][()][:,:,r_slice].reshape(r1.shape))
         T['g']         = f['T'][()][:,:,r_slice].reshape(r1.shape)
         inv_T['g']     = 1/T['g']
+        grad_s0_RHS['g'][2]        = f['grad_s0'][()][2,:,:,r_slice].reshape(r1.shape)
 
         t_buoy = 1
 
 else:
 #    import matplotlib.pyplot as plt
     logger.info("Using polytropic initial conditions")
-    n_rho = 1
+    from scipy.special import erf
+    def one_to_zero(x, x0, width=0.1):
+        return (1 - erf( (x - x0)/width))/2
+
+    def zero_to_one(*args, **kwargs):
+        return -(one_to_zero(*args, **kwargs) - 1)
+    n_rho = 2
     gamma = 5/3
-    gradT = np.exp(n_rho * (1 - gamma)) - 1
+    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius
 
     for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
         f.require_scales(dealias)
@@ -177,21 +199,26 @@ else:
         ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
         ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
 
+    grad_s0['g'] = 0#1e1*zero_to_one(r, 1/2, width=0.2/2)
+
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
     sig = 0.15
     L  = np.exp(-(r - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
-    dL = -2*(r - mu)/(2*sig**2) * L 
+    dL = -(2*(r - mu)/(2*sig**2)) * L 
     H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*r**2)
 
-#    plt.plot(rg.flatten(), L.flatten())
-#    plt.show()
-#    plt.plot(rg.flatten(), dL.flatten())
-#    plt.show()
-
     t_buoy = 1
-grad_ln_ρ  = grad(ln_ρ).evaluate()
-grad_ln_T  = grad(ln_T).evaluate()
+    grad_ln_ρ  = grad(ln_ρ).evaluate()
+    grad_ln_T  = grad(ln_T).evaluate()
+    print(np.abs(grad_ln_T['g']).shape)
+
+#import matplotlib.pyplot as plt
+#plt.plot(rg.flatten(), grad_ln_T['g'][2,0,0,:].flatten())
+#plt.plot(rg.flatten(), grad_ln_ρ['g'][2,0,0,:].flatten())
+##plt.yscale('log')
+#plt.show()
+
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
@@ -222,9 +249,9 @@ momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 
 #Impenetrable, stress-free boundary conditions
-u_r_bc    = radComp(u(r=1))
-u_perp_bc = radComp(angComp(E(r=1), index=1))
-therm_bc  = s1(r=1)
+u_r_bc    = radComp(u(r=radius))
+u_perp_bc = radComp(angComp(E(r=radius), index=1))
+therm_bc  = s1(r=radius)
 
 # Problem
 def eq_eval(eq_str):
@@ -235,8 +262,7 @@ problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ 
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
-#problem.add_equation(eq_eval("ddt(s1)                                                 = - dot(u, grad(s1)) + H_eff + inv_T*VH "), condition = "nθ == 0")
+problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
@@ -281,6 +307,7 @@ for subproblem in solver.subproblems:
         NL = Nmax - ell//2 + 1
         N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
         tau_columns = np.zeros((shape[0], 8))
+        print(NL, shape, tau_columns.shape, N0, N1, ell)
         if ell != 0:
             tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
             tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
@@ -300,7 +327,7 @@ for subproblem in solver.subproblems:
         subproblem.expand_matrices(['M','L'])
 
 # Analysis Setup
-vol_averager       = VolumeAverager(b, d, p, dealias=dealias)
+vol_averager       = VolumeAverager(b, d, p, dealias=dealias, radius=radius)
 radial_averager    = PhiThetaAverager(b, d, dealias=dealias)
 azimuthal_averager = PhiAverager(b, d, dealias=dealias)
 equator_slicer     = EquatorSlicer(b, d, dealias=dealias)
@@ -355,7 +382,7 @@ class AnelasticRPW(RadialProfileWriter):
         self.ops['ur']      = dot(er, u)
         self.fields = OrderedDict()
         self.ds1_dr = field.Field(dist=d, bases=(b,), dtype=dtype)
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur']:
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur', 'N2_term']:
             self.tasks[k] = np.zeros_like(radial_averager.global_profile)
 
     def evaluate_tasks(self):
@@ -370,6 +397,8 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['uφ'][:] = radial_averager(u['g'][0])[:]
         self.tasks['uθ'][:] = radial_averager(u['g'][1])[:]
         self.tasks['ρ_ur'][:] = radial_averager(ρ['g']*u['g'][2])[:]
+
+        self.tasks['N2_term'][:] = radial_averager(ρ['g']*u['g'][2]*T['g']*grad_s0_RHS['g'][2])
 
         #Get fluxes for energy output
 #        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
@@ -404,10 +433,10 @@ class AnelasticSSW(SphericalShellWriter):
     def __init__(self, *args, **kwargs):
         super(AnelasticSSW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
-        self.ops['s1_r0.95']  = s1(r=0.95)
-        self.ops['s1_r0.5']   = s1(r=0.5)
-        self.ops['ur_r0.95'] = radComp(u(r=0.95))
-        self.ops['ur_r0.5']  = radComp(u(r=0.5))
+        self.ops['s1_r0.95']  = s1(r=0.95*radius)
+        self.ops['s1_r0.5']   = s1(r=0.5*radius)
+        self.ops['ur_r0.95'] = radComp(u(r=0.95*radius))
+        self.ops['ur_r0.5']  = radComp(u(r=0.5*radius))
 
         # Logic for local and global slicing
         φbool = np.zeros_like(φg, dtype=bool)
