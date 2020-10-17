@@ -158,14 +158,13 @@ if args['--mesa_file'] is not None:
     φ1, θ1, r1 = b.local_grids((1, 1, 1))
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_file = f['r'][()].flatten()
-        print(r_file, r1)
         r_slice = np.zeros_like(r_file.flatten(), dtype=bool)
         for this_r in r1.flatten():
             r_slice[this_r == r_file] = True
-        print(r_slice)
-        grad_s0['g']        = f['grad_s0'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
-        grad_ln_ρ['g']      = f['grad_ln_ρ'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
-        grad_ln_T['g']      = f['grad_ln_T'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
+        if np.prod(grad_s0['g'].shape) > 0:
+            grad_s0['g']        = f['grad_s0'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
+            grad_ln_ρ['g']      = f['grad_ln_ρ'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
+            grad_ln_T['g']      = f['grad_ln_T'][()][:,:,:,r_slice].reshape(grad_s0['g'].shape)
         ln_ρ['g']      = f['ln_ρ'][()][:,:,r_slice]
         ln_T['g']      = f['ln_T'][()][:,:,r_slice]
         H_eff['g']     = f['H_eff'][()][:,:,r_slice]
@@ -211,7 +210,6 @@ else:
     t_buoy = 1
     grad_ln_ρ  = grad(ln_ρ).evaluate()
     grad_ln_T  = grad(ln_T).evaluate()
-    print(np.abs(grad_ln_T['g']).shape)
 
 #import matplotlib.pyplot as plt
 #plt.plot(rg.flatten(), grad_ln_T['g'][2,0,0,:].flatten())
@@ -268,12 +266,11 @@ problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("therm_bc  = 0"))
 
-
-
-print("Problem built")
+logger.info("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
+logger.info("solver built")
 
 # Add taus
 alpha_BC = 0
@@ -307,7 +304,6 @@ for subproblem in solver.subproblems:
         NL = Nmax - ell//2 + 1
         N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
         tau_columns = np.zeros((shape[0], 8))
-        print(NL, shape, tau_columns.shape, N0, N1, ell)
         if ell != 0:
             tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
             tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
@@ -435,8 +431,10 @@ class AnelasticSSW(SphericalShellWriter):
         self.ops = OrderedDict()
         self.ops['s1_r0.95']  = s1(r=0.95*radius)
         self.ops['s1_r0.5']   = s1(r=0.5*radius)
+        self.ops['s1_r0.25']   = s1(r=0.25*radius)
         self.ops['ur_r0.95'] = radComp(u(r=0.95*radius))
         self.ops['ur_r0.5']  = radComp(u(r=0.5*radius))
+        self.ops['ur_r0.25']  = radComp(u(r=0.25*radius))
 
         # Logic for local and global slicing
         φbool = np.zeros_like(φg, dtype=bool)
