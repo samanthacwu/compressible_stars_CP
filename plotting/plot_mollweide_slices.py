@@ -49,9 +49,12 @@ if n_files is not None:
 plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 if int(args['--fig_type']) == 1:
-    plotter.setup_grid(1, 2, mollweide=True, **plotter_kwargs)
-    fnames = [  (('s1_r0.5',),        {'mollweide' : True, 'remove_mean' : True}), 
+    plotter.setup_grid(2, 2, mollweide=True, **plotter_kwargs)
+    fnames = [  
+                (('s1_r0.5',),        {'mollweide' : True, 'remove_mean' : True}), 
                 (('ur_r0.5',),        {'mollweide' : True, 'cmap' : 'PuOr_r'}),
+                (('s1_r0.95',),        {'mollweide' : True, 'remove_mean' : True}), 
+                (('ur_r0.95',),        {'mollweide' : True, 'cmap' : 'PuOr_r'}),
              ]
 
 for tup in fnames:

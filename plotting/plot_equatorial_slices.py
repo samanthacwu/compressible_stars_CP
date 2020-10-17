@@ -50,7 +50,7 @@ plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_fil
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 if int(args['--fig_type']) == 1:
     plotter.setup_grid(2, 2, polar=True, **plotter_kwargs)
-    fnames = [  (('s1',),         {'polar' : True, 'remove_x_mean' : True}), 
+    fnames = [  (('s1',),         {'polar' : True, 'remove_x_mean' : True, 'divide_x_mean' : True}), 
                 (('uφ',),        {'polar' : True, 'cmap' : 'PuOr_r'}),
                 (('uθ',),        {'polar' : True, 'cmap' : 'PiYG_r'}),
                 (('ur',),        {'polar' : True, 'cmap' : 'PuOr_r'}),
