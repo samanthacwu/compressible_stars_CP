@@ -188,18 +188,20 @@ else:
         return -(one_to_zero(*args, **kwargs) - 1)
     n_rho = 2
     gamma = 5/3
-    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius
+    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
 
     for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
         f.require_scales(dealias)
-    T['g'] = T_NCC['g'] = 1 + gradT*r
+    T['g'] = T_NCC['g'] = 1 + gradT*r**2
     ρ['g'] = T['g']**(1/(gamma-1))
     inv_T['g'] = 1/T['g']
     if np.prod(ln_T['g'].shape) > 0:
         ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
         ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
 
-    grad_s0['g'] = 0#1e1*zero_to_one(r, 1/2, width=0.2/2)
+    grad_s0['g'] = 1e5*zero_to_one(r, 1, width=0.05)
+    grad_s0['c'][:,:,:,-1] = 0
+    print(grad_s0['g'][2])
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
@@ -209,14 +211,18 @@ else:
     H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*r**2)
 
     t_buoy = 1
-    grad_ln_ρ  = grad(ln_ρ).evaluate()
-    grad_ln_T  = grad(ln_T).evaluate()
+    grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
+    grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
 
 #import matplotlib.pyplot as plt
-#plt.plot(rg.flatten(), grad_ln_T['g'][2,0,0,:].flatten())
-#plt.plot(rg.flatten(), grad_ln_ρ['g'][2,0,0,:].flatten())
-##plt.yscale('log')
+##plt.plot(rg.flatten(), grad_ln_T['g'][2,0,0,:].flatten())
+##plt.plot(rg.flatten(), grad_ln_ρ['g'][2,0,0,:].flatten())
+#plt.plot(rg.flatten(), grad_s0['g'][2,0,0,:].flatten())
+#plt.yscale('log')
 #plt.show()
+
+import sys
+sys.exit()
 
 
 logger.info('buoyancy time is {}'.format(t_buoy))
