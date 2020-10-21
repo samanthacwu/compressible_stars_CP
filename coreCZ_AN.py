@@ -430,12 +430,12 @@ class AnelasticSSW(SphericalShellWriter):
     def __init__(self, *args, **kwargs):
         super(AnelasticSSW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
-        self.ops['s1_r0.95']  = s1(r=0.95*radius)
-        self.ops['s1_r0.5']   = s1(r=0.5*radius)
-        self.ops['s1_r0.25']   = s1(r=0.25*radius)
-        self.ops['ur_r0.95'] = radComp(u(r=0.95*radius))
-        self.ops['ur_r0.5']  = radComp(u(r=0.5*radius))
-        self.ops['ur_r0.25']  = radComp(u(r=0.25*radius))
+        self.ops['s1_r0.5']   = s1(r=0.5)
+        self.ops['s1_r0.95']  = s1(r=0.95)
+        self.ops['s1_r1.25']  = s1(r=1.25)
+        self.ops['ur_r0.5']   = radComp(u(r=0.5))
+        self.ops['ur_r0.95']  = radComp(u(r=0.95))
+        self.ops['ur_r1.25']  = radComp(u(r=1.25))
 
         # Logic for local and global slicing
         φbool = np.zeros_like(φg, dtype=bool)
