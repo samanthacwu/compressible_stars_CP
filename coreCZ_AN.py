@@ -199,9 +199,10 @@ else:
         ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
         ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
 
-    grad_s0['g'] = 1e5*zero_to_one(r, 1, width=0.05)
+    grad_s0['g'][2,:,:,:]     = 1e5*zero_to_one(r, 1, width=0.05)
+#    grad_s0_RHS['g'] = 1e1*zero_to_one(r, 1, width=0.05)
     grad_s0['c'][:,:,:,-1] = 0
-    print(grad_s0['g'][2])
+#    grad_s0_RHS['c'][:,:,:,-1] = 0
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
@@ -209,6 +210,11 @@ else:
     L  = np.exp(-(r - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
     dL = -(2*(r - mu)/(2*sig**2)) * L 
     H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*r**2)
+
+    reducer = GlobalArrayReducer(d.comm_cart)
+     
+    global_max_H = reducer.global_max(H_eff['g'])
+    H_eff['g'] /= global_max_H
 
     t_buoy = 1
     grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
@@ -220,9 +226,9 @@ else:
 #plt.plot(rg.flatten(), grad_s0['g'][2,0,0,:].flatten())
 #plt.yscale('log')
 #plt.show()
-
-import sys
-sys.exit()
+#
+#import sys
+#sys.exit()
 
 
 logger.info('buoyancy time is {}'.format(t_buoy))

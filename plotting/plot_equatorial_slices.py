@@ -19,6 +19,8 @@ Options:
     --row_inch=<in>                     Number of inches / row [default: 3]
     --static_cbar                       If flagged, don't evolve the colorbar with time
 
+    --radius=<r>                        Max radius of ball [default: 1]
+
     --fig_type=<fig_type>               Type of figure to plot
                                             1 - T, u
                                             2 - u, ω, ωfluc
@@ -60,4 +62,4 @@ if int(args['--fig_type']) == 1:
 for tup in fnames:
     plotter.add_colormesh(*tup[0], x_basis='φ', y_basis='r', **tup[1])
 
-plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']))
+plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']), r_pad=[0, float(args['--radius'])])
