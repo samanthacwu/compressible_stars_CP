@@ -106,6 +106,7 @@ if args['--mesa_file'] is not None:
 else:
     maxR = 1.5
 radius    = maxR
+NCC_fix = 1/radius
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -240,7 +241,7 @@ divU = div(u)
 divU.store_last = True
 σ = 2*(E - (1/3)*divU*I_matrix)
 σ_post = 2*(E - (1/3)*divU*I_matrix_post)
-momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
+momentum_viscous_terms = div(σ) + NCC_fix*dot(σ, grad_ln_ρ)
 
 #trace_E = trace(E)
 #trace_E.store_last = True
@@ -256,11 +257,11 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
-problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
+problem.add_equation(eq_eval("div(u) + NCC_fix*dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
+problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + NCC_fix*dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
