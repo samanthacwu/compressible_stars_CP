@@ -27,6 +27,8 @@ Options:
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
+
+    --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
 """
 import os
 import time
@@ -46,7 +48,7 @@ from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
 
-from output.averaging    import VolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager
+from output.averaging    import BallShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager
 from output.writing      import ScalarWriter,  RadialProfileWriter, MeridionalSliceWriter, EquatorialSliceWriter, SphericalShellWriter
 
 import logging
@@ -74,6 +76,8 @@ L_dealias = N_dealias = dealias = 1
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--mesa_file'] is None:
     out_dir += '_polytrope'
+if args['--benchmark']:
+    out_dir += '_benchmark'
 out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
@@ -143,8 +147,10 @@ s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
 tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
-tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
-tSt_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype, tensorsig=(c,))
+tS2_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c_S2,))
+tS2_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype, tensorsig=(c_S2,))
+tSu_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
+tSu_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
 tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
@@ -218,16 +224,53 @@ if args['--mesa_file'] is not None:
 
         t_buoy = 1
 else:
-    H_effB['g'] = 1
-    T_NCCB['g'] = 1
-    TB['g']     = 1
-    ρB['g']     = 1
-    H_effS['g'] = 1
-    T_NCCS['g'] = 1
-    TS['g']     = 1
-    ρS['g']     = 1
+    logger.info("Using polytropic initial conditions")
 
+    # "Polytrope" properties
+    n_rho = 2
+    gamma = 5/3
+    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
     t_buoy = 1
+
+    #Gaussian luminosity -- zero at r = 0 and r = 1
+    mu = 0.5
+    sig = 0.15
+
+    T_func  = lambda r_val: 1 + gradT*r_val**2
+    ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
+    L_func  = lambda r_val: np.exp(-(r_val - mu)/(2*sig**2))
+    dL_func = lambda r_val: -(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+    H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
+
+    for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
+        T, T_NCC, ρ, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
+
+        for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
+            f.require_scales(dealias)
+        T['g'] = T_NCC['g'] = T_func(basis_r)
+        ρ['g'] = ρ_func(basis_r)
+        inv_T['g'] = 1/T['g']
+        if np.prod(ln_T['g'].shape) > 0:
+            ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
+            ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
+
+        grad_ln_T['g'][2]  = 2*gradT*basis_r/T['g'][0,0,:]
+        grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
+
+        H_eff['g'] = H_func(basis_r) / H_func(0.1)
+
+        if args['--benchmark']:
+            grad_s0['g'] = 0
+        else:
+            from scipy.special import erf
+            def one_to_zero(x, x0, width=0.1):
+                return (1 - erf( (x - x0)/width))/2
+
+            def zero_to_one(*args, **kwargs):
+                return -(one_to_zero(*args, **kwargs) - 1)
+
+            grad_s0['g'][2,:,:,:]     = 1e5*zero_to_one(basis_r, 1, width=0.05)
+            grad_s0['c'][:,:,:,-1] = 0
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
@@ -275,8 +318,8 @@ VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
 
 
 #Impenetrable, stress-free boundary conditions
-u_perp_bcB_mid = radComp(angComp(EB(r=1), index=1))
-u_perp_bcS_mid = radComp(angComp(ES(r=1), index=1))
+u_perp_bcB_mid = angComp(radComp(grad(uB)(r=1)), index=0)
+u_perp_bcS_mid = angComp(radComp(grad(uS)(r=1)), index=0)
 uS_r_bc        = radComp(uS(r=radius))
 u_perp_bcS_top = radComp(angComp(ES(r=radius), index=1))
 
@@ -284,63 +327,44 @@ u_perp_bcS_top = radComp(angComp(ES(r=radius), index=1))
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 #Only velocity
-problem = problems.IVP([s1B, pB, uB, s1S, pS, uS, tB,  tBt, tS_bot, tS_top,  tSt_bot, tSt_top])
+problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSu_bot, tS2_bot, tSu_top, tS2_top, tB, tS_bot, tS_top])
 
-### Ball energy
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
-### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-## ell == 0
+## ell == 0 momentum
+problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
+### Ball energy
+problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
+### Shell energy
+problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
 
-problem.add_equation(eq_eval("s1B(r=1) = 0"))
+
+#Velocity BCs ell != 0
 problem.add_equation(eq_eval("uB(r=1) - uS(r=1)    = 0"),            condition="nθ != 0")
-problem.add_equation(eq_eval("radComp(grad(s1B)(r=1) - grad(s1S)(r=1))    = 0"))
-problem.add_equation(eq_eval("s1S(r=radius)    = 0"))
-problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("pB(r=1) - pS(r=1)    = 0"),            condition="nθ != 0")
+problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
-problem.add_equation(eq_eval("tBt     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_bot     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_top     = 0"), condition="nθ == 0")
+# velocity BCs ell == 0
+problem.add_equation(eq_eval("tBt     = 0"),                         condition="nθ == 0")
+problem.add_equation(eq_eval("tSu_bot     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("tS2_bot     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("tSu_top     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("tS2_top     = 0"), condition="nθ == 0")
 
+#Entropy BCs
+problem.add_equation(eq_eval("s1B(r=1) - s1S(r=1) = 0"))
+problem.add_equation(eq_eval("radComp(grad(s1B)(r=1) - grad(s1S)(r=1))    = 0"))
+problem.add_equation(eq_eval("s1S(r=radius)    = 0"))
 
-
-#
-#problem = problems.IVP([pB, uB, s1B, pS, uS, s1S, tBt, tB, tSt_bot, tSt_top, tS_bot, tS_top])
-#
-### Ball energy
-#problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
-### Shell energy
-#problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
-### ell == 0
-#problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
-#problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
-#problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
-#problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
-#
-#problem.add_equation(eq_eval("uB(r=1) - uS(r=1)    = 0"),            condition="nθ != 0")
-#problem.add_equation(eq_eval("s1B(r=1) - s1S(r=1)    = 0"))
-#problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("pB(r=1) - pS(r=1)    = 0"),            condition="nθ != 0")
-#problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="nθ != 0")
-#problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
-#problem.add_equation(eq_eval("radComp(grad(s1B)(r=1) - grad(s1S)(r=1))    = 0"))
-#problem.add_equation(eq_eval("s1S(r=radius)    = 0"))
-#problem.add_equation(eq_eval("tBt     = 0"), condition="nθ == 0")
-#problem.add_equation(eq_eval("tSt_bot     = 0"), condition="nθ == 0")
-#problem.add_equation(eq_eval("tSt_top     = 0"), condition="nθ == 0")
 
 logger.info("Problem built")
 # Solver
@@ -406,78 +430,96 @@ for subproblem in solver.subproblems:
             L[:,N8+NS+8] = tau_columns[:,8].reshape((shape[0],1))
     elif dtype == np.float64:
         tau_columns = np.zeros((shape[0], 24))
-        N0, N1, N2, N3, N4 = BC_rows(Nmax - ell//2, 5) *2
-        N4, N5, N6, N7, N8 = N3 + BC_rows(NS-1, 5) * 2
-        print(N1, N2, N3, N4, N6, N7, N8)
+        N0, N1, N2, N3 = BC_rows(Nmax - ell//2, 4) *2
+        N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4) * 2
         if ell != 0:
+            #velocity
             #ball
-            tau_columns[:NL, 0] = (C_ball(Nmax, ell,  0))[:,-1]
-            tau_columns[N1:N1+NL, 2] = (C_ball(Nmax, ell, -1))[:,-1]
-            tau_columns[N2:N2+NL, 4] = (C_ball(Nmax, ell, +1))[:,-1]
-            tau_columns[N3:N3+NL, 6] = (C_ball(Nmax, ell,  0))[:,-1]
-            tau_columns[NL:2*NL, 1] = (C_ball(Nmax, ell,  0))[:,-1]
-            tau_columns[N1+NL:N1+2*NL, 3] = (C_ball(Nmax, ell, -1))[:,-1]
-            tau_columns[N2+NL:N2+2*NL, 5] = (C_ball(Nmax, ell, +1))[:,-1]
-            tau_columns[N3+NL:N3+2*NL, 7] = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N0:N0+NL, 0] = (C_ball(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N1+NL, 1] = (C_ball(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N2+NL, 2] = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N0+NL:N0+2*NL, 3] = (C_ball(Nmax, ell, -1))[:,-1]
+            tau_columns[N1+NL:N1+2*NL, 4] = (C_ball(Nmax, ell, +1))[:,-1]
+            tau_columns[N2+NL:N2+2*NL, 5] = (C_ball(Nmax, ell,  0))[:,-1]
             #shell
-            tau_columns[N4:N4+NS, 8]   = (C_shell(NS))[:,-1]
-            tau_columns[N4:N4+NS, 10]  = (C_shell(NS))[:,-2]
-            tau_columns[N6:N6+NS, 12]  = (C_shell(NS))[:,-1]
-            tau_columns[N6:N6+NS, 14]  = (C_shell(NS))[:,-2]
-            tau_columns[N7:N7+NS, 16]  = (C_shell(NS))[:,-1]
-            tau_columns[N7:N7+NS, 18]  = (C_shell(NS))[:,-2]
+            tau_columns[N4:N4+NS, 6]   = (C_shell(NS))[:,-1]
+            tau_columns[N4:N4+NS, 7]   = (C_shell(NS))[:,-2]
+            tau_columns[N5:N5+NS, 10]  = (C_shell(NS))[:,-1]
+            tau_columns[N5:N5+NS, 11]  = (C_shell(NS))[:,-2]
+            tau_columns[N6:N6+NS, 14]  = (C_shell(NS))[:,-1]
+            tau_columns[N6:N6+NS, 15]  = (C_shell(NS))[:,-2]
+            tau_columns[N4+NS:N4+2*NS, 8]  = (C_shell(NS))[:,-1]
+            tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-2]
+            tau_columns[N5+NS:N5+2*NS, 12] = (C_shell(NS))[:,-1]
+            tau_columns[N5+NS:N5+2*NS, 13] = (C_shell(NS))[:,-2]
+            tau_columns[N6+NS:N6+2*NS, 16] = (C_shell(NS))[:,-1]
+            tau_columns[N6+NS:N6+2*NS, 17] = (C_shell(NS))[:,-2]
+
+            #entropy
+            N8 = N7+2*NL
+            tau_columns[N7:N7+NL, 18]      = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(Nmax, ell,  0))[:,-1]
             tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 22]  = (C_shell(NS))[:,-2]
-            tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-1]
-            tau_columns[N4+NS:N4+2*NS, 11] = (C_shell(NS))[:,-2]
-            tau_columns[N6+NS:N6+2*NS, 13] = (C_shell(NS))[:,-1]
-            tau_columns[N6+NS:N6+2*NS, 15] = (C_shell(NS))[:,-2]
-            tau_columns[N7+NS:N7+2*NS, 17] = (C_shell(NS))[:,-1]
-            tau_columns[N7+NS:N7+2*NS, 19] = (C_shell(NS))[:,-2]
-            tau_columns[N8+NS:N8+2*NS, 21] = (C_shell(NS))[:,-1]
+            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
+            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
             tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
 
             L[:,-24:] = tau_columns
         else:
-            tau_columns[:NL, 0] = (C_ball(Nmax, ell,  0))[:,-1]
-            tau_columns[NL:2*NL, 1] = (C_ball(Nmax, ell,  0))[:,-1]
-            tau_columns[N4:N4+NS, 8]  = (C_shell(NS))[:,-1]
-            tau_columns[N4:N4+NS, 10]  = (C_shell(NS))[:,-2]
-            tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-1]
-            tau_columns[N4+NS:N4+2*NS, 11] = (C_shell(NS))[:,-2]
-            L[:,N8+2*NS+0]  = tau_columns[:,0].reshape((shape[0],1))
-            L[:,N8+2*NS+1]  = tau_columns[:,1].reshape((shape[0],1))
-            L[:,N8+2*NS+8]  = tau_columns[:,8].reshape((shape[0],1))
-            L[:,N8+2*NS+9]  = tau_columns[:,9].reshape((shape[0],1))
-            L[:,N8+2*NS+10] = tau_columns[:,10].reshape((shape[0],1))
-            L[:,N8+2*NS+11] = tau_columns[:,11].reshape((shape[0],1))
-           
+            N8 = N7+2*NL
+            tau_columns[N7:N7+NL, 18]      = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
+            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
+            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
+            tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
+
+            L[:,-6:] = tau_columns[:,-6:].reshape((shape[0], 6))
+          
     L.eliminate_zeros()
     subproblem.L_min = subproblem.left_perm @ L
     if problem.STORE_EXPANDED_MATRICES:
         subproblem.expand_matrices(['M','L'])
 
+## Check condition number and plot matrices
+#import matplotlib.pyplot as plt
+#plt.figure()
+#for subproblem in solver.subproblems:
+#    ell = subproblem.group[1]
+#    M = subproblem.left_perm.T @ subproblem.M_min
+#    L = subproblem.left_perm.T @ subproblem.L_min
+#    plt.imshow(np.log10(np.abs(L.A)))
+#    plt.colorbar()
+#    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+#    plt.clf()
+#    print(subproblem.group, np.linalg.cond((M + L).A))
+
+
 
 
 # Analysis Setup
-vol_averager       = VolumeAverager(bB, d, pB, dealias=dealias, radius=1)
+vol_averager       = BallShellVolumeAverager(bB, bS, d, pB, pS, dealias=dealias, ball_radius=1, shell_radius=radius)
 radial_averager    = PhiThetaAverager(bB, d, dealias=dealias)
 azimuthal_averager = PhiAverager(bB, d, dealias=dealias)
 equator_slicer     = EquatorSlicer(bB, d, dealias=dealias)
 
-def vol_avgmag_scalar(scalar_field, squared=False):
+def vol_avgmag_scalar(scalar_ball_field, scalar_shell_field, squared=False):
     if squared:
-        f = scalar_field
+        fB = scalar_ball_field
+        fS = scalar_shell_field
     else:
-        f = scalar_field**2
-    return vol_averager(np.sqrt(f))
+        fB = scalar_ball_field**2
+        fS = scalar_shell_field**2
+    return vol_averager(np.sqrt(fB), np.sqrt(fS))
 
-def vol_rms_scalar(scalar_field, squared=False):
+def vol_rms_scalar(scalar_ball_field, scalar_shell_field, squared=False):
     if squared:
-        f = scalar_field
+        fB = scalar_ball_field
+        fS = scalar_shell_field
     else:
-        f = scalar_field**2
-    return np.sqrt(vol_averager(f))
+        fB = scalar_ball_field**2
+        fS = scalar_shell_field**2
+    return np.sqrt(vol_averager(fB, fS))
 
 
 class AnelasticSW(ScalarWriter):
@@ -485,22 +527,23 @@ class AnelasticSW(ScalarWriter):
     def __init__(self, *args, **kwargs):
         super(AnelasticSW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
-        self.ops['u·u'] = dot(uB, uB)
+        self.ops['uB·uB'] = dot(uB, uB)
+        self.ops['uS·uS'] = dot(uS, uS)
         self.fields = OrderedDict()
 
     def evaluate_tasks(self):
-        for f in [s1B, uB, ρB, TB]:
+        for f in [uB, s1B, s1S, uS]:
             f.require_scales(dealias)
         for k, op in self.ops.items():
             f = op.evaluate()
             f.require_scales(dealias)
             self.fields[k] = f['g']
         #KE & Reynolds
-        self.tasks['TE']       = vol_averager(ρB['g']*TB['g']*s1B['g'])
-        self.tasks['s1']       = vol_averager(s1B['g'])
-        self.tasks['KE']       = vol_averager(ρB['g']*self.fields['u·u']/2)
-        self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['u·u'], squared=True)
-        self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['u·u'], squared=True)
+        self.tasks['TE']       = vol_averager(ρB['g']*TB['g']*s1B['g'], ρS['g']*TS['g']*s1S['g'])
+        self.tasks['s1']       = vol_averager(s1B['g'], s1S['g'])
+        self.tasks['KE']       = vol_averager(ρB['g']*self.fields['uB·uB']/2, ρS['g']*self.fields['uS·uS']/2)
+        self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
+        self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
 
 class AnelasticRPW(RadialProfileWriter):
 
@@ -690,18 +733,24 @@ if args['--restart'] is not None:
         u.require_scales(dealias)
     dt = CFLB.calculate_dt(u, dt)
 else:
-    # Initial conditions
-    A0   = float(1e-6)
-    seed = 42 + d.comm_cart.rank
-    rand = np.random.RandomState(seed=seed)
-    filter_scale = 0.25
+    if args['--benchmark']:
+        #Marti benchmark-like ICs
+        A0 = 1e-3
+        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/radius)**3*(1-(rB/radius)**2)*(np.cos(3*φB)+np.sin(3*φB))*np.sin(θB)**3
+        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/radius)**3*(1-(rS/radius)**2)*(np.cos(3*φS)+np.sin(3*φS))*np.sin(θS)**3
+    else:
+        # Initial conditions
+        A0   = float(1e-6)
+        seed = 42 + d.comm_cart.rank
+        rand = np.random.RandomState(seed=seed)
+        filter_scale = 0.25
 
-    # Generate noise & filter it
-    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)
-    s1B.require_scales(filter_scale)
-    s1B['c']
-    s1B['g']
-    s1B.require_scales(dealias)
+        # Generate noise & filter it
+        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)
+        s1B.require_scales(filter_scale)
+        s1B['c']
+        s1B['g']
+        s1B.require_scales(dealias)
 
 
 
@@ -720,8 +769,8 @@ try:
         for writer in writers:
             writer.process(solver)
         solver.step(dt)
-        if solver.iteration % CFLB.cadence == 0:
-            dt = CFLB.calculate_dt(uB, dt)
+#        if solver.iteration % CFLB.cadence == 0:
+#            dt = CFLB.calculate_dt(uB, dt)
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
