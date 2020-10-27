@@ -258,8 +258,10 @@ class BallShellVolumeAverager:
         self.ball_vol_test = np.sum(self.ball_weight_r*self.ball_weight_θ+0*dummy_ball_field['g'])*np.pi/(self.Lmax+1)/self.dealias
         self.ball_vol_test = self.reducer.reduce_scalar(self.ball_vol_test, MPI.SUM)
         self.ball_vol_correction = self.ball_volume/self.ball_vol_test
+
+        φS, θS, rS = shell_basis.local_grids((self.dealias,self.dealias,self.dealias))
         self.shell_weight_θ = shell_basis.local_colatitude_weights(self.dealias)
-        self.shell_weight_r = shell_basis.radial_basis.local_weights(self.dealias)
+        self.shell_weight_r = shell_basis.radial_basis.local_weights(self.dealias)*rS**2
         self.shell_vol_test = np.sum(self.shell_weight_r*self.shell_weight_θ+0*dummy_shell_field['g'])*np.pi/(self.Lmax+1)/self.dealias
         self.shell_vol_test = self.reducer.reduce_scalar(self.shell_vol_test, MPI.SUM)
         self.shell_vol_correction = self.shell_volume/self.shell_vol_test
@@ -278,55 +280,3 @@ class BallShellVolumeAverager:
         avg /= self.volume
         return self.reducer.reduce_scalar(avg, MPI.SUM)
 
-class EquatorSlicer:
-    """
-    A class which slices out an array at the equator.
-    """
-
-    def __init__(self, basis, distributor, dealias=1):
-        """
-        Initialize the slice plotter.
-
-        # Arguments
-            basis (BallBasis) :
-                The basis on which the sphere is being solved.
-            distributor (Distributor) :
-                The Dedalus distributor object for the simulation
-        """
-        self.basis = basis
-        self.distributor = distributor
-        self.rank = self.distributor.comm_cart.rank
-        self.dealias = dealias
-
-        self.θg    = self.basis.global_grid_colatitude(self.dealias)
-        self.θl    = self.basis.local_grid_colatitude(self.dealias)
-        self.nφ    = np.prod(self.basis.global_grid_azimuth(self.dealias).shape)
-        self.nr    = np.prod(self.basis.global_grid_radius(self.dealias).shape)
-        self.Lmax  = basis.shape[1] - 1
-        self.Nmax  = basis.shape[-1] - 1
-        θ_target   = self.θg[0,(self.Lmax+1)//2,0]
-        if np.prod(self.θl.shape) != 0:
-            self.i_θ   = np.argmin(np.abs(self.θl[0,:,0] - θ_target))
-            tplot             = θ_target in self.θl
-        else:
-            self.i_θ = None
-            tplot = False
-
-        self.include_data = self.distributor.comm_cart.gather(tplot)
-
-    def __call__(self, arr):
-        """ Communicate local plot data globally """
-        if self.i_θ is None:
-            eq_slice = np.zeros_like(arr)
-        else:
-            eq_slice = arr[:,self.i_θ,:].real 
-        eq_slice = self.distributor.comm_cart.gather(eq_slice, root=0)
-        with Sync():
-            data = []
-            if self.rank == 0:
-                for s, i in zip(eq_slice, self.include_data):
-                    if i: data.append(s)
-                data = np.array(data)
-                return np.expand_dims(np.transpose(data, axes=(1,0,2)).reshape((self.nφ, self.nr)), axis=1)
-            else:
-                return np.nan
