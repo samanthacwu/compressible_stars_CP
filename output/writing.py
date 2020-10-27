@@ -138,8 +138,8 @@ class RadialProfileWriter(FileWriter):
 
 class EquatorialSliceWriter(FileWriter):
     
-    def __init__(self, *args, **kwargs):
-        super(EquatorialSliceWriter, self).__init__(*args, filename='eq_slice', **kwargs)
+    def __init__(self, *args, filename='eq_slice', **kwargs):
+        super(EquatorialSliceWriter, self).__init__(*args, filename=filename, **kwargs)
         r_shape = self.basis.global_grid_radius(self.dealias).shape
         φ_shape = self.basis.global_grid_azimuth(self.dealias).shape
         self.shape = [np.max((rl, φl)) for rl, φl in zip(r_shape, φ_shape)]
