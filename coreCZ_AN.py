@@ -11,7 +11,7 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
-    --N=<Nmax>           The value of Nmax   [default: 15]
+    --N=<Nmax>           The value of Nmax   [default: 63]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -27,6 +27,8 @@ Options:
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
+
+    --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
 """
 import os
 import time
@@ -74,6 +76,8 @@ L_dealias = N_dealias = dealias = 1
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--mesa_file'] is None:
     out_dir += '_polytrope'
+if args['--benchmark']:
+    out_dir += '_benchmark'
 out_dir += '_Re{}_{}x{}'.format(args['--Re'], args['--L'], args['--N'])
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
@@ -104,9 +108,8 @@ if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
         maxR = f['maxR'][()]
 else:
-    maxR = 1.5
+    maxR = 2
 radius    = maxR
-NCC_fix = 1/radius
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -178,58 +181,51 @@ if args['--mesa_file'] is not None:
         t_buoy = 1
 
 else:
-#    import matplotlib.pyplot as plt
     logger.info("Using polytropic initial conditions")
+
+    # "Polytrope" properties
+    n_rho = 2
+    gamma = 5/3
+    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
+
+    #Gaussian luminosity -- zero at r = 0 and r = 1
+    mu = 0.5
+    sig = 0.1
+
+    T_func  = lambda r_val: 1 + gradT*r_val**2
+    ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
+    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
+    dL_func = lambda r_val: -(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+    H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
+
+    for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
+        f.require_scales(dealias)
+    T['g'] = T_NCC['g'] = T_func(r)
+    ρ['g'] = ρ_func(r)
+    inv_T['g'] = 1/T['g']
+    if np.prod(ln_T['g'].shape) > 0:
+        ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
+        ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
+
+    grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
+    grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
+
+    H_eff['g'] = H_func(r) / H_func(0.4)
+    t_buoy = 1
+
     from scipy.special import erf
     def one_to_zero(x, x0, width=0.1):
         return (1 - erf( (x - x0)/width))/2
 
     def zero_to_one(*args, **kwargs):
         return -(one_to_zero(*args, **kwargs) - 1)
-    n_rho = 2
-    gamma = 5/3
-    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
 
-    for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
-        f.require_scales(dealias)
-    T['g'] = T_NCC['g'] = 1 + gradT*r**2
-    ρ['g'] = T['g']**(1/(gamma-1))
-    inv_T['g'] = 1/T['g']
-    if np.prod(ln_T['g'].shape) > 0:
-        ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
-        ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
-
-    grad_s0['g'][2,:,:,:]     = 1e5*zero_to_one(r, 1, width=0.05)
-#    grad_s0_RHS['g'] = 1e1*zero_to_one(r, 1, width=0.05)
-    grad_s0['c'][:,:,:,-1] = 0
-#    grad_s0_RHS['c'][:,:,:,-1] = 0
-
-    #Gaussian luminosity -- zero at r = 0 and r = 1
-    mu = 0.5
-    sig = 0.15
-    L  = np.exp(-(r - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
-    dL = -(2*(r - mu)/(2*sig**2)) * L 
-    H_eff['g'] = dL / ρ['g'] / T['g'] / (4*np.pi*r**2)
-
-    reducer = GlobalArrayReducer(d.comm_cart)
-     
-    global_max_H = reducer.global_max(H_eff['g'])
-    H_eff['g'] /= global_max_H
-
-    t_buoy = 1
-    grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
-    grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
+    grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(r, 1, width=0.05)
+#    grad_s0['c'][:,:,:,-1] = 0
 
 #import matplotlib.pyplot as plt
-##plt.plot(rg.flatten(), grad_ln_T['g'][2,0,0,:].flatten())
-##plt.plot(rg.flatten(), grad_ln_ρ['g'][2,0,0,:].flatten())
-#plt.plot(rg.flatten(), grad_s0['g'][2,0,0,:].flatten())
-#plt.yscale('log')
+#plt.plot(r.flatten(), H_eff['g'][0,0,:])
 #plt.show()
-#
-#import sys
-#sys.exit()
-
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 max_dt = 0.5*t_buoy
@@ -253,7 +249,7 @@ divU = div(u)
 divU.store_last = True
 σ = 2*(E - (1/3)*divU*I_matrix)
 σ_post = 2*(E - (1/3)*divU*I_matrix_post)
-momentum_viscous_terms = div(σ) + NCC_fix*dot(σ, grad_ln_ρ)
+momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
 #trace_E = trace(E)
 #trace_E.store_last = True
@@ -269,11 +265,11 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
-problem.add_equation(eq_eval("div(u) + NCC_fix*dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
+problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + NCC_fix*dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
+problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
@@ -334,6 +330,22 @@ for subproblem in solver.subproblems:
     subproblem.L_min = subproblem.left_perm @ L
     if problem.STORE_EXPANDED_MATRICES:
         subproblem.expand_matrices(['M','L'])
+
+
+## Check condition number and plot matrices
+#import matplotlib.pyplot as plt
+#plt.figure()
+#for subproblem in solver.subproblems:
+#    ell = subproblem.group[1]
+#    M = subproblem.left_perm.T @ subproblem.M_min
+#    L = subproblem.left_perm.T @ subproblem.L_min
+#    plt.imshow(np.log10(np.abs(L.A)))
+#    plt.colorbar()
+#    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+#    plt.clf()
+#    print(subproblem.group, np.linalg.cond((M + L).A))
+
+
 
 # Analysis Setup
 vol_averager       = VolumeAverager(b, d, p, dealias=dealias, radius=radius)
@@ -571,18 +583,23 @@ if args['--restart'] is not None:
         u.require_scales(dealias)
     dt = CFL.calculate_dt(u, dt)
 else:
-    # Initial conditions
-    A0   = float(1e-6)
-    seed = 42 + d.comm_cart.rank
-    rand = np.random.RandomState(seed=seed)
-    filter_scale = 0.25
+    if args['--benchmark']:
+        #Marti benchmark-like ICs
+        A0 = 1e-3
+        s1['g'] = A0*np.sqrt(35/np.pi)*(r/radius)**3*(1-(r/radius)**2)*(np.cos(3*φ)+np.sin(3*φ))*np.sin(θ)**3
+    else:
+        # Initial conditions
+        A0   = float(1e-6)
+        seed = 42 + d.comm_cart.rank
+        rand = np.random.RandomState(seed=seed)
+        filter_scale = 0.25
 
-    # Generate noise & filter it
-    s1['g'] = A0*rand.standard_normal(s1['g'].shape)
-    s1.require_scales(filter_scale)
-    s1['c']
-    s1['g']
-    s1.require_scales(dealias)
+        # Generate noise & filter it
+        s1['g'] = A0*rand.standard_normal(s1['g'].shape)
+        s1.require_scales(filter_scale)
+        s1['c']
+        s1['g']
+        s1.require_scales(dealias)
 
 
 
