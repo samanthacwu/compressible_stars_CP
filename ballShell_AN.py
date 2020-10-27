@@ -12,7 +12,7 @@ Options:
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
     --NB=<Nmax>          The ball value of Nmax   [default:  47]
-    --NS=<Nmax>          The shell value of Nmax   [default: 15]
+    --NS=<Nmax>          The shell value of Nmax   [default: 23]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -108,21 +108,21 @@ Pe  = Pr*Re
 
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
-        maxR = f['maxR'][()]
+        r_inner = f['r_inner'][()]
+        r_outer = f['r_outer'][()]
 else:
-    maxR = 2
-    r_inner = 0.5
-radius    = maxR
+    r_inner = 1.2
+    r_outer = 2
 
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
 c_S2 = c.S2coordsys 
 d    = distributor.Distributor((c,), mesh=mesh)
 bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, radius), dtype=dtype)
+bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
 b_mid = bB.S2_basis(radius=r_inner)
 b_midS = bS.S2_basis(radius=r_inner)
-b_top = bS.S2_basis(radius=radius)
+b_top = bS.S2_basis(radius=r_outer)
 φB,  θB,  rB  = bB.local_grids((dealias, dealias, dealias))
 φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
 φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
@@ -234,7 +234,7 @@ else:
     # "Polytrope" properties
     n_rho = 2
     gamma = 5/3
-    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
+    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/r_outer**2
     t_buoy = 1
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
@@ -280,7 +280,10 @@ else:
 #plt.show()
 
 logger.info('buoyancy time is {}'.format(t_buoy))
-max_dt = 0.5*t_buoy
+if args['--benchmark']:
+    max_dt = 0.035*t_buoy
+else:
+    max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 #for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
@@ -325,12 +328,12 @@ VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
 
 
 #Impenetrable, stress-free boundary conditions
-u_r_bcB_mid    = -pB(r=r_inner) #+ radComp(radComp(grad(uB)(r=r_inner)))/Re
-u_r_bcS_mid    = -pS(r=r_inner) #+ radComp(radComp(grad(uS)(r=r_inner)))/Re
-u_perp_bcB_mid = angComp(radComp(grad(uB)(r=r_inner)), index=0)
-u_perp_bcS_mid = angComp(radComp(grad(uS)(r=r_inner)), index=0)
-uS_r_bc        = radComp(uS(r=radius))
-u_perp_bcS_top = radComp(angComp(ES(r=radius), index=1))
+u_r_bcB_mid    = pB(r=r_inner)
+u_r_bcS_mid    = pS(r=r_inner)
+u_perp_bcB_mid = angComp(radComp(σB(r=r_inner)), index=0)
+u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
+uS_r_bc        = radComp(uS(r=r_outer))
+u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
 
 
 # Problem
@@ -374,7 +377,7 @@ problem.add_equation(eq_eval("tS2_top     = 0"), condition="nθ == 0")
 #Entropy BCs
 problem.add_equation(eq_eval("s1B(r=r_inner) - s1S(r=r_inner) = 0"))
 problem.add_equation(eq_eval("radComp(grad(s1B)(r=r_inner)) - radComp(grad(s1S)(r=r_inner))    = 0"))
-problem.add_equation(eq_eval("s1S(r=radius)    = 0"))
+problem.add_equation(eq_eval("s1S(r=r_outer)    = 0"))
 
 
 logger.info("Problem built")
@@ -509,7 +512,7 @@ for subproblem in solver.subproblems:
 
 
 # Analysis Setup
-vol_averager       = BallShellVolumeAverager(bB, bS, d, pB, pS, dealias=dealias, ball_radius=r_inner, shell_radius=radius)
+vol_averager       = BallShellVolumeAverager(bB, bS, d, pB, pS, dealias=dealias, ball_radius=r_inner, shell_radius=r_outer)
 ball_radial_averager    = PhiThetaAverager(bB, d, dealias=dealias)
 ball_azimuthal_averager = PhiAverager(bB, d, dealias=dealias)
 ball_equator_slicer     = EquatorSlicer(bB, d, dealias=dealias)
@@ -767,8 +770,8 @@ else:
     if args['--benchmark']:
         #Marti benchmark-like ICs
         A0 = 1e-3
-        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/radius)**3*(1-(rB/radius)**2)*(np.cos(3*φB)+np.sin(3*φB))*np.sin(θB)**3
-        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/radius)**3*(1-(rS/radius)**2)*(np.cos(3*φS)+np.sin(3*φS))*np.sin(θS)**3
+        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/r_outer)**3*(1-(rB/r_outer)**2)*(np.cos(3*φB)+np.sin(3*φB))*np.sin(θB)**3
+        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(3*φS)+np.sin(3*φS))*np.sin(θS)**3
     else:
         # Initial conditions
         A0   = float(1e-6)
@@ -811,8 +814,10 @@ except:
     raise
 finally:
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
-    fcheckpoint.add_task(s1B, name='s1', scales=1, layout='c')
-    fcheckpoint.add_task(uB, name='u', scales=1, layout='c')
+    fcheckpoint.add_task(s1B, name='s1B', scales=1, layout='c')
+    fcheckpoint.add_task(uB, name='uB', scales=1, layout='c')
+    fcheckpoint.add_task(s1S, name='s1S', scales=1, layout='c')
+    fcheckpoint.add_task(uS, name='uS', scales=1, layout='c')
     solver.step(1e-5*dt)
 
     end_time = time.time()
