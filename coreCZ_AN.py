@@ -11,7 +11,7 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
-    --N=<Nmax>           The value of Nmax   [default: 63]
+    --N=<Nmax>           The value of Nmax   [default: 47]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -106,10 +106,9 @@ Pe  = Pr*Re
 
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
-        maxR = f['maxR'][()]
+        radius = f['maxR'][()]
 else:
-    maxR = 2
-radius    = maxR
+    radius = 2
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -194,8 +193,8 @@ else:
 
     T_func  = lambda r_val: 1 + gradT*r_val**2
     ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
-    dL_func = lambda r_val: -(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+#    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
+    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))#-(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
     H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
 
     for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
@@ -210,7 +209,7 @@ else:
     grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
     grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
 
-    H_eff['g'] = H_func(r) / H_func(0.4)
+    H_eff['g'] = H_func(r)# / H_func(0.4)
     t_buoy = 1
 
     from scipy.special import erf
@@ -228,7 +227,10 @@ else:
 #plt.show()
 
 logger.info('buoyancy time is {}'.format(t_buoy))
-max_dt = 0.5*t_buoy
+if args['--benchmark']:
+    max_dt = 0.03*t_buoy
+else:
+    max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
@@ -586,7 +588,7 @@ else:
     if args['--benchmark']:
         #Marti benchmark-like ICs
         A0 = 1e-3
-        s1['g'] = A0*np.sqrt(35/np.pi)*(r/radius)**3*(1-(r/radius)**2)*(np.cos(3*φ)+np.sin(3*φ))*np.sin(θ)**3
+        s1['g'] = A0*np.sqrt(35/np.pi)*(r/radius)**3*(1-(r/radius)**2)*(np.cos(φ)+np.sin(φ))*np.sin(θ)**3
     else:
         # Initial conditions
         A0   = float(1e-6)

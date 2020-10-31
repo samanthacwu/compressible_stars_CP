@@ -90,10 +90,32 @@ N2 = p.brunt_N2[::-1] / u.s**2
 Luminosity = p.luminosity[::-1] * u.L_sun
 Luminosity = Luminosity.to('erg/s')
 L_conv = p.conv_L_div_L[::-1]*Luminosity
+csound = p.csound[::-1] * u.cm / u.s
 
 cgs_G = constants.G.to('cm^3/(g*s^2)')
 g = cgs_G*mass/r**2
 gamma = cp/cv
+
+#Thermo gradients
+chiRho  = p.chiRho[::-1]
+chiT    = p.chiT[::-1]
+nablaT =  p.gradT[::-1]
+nablaT_ad = p.grada[::-1]
+dlogPdr = -rho*g/P
+gamma1  = dlogPdr/(-g/csound**2)
+dlogrhodr = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
+dlogTdr   = dlogPdr*(nablaT)
+N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
+grad_s = cp*N2/g #includes composition terms
+
+
+# Heating
+H = rho * eps
+C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
+H_eff = H - C
+
+H0 = H_eff[0]
+H_NCC = ((H_eff)  / H0)
 
 
 #Find edge of core cz
@@ -102,6 +124,7 @@ core_cz_bound = 0.995*mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transi
 bound_ind = np.argmin(np.abs(mass - core_cz_bound))
 
 
+#Nondimensionalization
 L  = r[bound_ind]
 g0 = g[bound_ind] 
 rho0 = rho[0]
@@ -109,56 +132,73 @@ P0 = P[0]
 T0 = T[0]
 cp0 = cp[0]
 gamma0 = gamma[0]
+tau = (H0/L**2/rho0)**(-1/3)
+tau = tau.cgs
+print('one time unit is {:.2e}'.format(tau))
+u_H = L/tau
+maxR = 1
 
-r_cz = r[cz_bool]/L
+Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
+s_c = Ma2*(gamma0-1)*cp0
+print(Ma2, s_c)
+
+
+
+
+
+sim_bool = cz_bool
+
+r_sim = r[sim_bool]/L
+
+c = coords.SphericalCoordinates('φ', 'θ', 'r')
+d = distributor.Distributor((c,), mesh=None)
+b = basis.BallBasis(c, (1, 1, Nmax+1), radius=maxR, dtype=np.float64, dealias=(1, 1, 1))
+φg, θg, rg = b.global_grids((1, 1, 1))
+
+grad = lambda A: operators.Gradient(A, c)
+dot  = lambda A, B: arithmetic.DotProduct(A, B)
+
 
 
 r_vec  = field.Field(dist=d, bases=(b,), dtype=np.float64, tensorsig=(c,))
 r_vec['g'][2,:] = 1
 
+
 ### Log Density
-N = 10
+N = 16
 ln_rho_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-ln_rho = np.log(rho/rho0)[cz_bool]
-deg = 10
-ln_rho_fit = Pfit.fit(r_cz, ln_rho, deg)(r_cz)
-ln_rho_interp = np.interp(rg, r_cz, ln_rho_fit)
-ln_rho_interp2 = np.interp(rg, r_cz, ln_rho)
+ln_rho = np.log(rho/rho0)[sim_bool]
+ln_rho_interp = np.interp(rg, r_sim, ln_rho)
 ln_rho_field['g'] = ln_rho_interp
 ln_rho_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), (-1)+ln_rho_interp2.flatten(), (-1)+ln_rho_field['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rho", out_dir=out_dir)
-ln_rho_field.require_scales(1)
+plot_ncc_figure(rg.flatten(), (-1)+ln_rho_interp.flatten(), (-1)+ln_rho_field['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rho", out_dir=out_dir)
 
-grad_ln_rho_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-grad_ln_rho = np.gradient(ln_rho,r_cz)
-grad_ln_rho_interp = np.interp(rg, r_cz, grad_ln_rho)
-grad_ln_rho_field['g'] = dot(r_vec, grad(ln_rho_field)).evaluate()['g']
-plot_ncc_figure(rg.flatten(), grad_ln_rho_interp.flatten(), grad_ln_rho_field['g'].flatten(), N, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir)
+grad_ln_rho_field  = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.float64)
+grad_ln_rho_interp = np.interp(rg, r_sim, dlogrhodr[sim_bool]*L)
+grad_ln_rho_field['g'][2] = grad_ln_rho_interp
+grad_ln_rho_field['c'][:,:,:,N:] = 0
+plot_ncc_figure(rg.flatten(), grad_ln_rho_interp.flatten(), grad_ln_rho_field['g'][2].flatten(), N, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir)
 
 ### log (temp)
-N = 30
+N = 16
 ln_T_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-ln_T = np.log((T)[cz_bool]/T0)
-deg = 10
-ln_T_fit = Pfit.fit(r_cz, ln_T, deg)(r_cz)
-ln_T_interp = np.interp(rg, r_cz, ln_T_fit)
-ln_T_interp2 = np.interp(rg, r_cz, ln_T)
+ln_T = np.log((T)[sim_bool]/T0)
+ln_T_interp = np.interp(rg, r_sim, ln_T)
 ln_T_field['g'] = ln_T_interp
 ln_T_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), (-1)+ln_T_interp2.flatten(), (-1)+ln_T_field['g'].flatten(), N, ylabel=r"$\ln(T) - 1$", fig_name="ln_T", out_dir=out_dir)
+plot_ncc_figure(rg.flatten(), (-1)+ln_T_interp.flatten(), (-1)+ln_T_field['g'].flatten(), N, ylabel=r"$\ln(T) - 1$", fig_name="ln_T", out_dir=out_dir)
 
-grad_ln_T_field  = field.Field(dist=d, bases=(b,), dtype=np.float64)
-grad_ln_T = np.gradient(ln_T,r_cz)
-grad_ln_T_interp = np.interp(rg, r_cz, grad_ln_T)
-grad_ln_T_field['g'] = dot(r_vec, grad(ln_T_field)).evaluate()['g']
-grad_ln_T_field['c'][:, :, N:] = 0
-plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_T", out_dir=out_dir)
+grad_ln_T_field  = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.float64)
+grad_ln_T_interp = np.interp(rg, r_sim, dlogTdr[sim_bool]*L)
+grad_ln_T_field['g'][2] = grad_ln_T_interp 
+grad_ln_T_field['c'][:, :, :, N:] = 0
+plot_ncc_figure(rg.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_field['g'][2].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_T", out_dir=out_dir)
 
 ### Temperature
-N = 5
+N = 10
 T_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
-T_nondim = (T)[cz_bool] / T0
-T_interp = np.interp(rg, r_cz, T_nondim)
+T_nondim = (T)[sim_bool] / T0
+T_interp = np.interp(rg, r_sim, T_nondim)
 T_field['g'] = T_interp
 T_field['c'][:, :, N:] = 0
 plot_ncc_figure(rg.flatten(), T_interp.flatten(), T_field['g'].flatten(), N, ylabel=r"$T/T_c$", fig_name="T", out_dir=out_dir)
@@ -166,29 +206,25 @@ plot_ncc_figure(rg.flatten(), T_interp.flatten(), T_field['g'].flatten(), N, yla
 
 
 ### effective heating / (rho * T)
-N = 40
-H = rho * eps
-C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
-H_eff = H - C
-
-H0 = H_eff[0]
-H_NCC = ((H_eff)  / H0)[cz_bool]
+N = Nmax+1
 H_field = field.Field(dist=d, bases=(b,), dtype=np.float64)
-H_interp = np.interp(rg, r_cz, H_NCC)
-H_interp_plot = np.interp(rg, r_cz, H_NCC * (rho0*T0/rho/T)[cz_bool])
+H_interp = np.interp(rg, r_sim, H_NCC[sim_bool])
+H_interp_plot = np.interp(rg, r_sim, (H_NCC * rho0*T0/rho/T)[sim_bool])
 H_field['g'] = H_interp / T_field['g'] / np.exp(ln_rho_field['g'])
 H_field['c'][:, :, N:] = 0
 plot_ncc_figure(rg.flatten(), H_interp_plot.flatten(), H_field['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_eff", out_dir=out_dir, zero_line=True)
 
 
-tau = (H0/L**2/rho0)**(-1/3)
-tau = tau.cgs
-print('one time unit is {:.2e}'.format(tau))
-#pomegac = T0*R/mu[0]
-u = L/tau
+from scipy.special import erf
+def one_to_zero(x, x0, width=0.1):
+    return (1 - erf( (x - x0)/width))/2
 
-Ma2 = u**2 / ((gamma0-1)*cp0*T0)
-print(Ma2)
+def zero_to_one(*args, **kwargs):
+    return -(one_to_zero(*args, **kwargs) - 1)
+
+N = Nmax + 1
+grad_s_field  = field.Field(dist=d, bases=(b,), dtype=np.float64, tensorsig=(c,))
+grad_s_field['g'] = 0
 
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['r']     = rg
@@ -196,7 +232,11 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['H_eff'] = H_field['g']
     f['ln_ρ']  = ln_rho_field['g'] 
     f['ln_T']  = ln_T_field['g']
+    f['grad_ln_T']  = grad_ln_T_field['g']
+    f['grad_ln_ρ']  = grad_ln_rho_field['g']
+    f['grad_s0']    = grad_s_field['g']
 
+    f['maxR']   = maxR
     f['L']   = L
     f['g0']  = g0
     f['ρ0']  = rho0
@@ -206,9 +246,3 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['tau'] = tau 
     f['Ma2'] = tau 
 
-#plt.figure()
-#Ta = np.exp(ln_T_field['g'])
-#cpa = (1/inv_T_field['g'])/Ta
-#plt.plot(r_cz, cp[cz_bool]/cp0)
-#plt.plot(rg.flatten(), cpa.flatten())
-#plt.show()

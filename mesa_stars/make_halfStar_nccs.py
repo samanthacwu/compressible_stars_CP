@@ -102,7 +102,7 @@ gamma = cp/cv
 #Thermo gradients
 chiRho  = p.chiRho[::-1]
 chiT    = p.chiT[::-1]
-nablaT =  p.gradT[::-1]
+nablaT    =  p.gradT[::-1]
 nablaT_ad = p.grada[::-1]
 dlogPdr = -rho*g/P
 gamma1  = dlogPdr/(-g/csound**2)
@@ -191,10 +191,10 @@ plt.savefig('{:s}/{:s}_brunt_and_Pe_fig.png'.format(out_dir, filename.split('.da
 Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
 s_c = Ma2*(gamma0-1)*cp0
 
-#maxR = float(1.1)
-#sim_bool = r <= 1.1*L#1.05*halfStar_r
-maxR = float(halfStar_r/L)
-sim_bool = r <= halfStar_r
+maxR = float(1.1)
+sim_bool = r <= 1.1*L
+#maxR = float(halfStar_r/L)
+#sim_bool = r <= halfStar_r
 
 r_sim = r[sim_bool]/L
 
@@ -263,7 +263,7 @@ def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
 
 if Nmax == 127:
-    width = 0.03
+    width = 0.045
     N = 32
     N_after = -1
     center =  0.99*(L_CZ/L).value
@@ -294,7 +294,7 @@ plot_ncc_figure(rg.flatten(), H_interp_plot.flatten(), H_field['g'].flatten(), N
 grad_s_field  = field.Field(dist=d, bases=(b,), dtype=np.float64, tensorsig=(c,))
 grad_s_interp = np.interp(rg, r_sim, grad_s[sim_bool]*L/s_c)
 grad_s_base = np.copy(grad_s_interp)
-flat_window = (rg.flatten() > 0.95)*(rg.flatten() < 1.015)
+flat_window = (rg.flatten() > 0.95*L_CZ/L)*(rg.flatten() < 1.015*L_CZ/L)
 arg_flat     = np.argmin(np.abs(grad_s_interp.flatten() - grad_s_interp.flatten()[flat_window].max()))
 grad_s_base[:,:,:arg_flat] = grad_s_interp[:,:,arg_flat]# grad_s_interp.flatten() > 0].flatten()[0]
 #grad_s_base[:,:,grad_s_interp.flatten() <= 0] = grad_s_interp[:,:, grad_s_interp.flatten() > 0].flatten()[0]
