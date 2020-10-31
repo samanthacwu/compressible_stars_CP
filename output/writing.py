@@ -126,8 +126,8 @@ class ScalarWriter(FileWriter):
 
 class RadialProfileWriter(FileWriter):
 
-    def __init__(self, *args, **kwargs):
-        super(RadialProfileWriter, self).__init__(*args, filename='profiles', **kwargs)
+    def __init__(self, *args, filename='profiles', **kwargs):
+        super(RadialProfileWriter, self).__init__(*args, filename=filename, **kwargs)
         self.shape = self.basis.global_grid_radius(self.dealias).shape
 
     def create_file(self):
