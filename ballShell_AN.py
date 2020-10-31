@@ -16,7 +16,7 @@ Options:
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
-    --safety=<s>         Timestep CFL safety factor [default: 0.4]
+    --safety=<s>         Timestep CFL safety factor [default: 0.3]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
     --A0=<A>             Amplitude of initial noise [default: 1e-6]
@@ -28,6 +28,7 @@ Options:
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
+    --restart_Re=<Re>    Re of the run being restarted from
 
     --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
 """
@@ -57,6 +58,15 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
+
+
+from scipy.special import erf
+def one_to_zero(x, x0, width=0.1):
+    return (1 - erf( (x - x0)/width))/2
+
+def zero_to_one(*args, **kwargs):
+    return -(one_to_zero(*args, **kwargs) - 1)
+
 
 args   = docopt(__doc__)
 if args['<config>'] is not None: 
@@ -113,6 +123,7 @@ if args['--mesa_file'] is not None:
 else:
     r_inner = 1.1
     r_outer = 2
+logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -266,15 +277,9 @@ else:
 
         H_eff['g'] = H_func(basis_r)# / H_func(0.4)
 
-        from scipy.special import erf
-        def one_to_zero(x, x0, width=0.1):
-            return (1 - erf( (x - x0)/width))/2
-
-        def zero_to_one(*args, **kwargs):
-            return -(one_to_zero(*args, **kwargs) - 1)
-
         grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(basis_r, 1, width=0.05)
 #        grad_s0['c'][:,:,:,-1] = 0
+
 
 #import matplotlib.pyplot as plt
 #plt.plot(rB.flatten(), grad_ln_ρB['g'][2][0,0,:])
@@ -285,7 +290,7 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 if args['--benchmark']:
     max_dt = 0.03*t_buoy
 else:
-    max_dt = 0.5*t_buoy
+    max_dt = 0.25*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 #for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
@@ -714,12 +719,12 @@ scalarWriter  = AnelasticSW(bB, d, out_dir,  write_dt=0.25*t_buoy, dealias=deali
 profileWriterB = AnelasticBallRPW(bB, d, out_dir, filename='profilesB', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
 profileWriterS = AnelasticShellRPW(bS, d, out_dir, filename='profilesS', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
 msliceWriter  = AnelasticMSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB', write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
+esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB', write_dt=0.1*t_buoy, max_writes=40, dealias=dealias)
+esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.1*t_buoy, max_writes=40, dealias=dealias)
 sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWriterS, msliceWriter, sshellWriter]
 
-ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=50*t_buoy)
+ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 ball_checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
 ball_checkpoint.add_task(uB, name='uB', scales=1, layout='c')
 ball_checkpoint.add_task(s1S, name='s1S', scales=1, layout='c')
@@ -735,7 +740,7 @@ class BallCFL:
     A CFL to calculate the appropriate magnitude of the timestep for a spherical simulation
     """
 
-    def __init__(self, distributor, r, Lmax, max_dt, safety=0.1, threshold=0.1, cadence=1):
+    def __init__(self, distributor, r, Lmax, max_dt, safety=0.1, threshold=0.1, cadence=1, radius_cutoff=None):
         """
         Initialize the CFL class. 
 
@@ -754,15 +759,23 @@ class BallCFL:
                 A factor by which the magnitude of dt must change in order for the timestep size to change
             cadence (int) :
                 the number of iterations to wait between CFL calculations
+            radius_cutoff (float) :
+                Radial value beyond which to ignore CFL constraints
         """
         self.reducer   = GlobalArrayReducer(distributor.comm_cart)
         self.dr        = np.gradient(r[0,0])
+        self.r         = r[0,0]
         self.Lmax      = Lmax
         self.max_dt    = max_dt
         self.safety    = safety
         self.threshold = threshold
         self.cadence   = cadence
-        logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}".format(max_dt, self.safety, self.threshold))
+        self.radius_cutoff = radius_cutoff
+        if self.radius_cutoff is not None:
+            self.bad_radius = self.r >= self.radius_cutoff
+            self.any_good = bool(1-np.max(self.bad_radius))
+            print(self.r, self.bad_radius, self.any_good, self.radius_cutoff)
+        logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}, cutoff={}".format(max_dt, self.safety, self.threshold, self.radius_cutoff))
 
     def calculate_dt(self, u, dt_old, r_index=2, φ_index=0, θ_index=1):
         """
@@ -778,6 +791,11 @@ class BallCFL:
         """
         u.require_scales(dealias)
         local_freq  = np.abs(u['g'][r_index]/self.dr) + (np.abs(u['g'][φ_index]) + np.abs(u['g'][θ_index]))*(self.Lmax + 1)
+        if self.radius_cutoff is not None:
+            if not self.any_good:
+                local_freq *= 0
+            else:
+                local_freq[:,:,self.bad_radius] *= 0
         global_freq = self.reducer.global_max(local_freq)
         if global_freq == 0.:
             dt = np.inf
@@ -788,7 +806,7 @@ class BallCFL:
             if dt < dt_old*(1+self.threshold) and dt > dt_old*(1-self.threshold): dt = dt_old
         return dt
 
-CFLB = BallCFL(d, rB, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
+CFLB = BallCFL(d, rB, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1, radius_cutoff=1.05)
 CFLS = BallCFL(d, rS, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
 dt = max_dt
 
@@ -798,15 +816,32 @@ if args['--restart'] is not None:
     check_name = fdir.split('/')[-1]
     #Try to just load the loal piece file
 
+    restart_Re = args['--restart_Re']
+    if restart_Re is not None:
+        restart_Re = float(restart_Re)
+        vel_factor = restart_Re/Re
+    else:
+        vel_factor = 1
+
     import h5py
     with h5py.File('{}/{}_p{}.h5'.format(fdir, check_name, d.comm_cart.rank), 'r') as f:
-        s1.set_scales(1)
-        u.set_scales(1)
-        s1['c'] = f['tasks/s1'][()][-1,:]
-        u['c'] = f['tasks/u'][()][-1,:]
-        s1.require_scales(dealias)
-        u.require_scales(dealias)
-    dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
+        s1B.set_scales(1)
+        uB.set_scales(1)
+        s1S.set_scales(1)
+        uS.set_scales(1)
+        s1B['c'] = f['tasks/s1B'][()][-1,:]
+        uB['c'] = f['tasks/uB'][()][-1,:]
+        s1S['c'] = f['tasks/s1S'][()][-1,:]
+        uS['c'] = f['tasks/uS'][()][-1,:]
+
+        uB['g'] *= vel_factor
+        uS['g'] *= vel_factor
+        s1B.require_scales(dealias)
+        uB.require_scales(dealias)
+        s1S.require_scales(dealias)
+        uS.require_scales(dealias)
+    dt = CFLB.calculate_dt(uB, dt)
+#    dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
 else:
     if args['--benchmark']:
         #Marti benchmark-like ICs
@@ -821,7 +856,7 @@ else:
         filter_scale = 0.25
 
         # Generate noise & filter it
-        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)
+        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*np.sin(2*np.pi*rB)
         s1B.require_scales(filter_scale)
         s1B['c']
         s1B['g']
@@ -846,7 +881,8 @@ try:
             writer.process(solver)
         solver.step(dt)
         if solver.iteration % CFLB.cadence == 0:
-            dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
+            dt = CFLB.calculate_dt(uB, dt)
+#            dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
