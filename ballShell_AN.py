@@ -11,8 +11,8 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
-    --NB=<Nmax>          The ball value of Nmax   [default:  47]
-    --NS=<Nmax>          The shell value of Nmax   [default: 23]
+    --NB=<Nmax>          The ball value of Nmax   [default: 31]
+    --NS=<Nmax>          The shell value of Nmax   [default: 15]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -111,7 +111,7 @@ if args['--mesa_file'] is not None:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
 else:
-    r_inner = 1.2
+    r_inner = 1.1
     r_outer = 2
 
 # Bases
@@ -187,6 +187,8 @@ grad_s0_RHSS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 
 erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 erB['g'][2] = 1
+erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+erS['g'][2] = 1
 
 if args['--mesa_file'] is not None:
     φB1, θB1, rB1 = bB.local_grids((1, 1, 1))
@@ -243,8 +245,8 @@ else:
 
     T_func  = lambda r_val: 1 + gradT*r_val**2
     ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
-    dL_func = lambda r_val: -(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+#    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
+    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))#-(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
     H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
 
     for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
@@ -262,7 +264,7 @@ else:
         grad_ln_T['g'][2]  = 2*gradT*basis_r/T['g'][0,0,:]
         grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
 
-        H_eff['g'] = H_func(basis_r) / H_func(0.4)
+        H_eff['g'] = H_func(basis_r)# / H_func(0.4)
 
         from scipy.special import erf
         def one_to_zero(x, x0, width=0.1):
@@ -281,7 +283,7 @@ else:
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 if args['--benchmark']:
-    max_dt = 0.035*t_buoy
+    max_dt = 0.03*t_buoy
 else:
     max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
@@ -514,6 +516,7 @@ for subproblem in solver.subproblems:
 # Analysis Setup
 vol_averager       = BallShellVolumeAverager(bB, bS, d, pB, pS, dealias=dealias, ball_radius=r_inner, shell_radius=r_outer)
 ball_radial_averager    = PhiThetaAverager(bB, d, dealias=dealias)
+shell_radial_averager   = PhiThetaAverager(bS, d, dealias=dealias)
 ball_azimuthal_averager = PhiAverager(bB, d, dealias=dealias)
 ball_equator_slicer     = EquatorSlicer(bB, d, dealias=dealias)
 shell_radial_averager    = PhiThetaAverager(bS, d, dealias=dealias)
@@ -563,10 +566,10 @@ class AnelasticSW(ScalarWriter):
         self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
         self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
 
-class AnelasticRPW(RadialProfileWriter):
+class AnelasticBallRPW(RadialProfileWriter):
 
     def __init__(self, *args, **kwargs):
-        super(AnelasticRPW, self).__init__(*args, **kwargs)
+        super(AnelasticBallRPW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
         self.fields = OrderedDict()
         self.ops['u·σ_r']   = dot(erB, dot(uB, σ_postB))
@@ -598,6 +601,43 @@ class AnelasticRPW(RadialProfileWriter):
         self.tasks['visc_flux'][:] = ball_radial_averager(-ρB['g']*(self.fields['u·σ_r'])/Re)
         self.tasks['cond_flux'][:] = ball_radial_averager(-ρB['g']*TB['g']*self.fields['grad_s']/Pe)
         self.tasks['KE_flux'][:]   = ball_radial_averager(0.5*ρB['g']*self.fields['ur']*self.fields['u·u'])
+
+class AnelasticShellRPW(RadialProfileWriter):
+
+    def __init__(self, *args, **kwargs):
+        super(AnelasticShellRPW, self).__init__(*args, **kwargs)
+        self.ops = OrderedDict()
+        self.fields = OrderedDict()
+        self.ops['u·σ_r']   = dot(erS, dot(uS, σ_postS))
+        self.ops['u·u']     = dot(uS, uS)
+        self.ops['div_u']   = div(uS)
+        self.ops['grad_s']  = dot(erS, grad(s1S))
+        self.ops['ur']      = dot(erS, uS)
+        self.fields = OrderedDict()
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur', 'N2_term']:
+            self.tasks[k] = np.zeros_like(shell_radial_averager.global_profile)
+
+    def evaluate_tasks(self):
+        for k, op in self.ops.items():
+            f = op.evaluate()
+            f.require_scales(dealias)
+            self.fields[k] = f['g']
+
+        for f in [s1S, uS, ρS, TS]:
+            f.require_scales(dealias)
+        self.tasks['s1'][:] = shell_radial_averager(s1S['g'])[:]
+        self.tasks['uφ'][:] = shell_radial_averager(uS['g'][0])[:]
+        self.tasks['uθ'][:] = shell_radial_averager(uS['g'][1])[:]
+        self.tasks['ρ_ur'][:] = shell_radial_averager(ρS['g']*uS['g'][2])[:]
+
+        self.tasks['N2_term'][:] = shell_radial_averager(ρS['g']*uS['g'][2]*TS['g']*grad_s0_RHSS['g'][2])
+
+        #Get fluxes for energy output
+        self.tasks['enth_flux'][:] = shell_radial_averager(ρS['g']*self.fields['ur']*(pS['g']))
+        self.tasks['visc_flux'][:] = shell_radial_averager(-ρS['g']*(self.fields['u·σ_r'])/Re)
+        self.tasks['cond_flux'][:] = shell_radial_averager(-ρS['g']*TS['g']*self.fields['grad_s']/Pe)
+        self.tasks['KE_flux'][:]   = shell_radial_averager(0.5*ρS['g']*self.fields['ur']*self.fields['u·u'])
+
 
 class AnelasticMSW(MeridionalSliceWriter):
     
@@ -671,12 +711,13 @@ class AnelasticSSW(SphericalShellWriter):
 
 
 scalarWriter  = AnelasticSW(bB, d, out_dir,  write_dt=0.25*t_buoy, dealias=dealias)
-profileWriter = AnelasticRPW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
+profileWriterB = AnelasticBallRPW(bB, d, out_dir, filename='profilesB', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
+profileWriterS = AnelasticShellRPW(bS, d, out_dir, filename='profilesS', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
 msliceWriter  = AnelasticMSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB', write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriter, msliceWriter, sshellWriter]
+writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWriterS, msliceWriter, sshellWriter]
 
 ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=50*t_buoy)
 ball_checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
@@ -770,8 +811,8 @@ else:
     if args['--benchmark']:
         #Marti benchmark-like ICs
         A0 = 1e-3
-        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/r_outer)**3*(1-(rB/r_outer)**2)*(np.cos(3*φB)+np.sin(3*φB))*np.sin(θB)**3
-        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(3*φS)+np.sin(3*φS))*np.sin(θS)**3
+        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/r_outer)**3*(1-(rB/r_outer)**2)*(np.cos(φB)+np.sin(φB))*np.sin(θB)**3
+        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(φS)+np.sin(φS))*np.sin(θS)**3
     else:
         # Initial conditions
         A0   = float(1e-6)
@@ -790,11 +831,12 @@ else:
 
 # Main loop
 start_time = time.time()
-profileWriter.evaluate_tasks()
+profileWriterB.evaluate_tasks()
+profileWriterS.evaluate_tasks()
 start_iter = solver.iteration
 try:
     while solver.ok:
-        if solver.iteration % 1 == 0:
+        if solver.iteration % 10 == 0:
             scalarWriter.evaluate_tasks()
             KE  = vol_averager.volume*scalarWriter.tasks['KE']
             TE  = vol_averager.volume*scalarWriter.tasks['TE']
