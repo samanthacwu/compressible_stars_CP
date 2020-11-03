@@ -29,7 +29,7 @@ from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
 
-plot=True
+plot=False
 
 from scipy.special import erf
 def one_to_zero(x, x0, width=0.1):
@@ -320,6 +320,19 @@ T_fieldB['c'][:, :, N:] = 0
 if plot:
     plot_ncc_figure(rB.flatten(), T_interp.flatten(), T_fieldB['g'].flatten(), N, ylabel=r"$T/T_c$", fig_name="TB", out_dir=out_dir)
 
+#plt.figure()
+#plt.plot(r_ball.flatten(), T_nondim[ball_bool].flatten())
+#linfit = np.polyfit(rB[rB > 0.5].flatten(), T_fieldB['g'][rB > 0.5].flatten(), deg=1)
+#linear = linfit[0]*r_ball.flatten() + linfit[1]
+#plt.plot(r_ball.flatten(), linear*zero_to_one(r_ball.flatten(), 0.2, width=0.05))
+#plt.plot(r_ball.flatten(), one_to_zero(r_ball.flatten(), 0.2, width=0.05))
+#full = linear*zero_to_one(r_ball.flatten(), 0.2, width=0.05) + one_to_zero(r_ball.flatten(), 0.2, width=0.05)
+#plt.plot(r_ball.flatten(), full.flatten())
+#plt.show()
+#
+#import sys
+#sys.exit()
+
 ### Temperature (Shell)
 N = 63
 T_fieldS = field.Field(dist=d, bases=(bS,), dtype=np.float64)
@@ -375,11 +388,6 @@ plt.plot(r_ball.flatten(), (H_NCC_ball * (rho0*T0/rho/T)[ball_bool]).flatten())
 plt.plot(rB.flatten(), H_fieldB['g'][0,0,:])
 #plt.plot(r_ball.flatten(), (approx_H*(rho0*T0/rho/T)[ball_bool].flatten()))
 
-
-plt.show()
-
-import sys
-sys.exit()
 
 N = 1
 H_fieldS = field.Field(dist=d, bases=(bS,), dtype=np.float64)
