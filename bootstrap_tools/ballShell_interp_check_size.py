@@ -278,10 +278,10 @@ if not os.path.exists('{:s}/'.format(out_dir)):
 with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir[:-1], check_str,), 'w') as f:
     print('{:s}/{:s}_s1.h5'.format(out_dir[:-1], check_str))
     task_group = f.create_group('tasks')
-    f['tasks']['uB']  = uB2['g']
-    f['tasks']['s1B'] = sB2['g']
-    f['tasks']['uS']  = uS2['g']
-    f['tasks']['s1S'] = sS2['g']
+    f['tasks']['uB']  = np.expand_dims(uB2['g'], axis=0)
+    f['tasks']['s1B'] = np.expand_dims(sB2['g'], axis=0)
+    f['tasks']['uS']  = np.expand_dims(uS2['g'], axis=0)
+    f['tasks']['s1S'] = np.expand_dims(sS2['g'], axis=0)
 
     f['rBg'] = rBg2
     f['φBg'] = φBg2

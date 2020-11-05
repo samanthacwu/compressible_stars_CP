@@ -110,64 +110,37 @@ if node_size is not None:
 else:
     node_size = 1
 
+slicesB     = d.layouts[-1].slices(sB2.domain, 1)
+slicesS     = d.layouts[-1].slices(sS2.domain, 1)
+
+sliceB0 = slicesB[0][:,0,0]
+sliceB1 = slicesB[1][0,:,0]
+sliceB2 = slicesB[2][0,0,:]
+sliceS0 = slicesS[0][:,0,0]
+sliceS1 = slicesS[1][0,:,0]
+sliceS2 = slicesS[2][0,0,:]
+
+slicesB = [slice(sliceB0[0], sliceB0[-1]+1, 1), slice(sliceB1[0], sliceB1[-1]+1, 1), slice(sliceB2[0], sliceB2[-1]+1, 1)]
+slicesS = [slice(sliceS0[0], sliceS0[-1]+1, 1), slice(sliceS1[0], sliceS1[-1]+1, 1), slice(sliceS2[0], sliceS2[-1]+1, 1)]
+
 import sys
-for i in range(node_size):
-    if d.comm_cart.rank % node_size == i:
-        print('reading on node rank {}'.format(i))
-        sys.stdout.flush()
-        with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir, check_str), 'r') as f:
-            rBg = f['rBg'][()]
-            φBg = f['φBg'][()]
-            θBg = f['θBg'][()]
-            rSg = f['rSg'][()]
-            φSg = f['φSg'][()]
-            θSg = f['θSg'][()]
 
-            rBgood = np.zeros_like(rBg, dtype=bool)
-            φBgood = np.zeros_like(φBg, dtype=bool)
-            θBgood = np.zeros_like(θBg, dtype=bool)
-            rSgood = np.zeros_like(rSg, dtype=bool)
-            φSgood = np.zeros_like(φSg, dtype=bool)
-            θSgood = np.zeros_like(θSg, dtype=bool)
-            for rv in rB2.flatten():
-                if rv in rBg:
-                    rBgood[0, 0, rBg.flatten() == rv] = True
-            for φv in φB2.flatten():
-                if φv in φBg:
-                    φBgood[φBg.flatten() == φv, 0, 0] = True
-            for θv in θB2.flatten():
-                if θv in θBg:
-                    θBgood[0, θBg.flatten() == θv, 0] = True
-            for rv in rS2.flatten():
-                if rv in rSg:
-                    rSgood[0, 0, rSg.flatten() == rv] = True
-            for φv in φS2.flatten():
-                if φv in φSg:
-                    φSgood[φSg.flatten() == φv, 0, 0] = True
-            for θv in θS2.flatten():
-                if θv in θSg:
-                    θSgood[0, θSg.flatten() == θv, 0] = True
-
-            global_goodB = rBgood*φBgood*θBgood
-            global_goodS = rSgood*φSgood*θSgood
-            for i in range(3):
-                uB2['g'][i,:] = f['tasks']['uB'][()][i][global_goodB].reshape(uB2['g'][i,:].shape)
-                uS2['g'][i,:] = f['tasks']['uS'][()][i][global_goodS].reshape(uS2['g'][i,:].shape)
-            sB2['g'] = f['tasks']['s1B'][()][global_goodB].reshape(sB2['g'].shape)
-            sS2['g'] = f['tasks']['s1S'][()][global_goodS].reshape(sS2['g'].shape)
-            del global_goodB
-            del global_goodS
-    else:
-        for i in range(3):
-            uB2['g'][i,:] = uB2['g'][i,:]
-            uS2['g'][i,:] = uS2['g'][i,:]
-        sB2['g'] = sB2['g']
-        sS2['g'] = sS2['g']
-    d.comm_cart.barrier()
+print('reading on node rank {}...'.format(d.comm_cart.rank))
+sys.stdout.flush()
+with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir, check_str), 'r') as f:
+    sB2['g'] = f['tasks/s1B'][0, slicesB[0], slicesB[1], slicesB[2]]
+    uB2['g'] = f['tasks/uB'][0, :, slicesB[0], slicesB[1], slicesB[2]]
+    if np.prod(sS2['g'].shape) > 0:
+        sS2['g'] = f['tasks/s1S'][0, slicesS[0], slicesS[1], slicesS[2]]#][global_good].reshape(s1['g'].shape)
+        uS2['g'] = f['tasks/uS'][0, :, slicesS[0], slicesS[1], slicesS[2]]
+print('file read on node rank {}'.format(d.comm_cart.rank))
+sys.stdout.flush()
 
 split_out_dir = '{:s}/{:s}_s1/'.format(out_dir, check_str)
 import os
 if d.comm_cart.rank == 0:
+    print('root node checking dir')
+    sys.stdout.flush()
     if not os.path.exists('{:s}/'.format(split_out_dir)):
         os.makedirs('{:s}/'.format(split_out_dir))
 d.comm_cart.Barrier()
