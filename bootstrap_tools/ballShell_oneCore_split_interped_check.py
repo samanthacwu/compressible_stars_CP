@@ -85,6 +85,7 @@ with h5py.File(args['--mesa_file'], 'r') as f:
 mesh    = args['--mesh'].split(',')
 mesh = [int(m) for m in mesh]
 
+
 # Bases
 c       = coords.SphericalCoordinates('φ', 'θ', 'r')
 d       = distributor.Distributor((c,), mesh=None)
@@ -146,8 +147,8 @@ for i in range(num_procs):
     φ_ind = int(np.floor(i/mesh[-1]))
     θ_ind = i % mesh[-1]
 
-    sliceB = (slice(φ_ind*nφB_per, (φ_ind+1)*nφB_per, 1), slice(θ_ind*nθB_per, (θ_ind)*nθB_per+my_nθB_per, 1), slice(0, NmaxB+1, 1))
-    sliceS = (slice(φ_ind*nφS_per, (φ_ind+1)*nφS_per, 1), slice(θ_ind*nθS_per, (θ_ind)*nθS_per+my_nθS_per, 1), slice(0, NmaxS+1, 1))
+    sliceB = (slice(φ_ind*nφB_per, (φ_ind+1)*nφB_per, 1), slice(θ_ind*nθB_per, (θ_ind)*nθB_per+my_nθB_per, 1), slice(0, new_NmaxB+1, 1))
+    sliceS = (slice(φ_ind*nφS_per, (φ_ind+1)*nφS_per, 1), slice(θ_ind*nθS_per, (θ_ind)*nθS_per+my_nθS_per, 1), slice(0, new_NmaxS+1, 1))
     vec_sliceB = (slice(0,3,1),) + sliceB
     vec_sliceS = (slice(0,3,1),) + sliceS
     with h5py.File('{:s}/{:s}_s1_p{}.h5'.format(split_out_dir, check_str, i), 'w') as f:
