@@ -201,6 +201,8 @@ erB['g'][2] = 1
 erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 erS['g'][2] = 1
 
+grads0_boost = 1/100
+
 if args['--mesa_file'] is not None:
     φB1, θB1, rB1 = bB.local_grids((1, 1, 1))
     φS1, θS1, rS1 = bS.local_grids((1, 1, 1))
@@ -239,6 +241,14 @@ if args['--mesa_file'] is not None:
         TS['g']         = f['TS'][()][:,:,rS_slice].reshape(rS1.shape)
         inv_TS['g']     = 1/TS['g']
         grad_s0_RHSS['g'][2]        = f['grad_s0S'][()][2,:,:,rS_slice].reshape(rS1.shape)
+
+        max_grad_s0 = f['grad_s0S'][()][2,0,0,-1]
+
+        grad_s0B['g'] *= grads0_boost
+        grad_s0S['g'] *= grads0_boost
+        grad_s0_RHSB['g'] *= grads0_boost
+        grad_s0_RHSS['g'] *= grads0_boost
+        max_grad_s0       *= grads0_boost
 
         t_buoy = 1
 else:
@@ -279,6 +289,7 @@ else:
 
         grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(basis_r, 1, width=0.05)
 #        grad_s0['c'][:,:,:,-1] = 0
+max_dt = 0.5/np.sqrt(max_grad_s0)
 
 
 #import matplotlib.pyplot as plt
@@ -287,10 +298,10 @@ else:
 #plt.show()
 
 logger.info('buoyancy time is {}'.format(t_buoy))
-if args['--benchmark']:
-    max_dt = 0.03*t_buoy
-else:
-    max_dt = 0.25*t_buoy
+#if args['--benchmark']:
+#    max_dt = 0.03*t_buoy
+#else:
+#    max_dt = 0.1#5*t_buoy/Re
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 #for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
@@ -342,6 +353,60 @@ u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
 uS_r_bc        = radComp(uS(r=r_outer))
 u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
 
+#Initial conditions
+if args['--restart'] is not None:
+    fname = args['--restart']
+    fdir = fname.split('.h5')[0]
+    check_name = fdir.split('/')[-1]
+    #Try to just load the loal piece file
+
+    restart_Re = args['--restart_Re']
+    if restart_Re is not None:
+        restart_Re = float(restart_Re)
+        vel_factor = restart_Re/Re
+    else:
+        vel_factor = 1
+
+    import h5py
+    with h5py.File('{}/{}_p{}.h5'.format(fdir, check_name, d.comm_cart.rank), 'r') as f:
+        s1B.set_scales(1)
+        uB.set_scales(1)
+        s1S.set_scales(1)
+        uS.set_scales(1)
+        s1B['c'] = f['tasks/s1B'][()][-1,:]
+        uB['c'] = f['tasks/uB'][()][-1,:]
+        s1S['c'] = f['tasks/s1S'][()][-1,:]
+        uS['c'] = f['tasks/uS'][()][-1,:]
+
+        uB['g'] *= vel_factor
+        uS['g'] *= vel_factor
+        s1B.require_scales(dealias)
+        uB.require_scales(dealias)
+        s1S.require_scales(dealias)
+        uS.require_scales(dealias)
+else:
+    if args['--benchmark']:
+        #Marti benchmark-like ICs
+        A0 = 1e-3
+        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/r_outer)**3*(1-(rB/r_outer)**2)*(np.cos(φB)+np.sin(φB))*np.sin(θB)**3
+        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(φS)+np.sin(φS))*np.sin(θS)**3
+    else:
+        # Initial conditions
+        A0   = float(1e-6)
+        seed = 42 + d.comm_cart.rank
+        rand = np.random.RandomState(seed=seed)
+        filter_scale = 0.25
+
+        # Generate noise & filter it
+        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*np.sin(2*np.pi*rB)
+        s1B.require_scales(filter_scale)
+        s1B['c']
+        s1B['g']
+        s1B.require_scales(dealias)
+
+
+
+
 
 # Problem
 def eq_eval(eq_str):
@@ -351,9 +416,11 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSu_bot, tS2_bot, tSu_top
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
+#problem.add_equation(eq_eval("ddt(uB) + grad(pB)  - (1/Re)*momentum_viscous_termsB   = TB*grad(s1B) - dot(uB, grad(uB))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
+#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - (1/Re)*momentum_viscous_termsS   = TS*grad(s1S) - dot(uS, grad(uS))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
@@ -774,7 +841,6 @@ class BallCFL:
         if self.radius_cutoff is not None:
             self.bad_radius = self.r >= self.radius_cutoff
             self.any_good = bool(1-np.max(self.bad_radius))
-            print(self.r, self.bad_radius, self.any_good, self.radius_cutoff)
         logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}, cutoff={}".format(max_dt, self.safety, self.threshold, self.radius_cutoff))
 
     def calculate_dt(self, u, dt_old, r_index=2, φ_index=0, θ_index=1):
@@ -807,61 +873,9 @@ class BallCFL:
         return dt
 
 CFLB = BallCFL(d, rB, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1, radius_cutoff=1.05)
-CFLS = BallCFL(d, rS, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1)
 dt = max_dt
-
 if args['--restart'] is not None:
-    fname = args['--restart']
-    fdir = fname.split('.h5')[0]
-    check_name = fdir.split('/')[-1]
-    #Try to just load the loal piece file
-
-    restart_Re = args['--restart_Re']
-    if restart_Re is not None:
-        restart_Re = float(restart_Re)
-        vel_factor = restart_Re/Re
-    else:
-        vel_factor = 1
-
-    import h5py
-    with h5py.File('{}/{}_p{}.h5'.format(fdir, check_name, d.comm_cart.rank), 'r') as f:
-        s1B.set_scales(1)
-        uB.set_scales(1)
-        s1S.set_scales(1)
-        uS.set_scales(1)
-        s1B['c'] = f['tasks/s1B'][()][-1,:]
-        uB['c'] = f['tasks/uB'][()][-1,:]
-        s1S['c'] = f['tasks/s1S'][()][-1,:]
-        uS['c'] = f['tasks/uS'][()][-1,:]
-
-        uB['g'] *= vel_factor
-        uS['g'] *= vel_factor
-        s1B.require_scales(dealias)
-        uB.require_scales(dealias)
-        s1S.require_scales(dealias)
-        uS.require_scales(dealias)
     dt = CFLB.calculate_dt(uB, dt)
-#    dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
-else:
-    if args['--benchmark']:
-        #Marti benchmark-like ICs
-        A0 = 1e-3
-        s1B['g'] = A0*np.sqrt(35/np.pi)*(rB/r_outer)**3*(1-(rB/r_outer)**2)*(np.cos(φB)+np.sin(φB))*np.sin(θB)**3
-        s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(φS)+np.sin(φS))*np.sin(θS)**3
-    else:
-        # Initial conditions
-        A0   = float(1e-6)
-        seed = 42 + d.comm_cart.rank
-        rand = np.random.RandomState(seed=seed)
-        filter_scale = 0.25
-
-        # Generate noise & filter it
-        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*np.sin(2*np.pi*rB)
-        s1B.require_scales(filter_scale)
-        s1B['c']
-        s1B['g']
-        s1B.require_scales(dealias)
-
 
 
 # Main loop
