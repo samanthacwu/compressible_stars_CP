@@ -193,6 +193,11 @@ T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
 H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
+# Get local slices
+slicesB     = d.layouts[-1].slices(s1B.domain, 1)
+slicesS     = d.layouts[-1].slices(s1S.domain, 1)
+slicesB = [slice(slicesB[0][:,0,0][0], slicesB[0][:,0,0][-1]+1, 1), slice(slicesB[1][0,:,0][0], slicesB[1][0,:,0][-1]+1, 1), slice(slicesB[2][0,0,:][0], slicesB[2][0,0,:][-1]+1, 1)]
+slicesS = [slice(slicesS[0][:,0,0][0], slicesS[0][:,0,0][-1]+1, 1), slice(slicesS[1][0,:,0][0], slicesS[1][0,:,0][-1]+1, 1), slice(slicesS[2][0,0,:][0], slicesS[2][0,0,:][-1]+1, 1)]
 
 erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 erB['g'][2] = 1
@@ -202,16 +207,6 @@ erS['g'][2] = 1
 grads0_boost = 1/100
 
 if args['--mesa_file'] is not None:
-    slicesB     = d.layouts[-1].slices(s1B.domain, 1)
-    slicesS     = d.layouts[-1].slices(s1S.domain, 1)
-
-    sliceS0 = slicesS[0][:,0,0]
-    sliceS1 = slicesS[1][0,:,0]
-    sliceS2 = slicesS[2][0,0,:]
-
-    slicesB = [slice(slicesB[0][:,0,0][0], slicesB[0][:,0,0][-1]+1, 1), slice(slicesB[1][0,:,0][0], slicesB[1][0,:,0][-1]+1, 1), slice(slicesB[2][0,0,:][0], slicesB[2][0,0,:][-1]+1, 1)]
-    slicesS = [slice(slicesS[0][:,0,0][0], slicesS[0][:,0,0][-1]+1, 1), slice(slicesS[1][0,:,0][0], slicesS[1][0,:,0][-1]+1, 1), slice(slicesS[2][0,0,:][0], slicesS[2][0,0,:][-1]+1, 1)]
-
     with h5py.File(args['--mesa_file'], 'r') as f:
         if np.prod(grad_s0B['g'].shape) > 0:
             grad_s0B['g']        = f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
@@ -225,16 +220,16 @@ if args['--mesa_file'] is not None:
         ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
         H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
         T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
-        ρB['g']         = np.exp(f['ln_ρB'][:,:,slicesB[-1]].reshape(TB.shape))
-        TB['g']         = f['TB'][:,:,slicesB[-1]].reshape(TB.shape)
+        ρB['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρB'][:,:,slicesB[-1]]), axis=0), axis=0)
+        TB['g']         = np.expand_dims(np.expand_dims(f['TB'][:,:,slicesB[-1]], axis=0), axis=0)
         inv_TB['g']     = 1/TB['g']
 
         ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
         ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
         H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
         T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
-        ρS['g']         = np.exp(f['ln_ρS'][:,:,slicesS[-1]].reshape(TS.shape))
-        TS['g']         = f['TS'][:,:,slicesS[-1]].reshape(TS.shape)
+        ρS['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρS'][:,:,slicesS[-1]]), axis=0), axis=0)
+        TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
         inv_TS['g']     = 1/TS['g']
 
         max_grad_s0 = f['grad_s0S'][2,0,0,-1]
@@ -627,7 +622,7 @@ class AnelasticBallRPW(RadialProfileWriter):
         self.ops['grad_s']  = dot(erB, grad(s1B))
         self.ops['ur']      = dot(erB, uB)
         self.fields = OrderedDict()
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur', 'N2_term']:
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux']:
             self.tasks[k] = np.zeros_like(ball_radial_averager.global_profile)
 
     def evaluate_tasks(self):
@@ -641,7 +636,6 @@ class AnelasticBallRPW(RadialProfileWriter):
         self.tasks['s1'][:] = ball_radial_averager(s1B['g'])[:]
         self.tasks['uφ'][:] = ball_radial_averager(uB['g'][0])[:]
         self.tasks['uθ'][:] = ball_radial_averager(uB['g'][1])[:]
-        self.tasks['ρ_ur'][:] = ball_radial_averager(ρB['g']*uB['g'][2])[:]
 
 
         #Get fluxes for energy output
@@ -662,7 +656,7 @@ class AnelasticShellRPW(RadialProfileWriter):
         self.ops['grad_s']  = dot(erS, grad(s1S))
         self.ops['ur']      = dot(erS, uS)
         self.fields = OrderedDict()
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux', 'ρ_ur', 'N2_term']:
+        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux']:
             self.tasks[k] = np.zeros_like(shell_radial_averager.global_profile)
 
     def evaluate_tasks(self):
@@ -676,7 +670,6 @@ class AnelasticShellRPW(RadialProfileWriter):
         self.tasks['s1'][:] = shell_radial_averager(s1S['g'])[:]
         self.tasks['uφ'][:] = shell_radial_averager(uS['g'][0])[:]
         self.tasks['uθ'][:] = shell_radial_averager(uS['g'][1])[:]
-        self.tasks['ρ_ur'][:] = shell_radial_averager(ρS['g']*uS['g'][2])[:]
 
 
         #Get fluxes for energy output
@@ -729,17 +722,7 @@ class AnelasticSSW(SphericalShellWriter):
         self.ops['ur_r0.5']  = radComp(uB(r=0.5))
         self.ops['ur_r0.25'] = radComp(uB(r=0.25))
 
-        # Logic for local and global slicing
-        φbool = np.zeros_like(φBg, dtype=bool)
-        θbool = np.zeros_like(θBg, dtype=bool)
-        for φBl in φB.flatten():
-            φbool[φBl == φBg] = 1
-        for θBl in θB.flatten():
-            θbool[θBl == θBg] = 1
-        self.local_slice_indices = φbool*θbool
-        self.local_shape    = (φBl*θBl).shape
-        self.global_shape   = (φBg*θBg).shape
-
+        self.global_shape   = (2*(Lmax+2), Lmax+1, 1)
         self.local_buff  = np.zeros(self.global_shape)
         self.global_buff = np.zeros(self.global_shape)
 
@@ -751,7 +734,7 @@ class AnelasticSSW(SphericalShellWriter):
             local_part.require_scales(dealias)
             self.local_buff *= 0
             if local_part['g'].shape[-1] == 1:
-                self.local_buff[self.local_slice_indices] = local_part['g'].flatten()
+                self.local_buff[slicesB[0], slicesB[1], :] = local_part['g']
             d.comm_cart.Allreduce(self.local_buff, self.global_buff, op=MPI.SUM)
             self.tasks[k] = np.copy(self.global_buff)
 
