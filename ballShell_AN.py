@@ -11,12 +11,12 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
-    --NB=<Nmax>          The ball value of Nmax   [default: 31]
+    --NB=<Nmax>          The ball value of Nmax   [default: 63]
     --NS=<Nmax>          The shell value of Nmax   [default: 15]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
-    --safety=<s>         Timestep CFL safety factor [default: 0.3]
+    --safety=<s>         Timestep CFL safety factor [default: 0.4]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
     --A0=<A>             Amplitude of initial noise [default: 1e-6]
@@ -183,7 +183,6 @@ T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
 H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
-grad_s0_RHSB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
@@ -193,7 +192,6 @@ T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
 H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
-grad_s0_RHSS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 
 
 erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
@@ -204,50 +202,45 @@ erS['g'][2] = 1
 grads0_boost = 1/100
 
 if args['--mesa_file'] is not None:
-    φB1, θB1, rB1 = bB.local_grids((1, 1, 1))
-    φS1, θS1, rS1 = bS.local_grids((1, 1, 1))
+    slicesB     = d.layouts[-1].slices(s1B.domain, 1)
+    slicesS     = d.layouts[-1].slices(s1S.domain, 1)
+
+    sliceS0 = slicesS[0][:,0,0]
+    sliceS1 = slicesS[1][0,:,0]
+    sliceS2 = slicesS[2][0,0,:]
+
+    slicesB = [slice(slicesB[0][:,0,0][0], slicesB[0][:,0,0][-1]+1, 1), slice(slicesB[1][0,:,0][0], slicesB[1][0,:,0][-1]+1, 1), slice(slicesB[2][0,0,:][0], slicesB[2][0,0,:][-1]+1, 1)]
+    slicesS = [slice(slicesS[0][:,0,0][0], slicesS[0][:,0,0][-1]+1, 1), slice(slicesS[1][0,:,0][0], slicesS[1][0,:,0][-1]+1, 1), slice(slicesS[2][0,0,:][0], slicesS[2][0,0,:][-1]+1, 1)]
+
     with h5py.File(args['--mesa_file'], 'r') as f:
-        rB_file = f['rB'][()].flatten()
-        rB_slice = np.zeros_like(rB_file.flatten(), dtype=bool)
-        rS_file = f['rS'][()].flatten()
-        rS_slice = np.zeros_like(rS_file.flatten(), dtype=bool)
-        for this_r in rB1.flatten():
-            rB_slice[this_r == rB_file] = True
-        for this_r in rS1.flatten():
-            rS_slice[this_r == rS_file] = True
-        
         if np.prod(grad_s0B['g'].shape) > 0:
-            grad_s0B['g']        = f['grad_s0B'][()][:,:,:,rB_slice].reshape(grad_s0B['g'].shape)
-            grad_ln_ρB['g']      = f['grad_ln_ρB'][()][:,:,:,rB_slice].reshape(grad_s0B['g'].shape)
-            grad_ln_TB['g']      = f['grad_ln_TB'][()][:,:,:,rB_slice].reshape(grad_s0B['g'].shape)
+            grad_s0B['g']        = f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
         if np.prod(grad_s0S['g'].shape) > 0:
-            grad_s0S['g']        = f['grad_s0S'][()][:,:,:,rS_slice].reshape(grad_s0S['g'].shape)
-            grad_ln_ρS['g']      = f['grad_ln_ρS'][()][:,:,:,rS_slice].reshape(grad_s0S['g'].shape)
-            grad_ln_TS['g']      = f['grad_ln_TS'][()][:,:,:,rS_slice].reshape(grad_s0S['g'].shape)
-        ln_ρB['g']      = f['ln_ρB'][()][:,:,rB_slice]
-        ln_TB['g']      = f['ln_TB'][()][:,:,rB_slice]
-        H_effB['g']     = f['H_effB'][()][:,:,rB_slice]
-        T_NCCB['g']     = f['TB'][()][:,:,rB_slice]
-        ρB['g']         = np.exp(f['ln_ρB'][()][:,:,rB_slice].reshape(rB1.shape))
-        TB['g']         = f['TB'][()][:,:,rB_slice].reshape(rB1.shape)
+            grad_s0S['g']        = f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+        ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
+        ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
+        H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
+        T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
+        ρB['g']         = np.exp(f['ln_ρB'][:,:,slicesB[-1]].reshape(TB.shape))
+        TB['g']         = f['TB'][:,:,slicesB[-1]].reshape(TB.shape)
         inv_TB['g']     = 1/TB['g']
-        grad_s0_RHSB['g'][2]        = f['grad_s0B'][()][2,:,:,rB_slice].reshape(rB1.shape)
 
-        ln_ρS['g']      = f['ln_ρS'][()][:,:,rS_slice]
-        ln_TS['g']      = f['ln_TS'][()][:,:,rS_slice]
-        H_effS['g']     = f['H_effS'][()][:,:,rS_slice]
-        T_NCCS['g']     = f['TS'][()][:,:,rS_slice]
-        ρS['g']         = np.exp(f['ln_ρS'][()][:,:,rS_slice].reshape(rS1.shape))
-        TS['g']         = f['TS'][()][:,:,rS_slice].reshape(rS1.shape)
+        ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
+        ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
+        H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
+        T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
+        ρS['g']         = np.exp(f['ln_ρS'][:,:,slicesS[-1]].reshape(TS.shape))
+        TS['g']         = f['TS'][:,:,slicesS[-1]].reshape(TS.shape)
         inv_TS['g']     = 1/TS['g']
-        grad_s0_RHSS['g'][2]        = f['grad_s0S'][()][2,:,:,rS_slice].reshape(rS1.shape)
 
-        max_grad_s0 = f['grad_s0S'][()][2,0,0,-1]
+        max_grad_s0 = f['grad_s0S'][2,0,0,-1]
 
         grad_s0B['g'] *= grads0_boost
         grad_s0S['g'] *= grads0_boost
-        grad_s0_RHSB['g'] *= grads0_boost
-        grad_s0_RHSS['g'] *= grads0_boost
         max_grad_s0       *= grads0_boost
 
         t_buoy = 1
@@ -262,12 +255,11 @@ else:
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
-    sig = 0.1
+    sig = 0.2
 
     T_func  = lambda r_val: 1 + gradT*r_val**2
     ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-#    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
-    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))#-(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))
     H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
 
     for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
@@ -285,27 +277,14 @@ else:
         grad_ln_T['g'][2]  = 2*gradT*basis_r/T['g'][0,0,:]
         grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
 
-        H_eff['g'] = H_func(basis_r)# / H_func(0.4)
+        H_eff['g'] = H_func(basis_r)
 
-        grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(basis_r, 1, width=0.05)
-#        grad_s0['c'][:,:,:,-1] = 0
+        grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(basis_r, 0.95, width=0.05)
+        max_grad_s0 = 1e2
 max_dt = 0.5/np.sqrt(max_grad_s0)
 
-
-#import matplotlib.pyplot as plt
-#plt.plot(rB.flatten(), grad_ln_ρB['g'][2][0,0,:])
-#plt.plot(rS.flatten(), grad_ln_ρS['g'][2][0,0,:])
-#plt.show()
-
 logger.info('buoyancy time is {}'.format(t_buoy))
-#if args['--benchmark']:
-#    max_dt = 0.03*t_buoy
-#else:
-#    max_dt = 0.1#5*t_buoy/Re
 t_end = float(args['--buoy_end_time'])*t_buoy
-
-#for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
-#    f.require_scales(dealias)
 
 # Stress matrices & viscous terms
 I_matrixB_post = field.Field(dist=d, bases=(bB,), tensorsig=(c,c,), dtype=dtype)
@@ -416,11 +395,9 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSu_bot, tS2_bot, tSu_top
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uB) + grad(pB)  - (1/Re)*momentum_viscous_termsB   = TB*grad(s1B) - dot(uB, grad(uB))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - (1/Re)*momentum_viscous_termsS   = TS*grad(s1S) - dot(uS, grad(uS))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
@@ -666,7 +643,6 @@ class AnelasticBallRPW(RadialProfileWriter):
         self.tasks['uθ'][:] = ball_radial_averager(uB['g'][1])[:]
         self.tasks['ρ_ur'][:] = ball_radial_averager(ρB['g']*uB['g'][2])[:]
 
-        self.tasks['N2_term'][:] = ball_radial_averager(ρB['g']*uB['g'][2]*TB['g']*grad_s0_RHSB['g'][2])
 
         #Get fluxes for energy output
         self.tasks['enth_flux'][:] = ball_radial_averager(ρB['g']*self.fields['ur']*(pB['g']))
@@ -702,7 +678,6 @@ class AnelasticShellRPW(RadialProfileWriter):
         self.tasks['uθ'][:] = shell_radial_averager(uS['g'][1])[:]
         self.tasks['ρ_ur'][:] = shell_radial_averager(ρS['g']*uS['g'][2])[:]
 
-        self.tasks['N2_term'][:] = shell_radial_averager(ρS['g']*uS['g'][2]*TS['g']*grad_s0_RHSS['g'][2])
 
         #Get fluxes for energy output
         self.tasks['enth_flux'][:] = shell_radial_averager(ρS['g']*self.fields['ur']*(pS['g']))
@@ -840,7 +815,7 @@ class BallCFL:
         self.radius_cutoff = radius_cutoff
         if self.radius_cutoff is not None:
             self.bad_radius = self.r >= self.radius_cutoff
-            self.any_good = bool(1-np.max(self.bad_radius))
+            self.any_good = bool(1-np.min(self.bad_radius))
         logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}, cutoff={}".format(max_dt, self.safety, self.threshold, self.radius_cutoff))
 
     def calculate_dt(self, u, dt_old, r_index=2, φ_index=0, θ_index=1):
@@ -885,7 +860,7 @@ profileWriterS.evaluate_tasks()
 start_iter = solver.iteration
 try:
     while solver.ok:
-        if solver.iteration % 10 == 0:
+        if solver.iteration % 1 == 0:
             scalarWriter.evaluate_tasks()
             KE  = vol_averager.volume*scalarWriter.tasks['KE']
             TE  = vol_averager.volume*scalarWriter.tasks['TE']
@@ -896,7 +871,6 @@ try:
         solver.step(dt)
         if solver.iteration % CFLB.cadence == 0:
             dt = CFLB.calculate_dt(uB, dt)
-#            dt = np.min((CFLB.calculate_dt(uB, dt), CFLS.calculate_dt(uS, dt)))
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
