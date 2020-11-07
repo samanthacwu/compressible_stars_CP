@@ -32,7 +32,8 @@ Options:
 
     --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
 
-    --boost=<b>          Inverse Mach number boost squared [default: 0.01]
+    --boost=<b>          Inverse Mach number boost squared [default: 1]
+    --grad_s_rhs         Move grad_s0 term of energy eqn to RHS
 """
 import os
 import time
@@ -146,6 +147,7 @@ div       = lambda A: operators.Divergence(A, index=0)
 lap       = lambda A: operators.Laplacian(A, c)
 grad      = lambda A: operators.Gradient(A, c)
 dot       = lambda A, B: arithmetic.DotProduct(A, B)
+curl      = lambda A: operators.Curl(A)
 cross     = lambda A, B: arithmetic.CrossProduct(A, B)
 trace     = lambda A: operators.Trace(A)
 ddt       = lambda A: operators.TimeDerivative(A)
@@ -177,7 +179,6 @@ TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 #nccs
 grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
@@ -186,7 +187,6 @@ T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
 H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
 grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
@@ -194,6 +194,14 @@ T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
 H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
+
+if args['--grad_s_rhs']:
+    grad_s0B      = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+    grad_s0S      = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+else:
+    grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+    
 
 # Get local slices
 slicesB     = d.layouts[-1].slices(s1B.domain, 1)
@@ -212,11 +220,11 @@ logger.info("Boost: {}".format(grads0_boost))
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
         if np.prod(grad_s0B['g'].shape) > 0:
-            grad_s0B['g']        = f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            grad_s0B['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape), axis=0), axis=0), axis=0)
             grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
             grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
         if np.prod(grad_s0S['g'].shape) > 0:
-            grad_s0S['g']        = f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            grad_s0S['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape), axis=0), axis=0), axis=0)
             grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
             grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
         ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
@@ -383,6 +391,8 @@ else:
 
 
 
+#H_effB = operators.Grid(H_effB).evaluate()
+#H_effS = operators.Grid(H_effS).evaluate()
 
 
 # Problem
@@ -393,20 +403,28 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSu_bot, tS2_bot, tSu_top
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
+#problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB   = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
+#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS   = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
-### Ball energy
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
-### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
+if args['--grad_s_rhs']:
+    ### Ball energy
+    problem.add_equation(eq_eval("ddt(s1B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad_s0B) - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
+    ### Shell energy                                                                                                            
+    problem.add_equation(eq_eval("ddt(s1S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad_s0S) - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
+else:
+    ### Ball energy
+    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (1/Pe)*(lap(s1B) + dot(grad(s1B), (grad_ln_ρB + grad_ln_TB))) = - dot(uB, grad(s1B)) + H_effB + (1/Re)*inv_TB*VHB "))
+    ### Shell energy
+    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (1/Pe)*(lap(s1S) + dot(grad(s1S), (grad_ln_ρS + grad_ln_TS))) = - dot(uS, grad(s1S)) + H_effS + (1/Re)*inv_TS*VHS "))
 
 
 #Velocity BCs ell != 0
@@ -642,7 +660,8 @@ class AnelasticBallRPW(RadialProfileWriter):
 
 
         #Get fluxes for energy output
-        self.tasks['enth_flux'][:] = ball_radial_averager(ρB['g']*self.fields['ur']*(pB['g']))
+        enthalpy = pS['g'] - 0.5*self.fields['u·u'] + TS['g']*s1S['g']
+        self.tasks['enth_flux'][:] = ball_radial_averager(ρB['g']*self.fields['ur']*(enthalpy))
         self.tasks['visc_flux'][:] = ball_radial_averager(-ρB['g']*(self.fields['u·σ_r'])/Re)
         self.tasks['cond_flux'][:] = ball_radial_averager(-ρB['g']*TB['g']*self.fields['grad_s']/Pe)
         self.tasks['KE_flux'][:]   = ball_radial_averager(0.5*ρB['g']*self.fields['ur']*self.fields['u·u'])
@@ -676,7 +695,8 @@ class AnelasticShellRPW(RadialProfileWriter):
 
 
         #Get fluxes for energy output
-        self.tasks['enth_flux'][:] = shell_radial_averager(ρS['g']*self.fields['ur']*(pS['g']))
+        enthalpy = pS['g'] - 0.5*self.fields['u·u'] + TS['g']*s1S['g']
+        self.tasks['enth_flux'][:] = shell_radial_averager(ρS['g']*self.fields['ur']*(enthalpy))
         self.tasks['visc_flux'][:] = shell_radial_averager(-ρS['g']*(self.fields['u·σ_r'])/Re)
         self.tasks['cond_flux'][:] = shell_radial_averager(-ρS['g']*TS['g']*self.fields['grad_s']/Pe)
         self.tasks['KE_flux'][:]   = shell_radial_averager(0.5*ρS['g']*self.fields['ur']*self.fields['u·u'])
@@ -747,8 +767,8 @@ scalarWriter  = AnelasticSW(bB, d, out_dir,  write_dt=0.25*t_buoy, dealias=deali
 profileWriterB = AnelasticBallRPW(bB, d, out_dir, filename='profilesB', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
 profileWriterS = AnelasticShellRPW(bS, d, out_dir, filename='profilesS', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
 msliceWriter  = AnelasticMSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB', write_dt=0.1*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.1*t_buoy, max_writes=40, dealias=dealias)
+esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB',  write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
+esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
 sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWriterS, msliceWriter, sshellWriter]
 

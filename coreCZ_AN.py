@@ -269,7 +269,7 @@ problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) - T_NCC*grad(s1) - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) + grad(T_NCC)*s1 - (1/Re)*momentum_viscous_terms   = - dot(u, grad(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + dot(grad(s1), (grad_ln_ρ + grad_ln_T))) = - dot(u, grad(s1)) + H_eff + (1/Re)*inv_T*VH "))
 problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
@@ -425,7 +425,8 @@ class AnelasticRPW(RadialProfileWriter):
 
         #Get fluxes for energy output
 #        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*u['g'][2,:]*(p['g'] + T['g']*s1['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
-        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*self.fields['ur']*(p['g'])) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
+        enthalpy = p['g'] - 0.5*self.fields['u·u'] + T['g']*s1['g']
+        self.tasks['enth_flux'][:] = radial_averager(ρ['g']*self.fields['ur']*(enthalpy)) #need to subtract a 0.5 u dot u if I use dot(u, stress1) in mometum
         self.tasks['visc_flux'][:] = radial_averager(-ρ['g']*(self.fields['u·σ_r'])/Re)
         self.tasks['cond_flux'][:] = radial_averager(-ρ['g']*T['g']*self.fields['grad_s']/Pe)
         self.tasks['KE_flux'][:]   = radial_averager(0.5*ρ['g']*self.fields['ur']*self.fields['u·u'])
