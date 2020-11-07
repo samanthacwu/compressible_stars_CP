@@ -31,6 +31,8 @@ Options:
     --restart_Re=<Re>    Re of the run being restarted from
 
     --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
+
+    --boost=<b>          Inverse Mach number boost squared [default: 0.01]
 """
 import os
 import time
@@ -204,7 +206,8 @@ erB['g'][2] = 1
 erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 erS['g'][2] = 1
 
-grads0_boost = 1/100
+grads0_boost = float(args['--boost'])#1/100
+logger.info("Boost: {}".format(grads0_boost))
 
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
