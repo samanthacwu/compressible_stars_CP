@@ -660,7 +660,7 @@ class AnelasticBallRPW(RadialProfileWriter):
 
 
         #Get fluxes for energy output
-        enthalpy = pS['g'] - 0.5*self.fields['u·u'] + TS['g']*s1S['g']
+        enthalpy = pB['g'] - 0.5*self.fields['u·u'] + TB['g']*s1B['g']
         self.tasks['enth_flux'][:] = ball_radial_averager(ρB['g']*self.fields['ur']*(enthalpy))
         self.tasks['visc_flux'][:] = ball_radial_averager(-ρB['g']*(self.fields['u·σ_r'])/Re)
         self.tasks['cond_flux'][:] = ball_radial_averager(-ρB['g']*TB['g']*self.fields['grad_s']/Pe)
