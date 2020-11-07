@@ -11,7 +11,7 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 14]
-    --N=<Nmax>           The value of Nmax   [default: 47]
+    --N=<Nmax>           The value of Nmax   [default: 95]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -178,6 +178,7 @@ if args['--mesa_file'] is not None:
         grad_s0_RHS['g'][2]        = f['grad_s0'][()][2,:,:,r_slice].reshape(r1.shape)
 
         t_buoy = 1
+        max_grad_s0 = f['grad_s0'][()][2,0,0,-1]
 
 else:
     logger.info("Using polytropic initial conditions")
@@ -189,12 +190,11 @@ else:
 
     #Gaussian luminosity -- zero at r = 0 and r = 1
     mu = 0.5
-    sig = 0.1
+    sig = 0.2
 
     T_func  = lambda r_val: 1 + gradT*r_val**2
     ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-#    L_func  = lambda r_val: np.exp(-(r_val - mu)**2/(2*sig**2))
-    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))#-(2*(r_val-mu)/(2*sig**2)) * L_func(r_val)
+    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))
     H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
 
     for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
@@ -209,7 +209,7 @@ else:
     grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
     grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
 
-    H_eff['g'] = H_func(r)# / H_func(0.4)
+    H_eff['g'] = H_func(r)
     t_buoy = 1
 
     from scipy.special import erf
@@ -219,7 +219,9 @@ else:
     def zero_to_one(*args, **kwargs):
         return -(one_to_zero(*args, **kwargs) - 1)
 
-    grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(r, 1, width=0.05)
+    grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(r, 0.95, width=0.05)
+    max_grad_s0 = 1e2
+max_dt = 0.5/np.sqrt(max_grad_s0)
 #    grad_s0['c'][:,:,:,-1] = 0
 
 #import matplotlib.pyplot as plt

@@ -312,34 +312,30 @@ if plot:
 
 ### Temperature (Ball) 
 T_nondim = (T) / T0
-plt.figure()
-likeT = np.copy(T_nondim)[ball_bool]
-#likeT[r_ball < 0.05] = 1
-width = 0.05
-Toutside   = likeT*zero_to_one(r_ball.flatten(), 0.1, width=width)
-TnearCore  = one_to_zero(r_ball.flatten(), 0.1, width=width)
-niceT      = TnearCore + Toutside
+#plt.figure()
+#likeT = np.copy(T_nondim)[ball_bool]
+##likeT[r_ball < 0.05] = 1
+#width = 0.05
+#Toutside   = likeT*zero_to_one(r_ball.flatten(), 0.1, width=width)
+#TnearCore  = one_to_zero(r_ball.flatten(), 0.1, width=width)
+#niceT      = TnearCore + Toutside
+#
+#plt.plot(r_ball.flatten(), T_nondim[ball_bool].flatten())
+#plt.plot(r_ball.flatten(), Toutside)
+#plt.plot(r_ball.flatten(), TnearCore)
+#plt.plot(r_ball.flatten(), niceT.flatten())
+#plt.show()
 
-plt.plot(r_ball.flatten(), T_nondim[ball_bool].flatten())
-plt.plot(r_ball.flatten(), Toutside)
-plt.plot(r_ball.flatten(), TnearCore)
-plt.plot(r_ball.flatten(), niceT.flatten())
-plt.show()
-
-
-
-
-N = int((NmaxB+1))-10
+N = 32
 T_fieldB = field.Field(dist=d, bases=(bB,), dtype=np.float64)
-T_interp = np.interp(rB, r_ball, niceT)
-T_interpReal = np.interp(rB, r_ball, T_nondim[ball_bool])
+T_interp = np.interp(rB, r_ball, T_nondim[ball_bool])
 T_fieldB['g'] = T_interp
 T_fieldB['c'][:, :, N:] = 0
 if plot:
-    plot_ncc_figure(rB.flatten(), T_interpReal.flatten(), T_fieldB['g'].flatten(), N, ylabel=r"$T/T_c$", fig_name="TB", out_dir=out_dir)
+    plot_ncc_figure(rB.flatten(), T_interp.flatten(), T_fieldB['g'].flatten(), N, ylabel=r"$T/T_c$", fig_name="TB", out_dir=out_dir)
 
 ### Temperature (Shell)
-N = 63
+N = 32
 T_fieldS = field.Field(dist=d, bases=(bS,), dtype=np.float64)
 T_interp = np.interp(rS, r_shell, T_nondim[shell_bool])
 T_fieldS['g'] = T_interp
@@ -361,17 +357,17 @@ H_NCC_ball = H_NCC[ball_bool]
 H_NCC_ball[r_ball > amount_to_adjust] = approx_H[r_ball > amount_to_adjust]
 print('outer', full_lum_above, full_lum_approx)
 
-#Adjust so gradient is zero near center
-#heat_erf_width  = 0.01
-#heat_erf_center = 0.03
-amount_to_adjust = 0.05
-full_lum_above = np.sum((4*np.pi*r_ball**2*H_NCC[ball_bool]*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
-approx_H = H_NCC[ball_bool][r_ball > amount_to_adjust].flatten()[0]*np.ones_like(r_ball)
-full_lum_approx = np.sum((4*np.pi*r_ball**2*approx_H*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
-approx_H *= full_lum_above/full_lum_approx
-full_lum_approx = np.sum((4*np.pi*r_ball**2*approx_H*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
-H_NCC_ball[r_ball <= amount_to_adjust] = approx_H[r_ball <= amount_to_adjust]
-print('inner', full_lum_above, full_lum_approx)
+##Adjust so gradient is zero near center
+##heat_erf_width  = 0.01
+##heat_erf_center = 0.03
+#amount_to_adjust = 0.05
+#full_lum_above = np.sum((4*np.pi*r_ball**2*H_NCC[ball_bool]*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
+#approx_H = H_NCC[ball_bool][r_ball > amount_to_adjust].flatten()[0]*np.ones_like(r_ball)
+#full_lum_approx = np.sum((4*np.pi*r_ball**2*approx_H*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
+#approx_H *= full_lum_above/full_lum_approx
+#full_lum_approx = np.sum((4*np.pi*r_ball**2*approx_H*np.gradient(r_ball))[r_ball <= amount_to_adjust].flatten())
+#H_NCC_ball[r_ball <= amount_to_adjust] = approx_H[r_ball <= amount_to_adjust]
+#print('inner', full_lum_above, full_lum_approx)
 
 
 
@@ -386,13 +382,6 @@ H_fieldB['c'][:,:,N:] = 0
 if plot:
     plot_ncc_figure(rB.flatten(), H_interp_plot.flatten(), H_fieldB['g'].flatten(), N, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_effB", out_dir=out_dir, zero_line=True)
 
-plt.figure()
-#plt.plot(rB.flatten(), (H_NCC_ball[5] * (rho0*T0/rho/T)[5]*one_to_zero(rB, 0.05, width=0.01)).flatten())
-plt.plot(r_ball.flatten(), (H_NCC_ball * (rho0*T0/rho/T)[ball_bool]).flatten())
-plt.plot(rB.flatten(), H_fieldB['g'][0,0,:])
-#plt.plot(r_ball.flatten(), (approx_H*(rho0*T0/rho/T)[ball_bool].flatten()))
-
-
 N = 1
 H_fieldS = field.Field(dist=d, bases=(bS,), dtype=np.float64)
 H_interp = np.interp(rS, r_shell, H_NCC[shell_bool])
@@ -404,30 +393,31 @@ if plot:
 
 
 transition_point = 1.03
-if NmaxB == 63:
-    width = 0.06
-    N = 32
-    N_after = -1
-elif NmaxB == 127:
-    width = 0.06
-    N = 36
-    N_after = -1
-elif NmaxB == 255:
-    width = 0.015
-    N = 47
-    N_after = -128
-    transition_point=1.02
-elif NmaxB == 383:
-    width = 0.01
-    N = 47
-    N_after = -192
-    transition_point=1.015
-elif NmaxB == 511:
-    width = 0.01
-    N = 47
-    N_after = -255
-    transition_point=1.0125
-center =  transition_point - 1.5*width
+width = 0.06
+N = 32
+N_after = 96
+
+#if NmaxB == 63:
+#elif NmaxB == 127:
+#    width = 0.06
+#    N = 36
+#    N_after = -1
+#elif NmaxB == 255:
+#    width = 0.015
+#    N = 47
+#    N_after = -128
+#    transition_point=1.02
+#elif NmaxB == 383:
+#    width = 0.01
+#    N = 47
+#    N_after = -192
+#    transition_point=1.015
+#elif NmaxB == 511:
+#    width = 0.01
+#    N = 47
+#    N_after = -255
+#    transition_point=1.0125
+center =  transition_point - 0.5*width
 width *= (L_CZ/L).value
 center *= (L_CZ/L).value
 
@@ -442,14 +432,14 @@ grad_s_fieldB['g'][2] = grad_s_base
 grad_s_fieldB['c'][:,:,:,N:] = 0
 grad_s_fieldB['g'][2] *= zero_to_one(rB, center, width=width).value
 grad_s_fieldB['c'][:,:,:,N_after:] = 0
-grad_s_fieldB['g'][2] *= zero_to_one(rB, 0.4, width=0.1).value
-grad_s_fieldB['c'][:,:,:,-1:] = 0
+#grad_s_fieldB['g'][2] *= zero_to_one(rB, 0.4, width=0.1).value
+#grad_s_fieldB['c'][:,:,:,-1:] = 0
 if plot:
     plot_ncc_figure(rB.flatten(), grad_s_interp.flatten(), grad_s_fieldB['g'][2].flatten(), N, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sB", out_dir=out_dir, zero_line=True)
 
 
 ### entropy gradient (Shell)
-N = 48
+N = 32
 grad_s_fieldS  = field.Field(dist=d, bases=(bS,), dtype=np.float64, tensorsig=(c,))
 grad_s_interp = np.interp(rS, r_shell, grad_s[shell_bool]*L/s_c)
 grad_s_fieldS['g'][2] = grad_s_interp
