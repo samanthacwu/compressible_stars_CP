@@ -8,11 +8,11 @@ Usage:
     ballShell_AN.py <config> [options]
 
 Options:
-    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
+    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 14]
-    --NB=<Nmax>          The ball value of Nmax   [default: 63]
-    --NS=<Nmax>          The shell value of Nmax   [default: 15]
+    --L=<Lmax>           The value of Lmax   [default: 6]
+    --NB=<Nmax>          The ball value of Nmax   [default: 23]
+    --NS=<Nmax>          The shell value of Nmax   [default: 7]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -125,7 +125,7 @@ if args['--mesa_file'] is not None:
         r_outer = f['r_outer'][()]
 else:
     r_inner = 1.1
-    r_outer = 2
+    r_outer = 1.5
 logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 
 # Bases
@@ -252,41 +252,31 @@ if args['--mesa_file'] is not None:
         t_buoy = 1
 else:
     logger.info("Using polytropic initial conditions")
+    from scipy.interpolate import interp1d
+    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
+        T_func = interp1d(f['r'][()], f['T'][()])
+        ρ_func = interp1d(f['r'][()], f['ρ'][()])
+        grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
+        H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+    max_grad_s0 = grad_s0_func(r_outer)
+    t_buoy      = 1
 
-    # "Polytrope" properties
-    n_rho = 2
-    gamma = 5/3
-    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/r_outer**2
-    t_buoy = 1
-
-    #Gaussian luminosity -- zero at r = 0 and r = 1
-    mu = 0.5
-    sig = 0.2
-
-    T_func  = lambda r_val: 1 + gradT*r_val**2
-    ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))
-    H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
 
     for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
         T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
 
-        for f in [T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0]:
-            f.require_scales(dealias)
-        T['g'] = T_NCC['g'] = T_func(basis_r)
-        ρ['g'] = ρ_NCC['g'] = ρ_func(basis_r)
-        inv_T['g'] = 1/T['g']
-        if np.prod(ln_T['g'].shape) > 0:
-            ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
-            ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
+        grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
+        T['g']           = T_func(basis_r)
+        T_NCC['g']       = T_func(basis_r)
+        ρ['g']           = ρ_func(basis_r)
+        ρ_NCC['g']       = ρ_func(basis_r)
+        inv_T['g']       = T_func(basis_r)
+        H_eff['g']       = H_eff_func(basis_r)
+        ln_T['g']        = np.log(T_func(basis_r))
+        ln_ρ['g']        = np.log(ρ_func(basis_r))
+        grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
+        grad_ln_T['g']        = grad(ln_T).evaluate()['g']
 
-        grad_ln_T['g'][2]  = 2*gradT*basis_r/T['g'][0,0,:]
-        grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
-
-        H_eff['g'] = H_func(basis_r)
-
-        grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(basis_r, 0.95, width=0.05)
-        max_grad_s0 = 1e2
 max_dt = 0.5/np.sqrt(max_grad_s0)
 
 logger.info('buoyancy time is {}'.format(t_buoy))
