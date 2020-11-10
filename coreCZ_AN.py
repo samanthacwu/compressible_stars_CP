@@ -8,10 +8,10 @@ Usage:
     coreCZ_AN.py <config> [options]
 
 Options:
-    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e2]
+    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 14]
-    --N=<Nmax>           The value of Nmax   [default: 95]
+    --L=<Lmax>           The value of Lmax   [default: 6]
+    --N=<Nmax>           The value of Nmax   [default: 31]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -56,6 +56,16 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
+
+from scipy.special import erf
+def one_to_zero(x, x0, width=0.1):
+    return (1 - erf( (x - x0)/width))/2
+
+def zero_to_one(*args, **kwargs):
+    return -(one_to_zero(*args, **kwargs) - 1)
+
+
+
 
 args   = docopt(__doc__)
 if args['<config>'] is not None: 
@@ -108,7 +118,7 @@ if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
         radius = f['maxR'][()]
 else:
-    radius = 2
+    radius = 1.5
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -181,58 +191,35 @@ if args['--mesa_file'] is not None:
         max_grad_s0 = f['grad_s0'][()][2,0,0,-1]
 
 else:
-    logger.info("Using polytropic initial conditions")
+    from scipy.interpolate import interp1d
+    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
+        T_func = interp1d(f['r'][()], f['T'][()])
+        ρ_func = interp1d(f['r'][()], f['ρ'][()])
+        grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
+        H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+    grad_s0['g'][2]     = grad_s0_func(r)#*zero_to_one(r, 0.5, width=0.1)
+    grad_s0_RHS['g'][2] = grad_s0_func(r)#*zero_to_one(r, 0.5, width=0.1)
+    T['g']           = T_func(r)
+    T_NCC['g']       = T_func(r)
+    ρ['g']           = ρ_func(r)
+    inv_T['g']       = T_func(r)
+    H_eff['g']       = H_eff_func(r)
+    ln_T['g']        = np.log(T_func(r))
+    ln_ρ['g']        = np.log(ρ_func(r))
+    grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
+    grad_ln_T['g']        = grad(ln_T).evaluate()['g']
 
-    # "Polytrope" properties
-    n_rho = 2
-    gamma = 5/3
-    gradT = (np.exp(n_rho * (1 - gamma)) - 1)/radius**2
+    max_grad_s0 = grad_s0_func(radius)
+    t_buoy      = 1
 
-    #Gaussian luminosity -- zero at r = 0 and r = 1
-    mu = 0.5
-    sig = 0.2
-
-    T_func  = lambda r_val: 1 + gradT*r_val**2
-    ρ_func  = lambda r_val: T_func(r_val)**(1/(gamma-1))
-    dL_func = lambda r_val: np.exp(-r_val**2/(2*sig**2))
-    H_func  = lambda r_val: dL_func(r_val) / (ρ_func(r_val) * T_func(r_val) * 4 * np.pi * r_val**2)
-
-    for f in [T, T_NCC, ρ, inv_T, ln_T, ln_ρ, H_eff]:
-        f.require_scales(dealias)
-    T['g'] = T_NCC['g'] = T_func(r)
-    ρ['g'] = ρ_func(r)
-    inv_T['g'] = 1/T['g']
-    if np.prod(ln_T['g'].shape) > 0:
-        ln_T['g'][:,:,:] = np.log(T['g'])[0,0,:]
-        ln_ρ['g'][:,:,:] = np.log(ρ['g'])[0,0,:]
-
-    grad_ln_T['g'][2]  = 2*gradT*r/T['g'][0,0,:]
-    grad_ln_ρ['g'][2]  = (1/(gamma-1))*grad_ln_T['g'][2]
-
-    H_eff['g'] = H_func(r)
-    t_buoy = 1
-
-    from scipy.special import erf
-    def one_to_zero(x, x0, width=0.1):
-        return (1 - erf( (x - x0)/width))/2
-
-    def zero_to_one(*args, **kwargs):
-        return -(one_to_zero(*args, **kwargs) - 1)
-
-    grad_s0['g'][2,:,:,:]     = 1e2*zero_to_one(r, 0.95, width=0.05)
-    max_grad_s0 = 1e2
 max_dt = 0.5/np.sqrt(max_grad_s0)
-#    grad_s0['c'][:,:,:,-1] = 0
 
 #import matplotlib.pyplot as plt
-#plt.plot(r.flatten(), H_eff['g'][0,0,:])
+#plt.plot(r.flatten(), grad_s0['g'][2,0,0,:])
+#plt.yscale('log')
 #plt.show()
 
 logger.info('buoyancy time is {}'.format(t_buoy))
-if args['--benchmark']:
-    max_dt = 0.03*t_buoy
-else:
-    max_dt = 0.5*t_buoy
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
