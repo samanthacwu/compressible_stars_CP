@@ -158,7 +158,8 @@ tau = tau.cgs
 print('one time unit is {:.2e}'.format(tau))
 u_H = L/tau
 
-Pe = u_H*L/rad_diff
+Pe_rad = u_H*L/rad_diff
+inv_Pe_rad = 1/Pe_rad
 
 #fig = plt.figure()
 #ax1 = fig.add_subplot(2,1,1)
@@ -232,6 +233,29 @@ dot  = lambda A, B: arithmetic.DotProduct(A, B)
 
 r_vec  = field.Field(dist=d, bases=(bB,), dtype=np.float64, tensorsig=(c,))
 r_vec['g'][2,:] = 1
+
+
+### Radiative diffusivity
+N = 8
+inv_Pe_rad_fieldS  = field.Field(dist=d, bases=(bS,), dtype=np.float64)
+inv_Pe_rad_interp = np.interp(rS, r_shell, inv_Pe_rad[shell_bool])
+inv_Pe_rad_fieldS['g'] = inv_Pe_rad_interp
+inv_Pe_rad_fieldS['c'][:, :, N:] = 0
+if plot:
+    plot_ncc_figure(rS.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldS['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir)
+
+N = 8
+inv_Pe_rad_fieldB  = field.Field(dist=d, bases=(bB,), dtype=np.float64)
+inv_Pe_rad_interp = np.interp(rB, r_ball, inv_Pe_rad[ball_bool])
+inv_Pe_rad_fieldB['g'] = inv_Pe_rad_interp
+inv_Pe_rad_fieldB['c'][:, :, N:] = 0
+if plot:
+    plot_ncc_figure(rB.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldB['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir)
+
+
+
+
+
 
 
 ### Log Density (Ball)
@@ -468,6 +492,7 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['grad_ln_TB']  = grad_ln_T_fieldB['g']
     f['grad_ln_ρB']  = grad_ln_rho_fieldB['g']
     f['grad_s0B']    = grad_s_fieldB['g']
+    f['inv_Pe_radB'] = inv_Pe_rad_fieldB['g']
 
     f['rS']          = rS
     f['TS']          = T_fieldS['g']
@@ -477,6 +502,7 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['grad_ln_TS']  = grad_ln_T_fieldS['g']
     f['grad_ln_ρS']  = grad_ln_rho_fieldS['g']
     f['grad_s0S']    = grad_s_fieldS['g']
+    f['inv_Pe_radS'] = inv_Pe_rad_fieldS['g']
 
     f['r_inner']   = r_inner
     f['r_outer']   = r_outer
