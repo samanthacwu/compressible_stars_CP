@@ -1,0 +1,15 @@
+#PBS -S /bin/bash
+#PBS -N ballOnly_benchmark
+#PBS -l select=3:ncpus=28:mpiprocs=28:model=bro_ele
+#PBS -l walltime=8:00:00
+#PBS -j oe
+#PBS -q normal
+#PBS -W group_list=s2276
+
+source /u/eanders/miniconda3/etc/profile.d/conda.sh
+conda activate dedalus-d3
+cd $PBS_O_WORKDIR
+
+date
+mpiexec_mpt -n 64 python3 coreCZ_AN.py --N=63 --L=30 --buoy_end_time=500 --mesh=8,8 --benchmark  > out.ballOnly.bench.$PBS_JOBID
+date

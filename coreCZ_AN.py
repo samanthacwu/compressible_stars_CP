@@ -191,6 +191,7 @@ if args['--mesa_file'] is not None:
         max_grad_s0 = f['grad_s0'][()][2,0,0,-1]
 
 else:
+    logger.info("Using polytropic initial conditions")
     from scipy.interpolate import interp1d
     with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
         T_func = interp1d(f['r'][()], f['T'][()])
