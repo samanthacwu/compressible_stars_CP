@@ -6,9 +6,10 @@ Usage:
 
 Options:
     --NB=<N>        Maximum radial coefficients (ball) [default: 63]
-    --NS=<N>        Maximum radial coefficients (shell) [default: 31]
+    --NS=<N>        Maximum radial coefficients (shell) [default: 63]
     --file=<f>      Path to MESA log file [default: MESA_Models_Dedalus_Full_Sphere/LOGS/6.data]
     --pre_log_folder=<f>  Folder name in which 'LOGS' sits [default: ]
+    --halfStar      If flagged, only get the inner 50% of the star
 """
 import os
 import time
@@ -40,7 +41,7 @@ def zero_to_one(*args, **kwargs):
 
 
 
-def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.', zero_line=False):
+def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False):
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
     if zero_line:
@@ -53,6 +54,8 @@ def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.'
     ax1.set_ylabel('{}'.format(ylabel))
     ax1.xaxis.set_ticks_position('top')
     ax1.xaxis.set_label_position('top')
+    if log:
+        ax1.set_yscale('log')
 
     ax2 = fig.add_subplot(2,1,2)
     difference = np.abs(1 - dedalus_y/mesa_y)
@@ -69,7 +72,10 @@ NmaxB = int(args['--NB'])
 NmaxS = int(args['--NS'])
 read_file = args['--file']
 filename = read_file.split('/LOGS/')[-1]
-out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell_halfStar')
+if args['--halfStar']:
+    out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell_halfStar')
+else:
+    out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell')
 if args['--pre_log_folder'] != '':
     out_dir = '{:s}_{:s}'.format(args['--pre_log_folder'], out_dir)
 print('saving files to {}'.format(out_dir))
@@ -141,13 +147,13 @@ H_NCC = ((H_eff)  / H0)
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
 core_cz_bound = mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
-bound_ind = np.argmin(np.abs(mass - core_cz_bound))
+coreCZ_bound_ind = np.argmin(np.abs(mass - core_cz_bound))
 
 
 #Nondimensionalization
 halfStar_r = r[-1]/2
-L = L_CZ  = r[bound_ind]
-g0 = g[bound_ind] 
+L = L_CZ  = r[coreCZ_bound_ind]
+g0 = g[coreCZ_bound_ind] 
 rho0 = rho[0]
 P0 = P[0]
 T0 = T[0]
@@ -160,6 +166,19 @@ u_H = L/tau
 
 Pe_rad = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
+
+#Find bottom edge of FeCZ
+
+FeCZ = (mass > 1.1*mass[coreCZ_bound_ind])*(L_conv.value > 1)
+bot_FeCZ_r = 0.995*r[FeCZ][0]
+FeCZ_bound_ind = np.argmin(np.abs(r - bot_FeCZ_r))
+
+#plt.plot(r/L, L_conv)
+#plt.plot(r/L, Pe_rad)
+#plt.yscale('log')
+#plt.axvline(r[FeCZ_bound_ind]/L)
+#plt.show()
+
 
 #fig = plt.figure()
 #ax1 = fig.add_subplot(2,1,1)
@@ -211,11 +230,12 @@ s_c = Ma2*(gamma0-1)*cp0
 
 
 r_inner    = r[cz_bool][-1]*1.1/L
-r_outer    = halfStar_r/L
+if args['--halfStar']:
+    r_outer    = halfStar_r/L
+else:
+    r_outer    = bot_FeCZ_r/L
 ball_bool  = r <= r_inner*L
 shell_bool = (r > r_inner*L)*(r <= r_outer*L)
-
-#rz_bool = (r > r[cz_bool][-1])*(r <= halfStar_r)
 
 r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
@@ -236,13 +256,13 @@ r_vec['g'][2,:] = 1
 
 
 ### Radiative diffusivity
-N = 8
+N = 62
 inv_Pe_rad_fieldS  = field.Field(dist=d, bases=(bS,), dtype=np.float64)
 inv_Pe_rad_interp = np.interp(rS, r_shell, inv_Pe_rad[shell_bool])
 inv_Pe_rad_fieldS['g'] = inv_Pe_rad_interp
 inv_Pe_rad_fieldS['c'][:, :, N:] = 0
 if plot:
-    plot_ncc_figure(rS.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldS['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir)
+    plot_ncc_figure(rS.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldS['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir, log=True)
 
 N = 8
 inv_Pe_rad_fieldB  = field.Field(dist=d, bases=(bB,), dtype=np.float64)
@@ -250,8 +270,9 @@ inv_Pe_rad_interp = np.interp(rB, r_ball, inv_Pe_rad[ball_bool])
 inv_Pe_rad_fieldB['g'] = inv_Pe_rad_interp
 inv_Pe_rad_fieldB['c'][:, :, N:] = 0
 if plot:
-    plot_ncc_figure(rB.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldB['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir)
+    plot_ncc_figure(rB.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldB['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir, log=True)
 
+plt.show()
 
 
 
@@ -279,7 +300,7 @@ if plot:
 
 
 ### Log Density (Shell)
-N = 8
+N = 16
 ln_rho_fieldS  = field.Field(dist=d, bases=(bS,), dtype=np.float64)
 ln_rho = np.log(rho/rho0)[shell_bool]
 ln_rho_interp = np.interp(rS, r_shell, ln_rho)
@@ -288,7 +309,7 @@ ln_rho_fieldS['c'][:, :, N:] = 0
 if plot:
     plot_ncc_figure(rS.flatten(), (-1)+ln_rho_interp.flatten(), (-1)+ln_rho_fieldS['g'].flatten(), N, ylabel=r"$\ln\rho - 1$", fig_name="ln_rhoS", out_dir=out_dir)
 
-N = 8
+N = 32
 grad_ln_rho_fieldS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=np.float64)
 grad_ln_rho_interp = np.interp(rS, r_shell, dlogrhodr[shell_bool]*L)
 grad_ln_rho_fieldS['g'][2] = grad_ln_rho_interp
@@ -308,7 +329,7 @@ ln_T_fieldB['c'][:, :, N:] = 0
 if plot:
     plot_ncc_figure(rB.flatten(), (-1)+ln_T_interp.flatten(), (-1)+ln_T_fieldB['g'].flatten(), N, ylabel=r"$\ln(T) - 1$", fig_name="ln_TB", out_dir=out_dir)
 
-N = 8
+N = 16
 grad_ln_T_fieldB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=np.float64)
 grad_ln_T_interp = np.interp(rB, r_ball, dlogTdr[ball_bool]*L)
 grad_ln_T_fieldB['g'][2] = grad_ln_T_interp 
@@ -317,7 +338,7 @@ if plot:
     plot_ncc_figure(rB.flatten(), grad_ln_T_interp.flatten(), grad_ln_T_fieldB['g'][2].flatten(), N, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_TB", out_dir=out_dir)
 
 ### Log Temperature (Shell)
-N = 8
+N = 16
 ln_T_fieldS  = field.Field(dist=d, bases=(bS,), dtype=np.float64)
 ln_T = np.log((T)/T0)
 ln_T_interp = np.interp(rS, r_shell, ln_T[shell_bool])
@@ -326,7 +347,7 @@ ln_T_fieldS['c'][:, :, N:] = 0
 if plot:
     plot_ncc_figure(rS.flatten(), (-1)+ln_T_interp.flatten(), (-1)+ln_T_fieldS['g'].flatten(), N, ylabel=r"$\ln(T) - 1$", fig_name="ln_TS", out_dir=out_dir)
 
-N = 8
+N = 32
 grad_ln_T_fieldS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=np.float64)
 grad_ln_T_interp = np.interp(rS, r_shell, dlogTdr[shell_bool]*L)
 grad_ln_T_fieldS['g'][2] = grad_ln_T_interp 
