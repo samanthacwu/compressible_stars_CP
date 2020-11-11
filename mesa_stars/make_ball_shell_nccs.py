@@ -168,10 +168,22 @@ Pe_rad = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
 
 #Find bottom edge of FeCZ
+fracStar = 0.95
 
 FeCZ = (mass > 1.1*mass[coreCZ_bound_ind])*(L_conv.value > 1)
-bot_FeCZ_r = 0.995*r[FeCZ][0]
+bot_FeCZ_r = fracStar*r[FeCZ][0]
 FeCZ_bound_ind = np.argmin(np.abs(r - bot_FeCZ_r))
+
+print('fraction of FULL star simulated: {}'.format(bot_FeCZ_r/r[-1]))
+
+#plt.plot(mass, N2, c='k', lw=5)
+#plt.plot(mass[:FeCZ_bound_ind], N2[:FeCZ_bound_ind], c='orange')
+#plt.yscale('log')
+#plt.xlabel('mass')
+#plt.ylabel(r'$N^2$')
+#plt.show()
+
+
 
 #plt.plot(r/L, L_conv)
 #plt.plot(r/L, Pe_rad)

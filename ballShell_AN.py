@@ -284,7 +284,7 @@ else:
 inv_PeB['g'] += 1/Pe
 inv_PeS['g'] += 1/Pe
 
-max_dt = 0.5/np.sqrt(max_grad_s0)
+max_dt = 2/np.sqrt(max_grad_s0)
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
