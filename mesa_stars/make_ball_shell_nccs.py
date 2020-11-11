@@ -272,8 +272,6 @@ inv_Pe_rad_fieldB['c'][:, :, N:] = 0
 if plot:
     plot_ncc_figure(rB.flatten(), inv_Pe_rad_interp.flatten(), inv_Pe_rad_fieldB['g'].flatten(), N, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir, log=True)
 
-plt.show()
-
 
 
 
@@ -480,7 +478,7 @@ grad_s_fieldB['c'][:,:,:,N_after:] = 0
 #grad_s_fieldB['g'][2] *= zero_to_one(rB, 0.4, width=0.1).value
 #grad_s_fieldB['c'][:,:,:,-1:] = 0
 if plot:
-    plot_ncc_figure(rB.flatten(), grad_s_interp.flatten(), grad_s_fieldB['g'][2].flatten(), N, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sB", out_dir=out_dir, zero_line=True)
+    plot_ncc_figure(rB.flatten(), grad_s_interp.flatten(), grad_s_fieldB['g'][2].flatten(), N, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sB", out_dir=out_dir, log=True)
 
 
 ### entropy gradient (Shell)
@@ -492,7 +490,7 @@ grad_s_fieldS['c'][:,:,:,N:] = 0
 #grad_s_field['g'][2] *= zero_to_one(rB, 0.995*(L_CZ/L).value, width=width*(L_CZ/L).value)
 #grad_s_field['c'][:,:,:,N_after:] = 0
 if plot:
-    plot_ncc_figure(rS.flatten(), grad_s_interp.flatten(), grad_s_fieldS['g'][2].flatten(), N, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sS", out_dir=out_dir, zero_line=True)
+    plot_ncc_figure(rS.flatten(), grad_s_interp.flatten(), grad_s_fieldS['g'][2].flatten(), N, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sS", out_dir=out_dir, log=True)
 
 
 
