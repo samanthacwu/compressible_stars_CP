@@ -98,8 +98,10 @@ b2S       = basis.SphericalShellBasis(c, (2*(new_LmaxS+2), new_LmaxS+1, new_Nmax
 
 uB2 = field.Field(dist=d, bases=(b2B,), tensorsig=(c,), dtype=dtype)
 sB2 = field.Field(dist=d, bases=(b2B,), dtype=dtype)
+pB2 = field.Field(dist=d, bases=(b2B,), dtype=dtype)
 uS2 = field.Field(dist=d, bases=(b2S,), tensorsig=(c,), dtype=dtype)
 sS2 = field.Field(dist=d, bases=(b2S,), dtype=dtype)
+pS2 = field.Field(dist=d, bases=(b2S,), dtype=dtype)
 
 
 check_str = 'checkpoint_LB{:.2f}_NB{:.2f}_LS{:.2f}_NS{:.2f}'.format(L_fracB, N_fracB, L_fracS, N_fracS)
@@ -115,10 +117,12 @@ import sys
 
 sys.stdout.flush()
 with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir, check_str), 'r') as f:
-    sB2['g'] = f['tasks']['s1B'][()]
-    uB2['g'] = f['tasks']['uB'][()]
-    sS2['g'] = f['tasks']['s1S'][()]
-    uS2['g'] = f['tasks']['uS'][()]
+    sB2['c'] = f['tasks']['s1B'][()]
+    pB2['c'] = f['tasks']['pB'][()]
+    uB2['c'] = f['tasks']['uB'][()]
+    sS2['c'] = f['tasks']['s1S'][()]
+    pS2['c'] = f['tasks']['pS'][()]
+    uS2['c'] = f['tasks']['uS'][()]
 
 split_out_dir = '{:s}/{:s}_s1/'.format(out_dir, check_str)
 import os
@@ -155,5 +159,7 @@ for i in range(num_procs):
         task_group = f.create_group('tasks')
         f['tasks']['uB']  = np.expand_dims(uB2['c'][vec_sliceB], axis=0)
         f['tasks']['s1B'] = np.expand_dims(sB2['c'][sliceB], axis=0)
+        f['tasks']['pB']  = np.expand_dims(pB2['c'][sliceB], axis=0)
         f['tasks']['uS']  = np.expand_dims(uS2['c'][vec_sliceS], axis=0)
         f['tasks']['s1S'] = np.expand_dims(sS2['c'][sliceS], axis=0)
+        f['tasks']['pS']  = np.expand_dims(pS2['c'][sliceS], axis=0)

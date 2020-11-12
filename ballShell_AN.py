@@ -24,11 +24,11 @@ Options:
     --label=<label>      A label to add to the end of the output directory
 
     --SBDF2              Use SBDF2 (default)
+    --RK222              Use RK222
     --SBDF4              Use SBDF4
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
-    --restart_Re=<Re>    Re of the run being restarted from
 
     --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
 
@@ -106,6 +106,9 @@ if MPI.COMM_WORLD.rank == 0:
 if args['--SBDF4']:
     ts = timesteppers.SBDF4
     timestepper_history = [0, 1, 2, 3]
+elif args['--RK222']:
+    ts = timesteppers.RK222
+    timestepper_history = [0, ]
 else:
     ts = timesteppers.SBDF2
     timestepper_history = [0, 1,]
@@ -342,29 +345,26 @@ if args['--restart'] is not None:
     check_name = fdir.split('/')[-1]
     #Try to just load the loal piece file
 
-    restart_Re = args['--restart_Re']
-    if restart_Re is not None:
-        restart_Re = float(restart_Re)
-        vel_factor = restart_Re/Re
-    else:
-        vel_factor = 1
-
     import h5py
     with h5py.File('{}/{}_p{}.h5'.format(fdir, check_name, d.comm_cart.rank), 'r') as f:
         s1B.set_scales(1)
+        pB.set_scales(1)
         uB.set_scales(1)
         s1S.set_scales(1)
+        pS.set_scales(1)
         uS.set_scales(1)
         s1B['c'] = f['tasks/s1B'][()][-1,:]
+        pB['c'] = f['tasks/pB'][()][-1,:]
         uB['c'] = f['tasks/uB'][()][-1,:]
         s1S['c'] = f['tasks/s1S'][()][-1,:]
+        pS['c'] = f['tasks/pS'][()][-1,:]
         uS['c'] = f['tasks/uS'][()][-1,:]
 
-        uB['g'] *= vel_factor
-        uS['g'] *= vel_factor
         s1B.require_scales(dealias)
+        pB.require_scales(dealias)
         uB.require_scales(dealias)
         s1S.require_scales(dealias)
+        pS.require_scales(dealias)
         uS.require_scales(dealias)
 else:
     if args['--benchmark']:
@@ -765,9 +765,12 @@ writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWr
 
 ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 ball_checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
+ball_checkpoint.add_task(pB, name='pB', scales=1, layout='c')
 ball_checkpoint.add_task(uB, name='uB', scales=1, layout='c')
 ball_checkpoint.add_task(s1S, name='s1S', scales=1, layout='c')
+ball_checkpoint.add_task(pS, name='pS', scales=1, layout='c')
 ball_checkpoint.add_task(uS, name='uS', scales=1, layout='c')
+
 
 
 imaginary_cadence = 100
@@ -879,8 +882,10 @@ finally:
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
     fcheckpoint.add_task(s1B, name='s1B', scales=1, layout='c')
     fcheckpoint.add_task(uB, name='uB', scales=1, layout='c')
+    fcheckpoint.add_task(pB, name='pB', scales=1, layout='c')
     fcheckpoint.add_task(s1S, name='s1S', scales=1, layout='c')
     fcheckpoint.add_task(uS, name='uS', scales=1, layout='c')
+    fcheckpoint.add_task(pS, name='pS', scales=1, layout='c')
     solver.step(1e-5*dt)
 
     end_time = time.time()

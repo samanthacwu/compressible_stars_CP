@@ -234,40 +234,68 @@ check_file = check_folder[:-1] + '.h5'
 
 uB1 = field.Field(dist=d, bases=(b1B,), tensorsig=(c,), dtype=dtype)
 sB1 = field.Field(dist=d, bases=(b1B,), dtype=dtype)
+pB1 = field.Field(dist=d, bases=(b1B,), dtype=dtype)
 uB2 = field.Field(dist=d, bases=(b2B,), tensorsig=(c,), dtype=dtype)
 sB2 = field.Field(dist=d, bases=(b2B,), dtype=dtype)
+pB2 = field.Field(dist=d, bases=(b2B,), dtype=dtype)
 uS1 = field.Field(dist=d, bases=(b1S,), tensorsig=(c,), dtype=dtype)
 sS1 = field.Field(dist=d, bases=(b1S,), dtype=dtype)
+pS1 = field.Field(dist=d, bases=(b1S,), dtype=dtype)
 uS2 = field.Field(dist=d, bases=(b2S,), tensorsig=(c,), dtype=dtype)
 sS2 = field.Field(dist=d, bases=(b2S,), dtype=dtype)
+pS2 = field.Field(dist=d, bases=(b2S,), dtype=dtype)
 
 import h5py
 
 with h5py.File(check_file, 'r') as f:
     [print(k) for k in f.keys()]
-    if L_fracB >= 1 or N_fracB >= 1:
-        uB2['c'][:, :(LmaxB+2), :LmaxB+1, :NmaxB+1] = f['tasks']['uB'][-1,:]
-        sB2['c'][   :(LmaxB+2), :LmaxB+1, :NmaxB+1] = f['tasks']['s1B'][-1,:]
-        uS2['c'][:, :(LmaxS+2), :LmaxS+1, :NmaxS+1] = f['tasks']['uS'][-1,:]
-        sS2['c'][   :(LmaxS+2), :LmaxS+1, :NmaxS+1] = f['tasks']['s1S'][-1,:]
-    else:
-        uB1['c'] = f['tasks']['uB'][-1,:]
-        sB1['c'] = f['tasks']['s1B'][-1,:]
-        uS1['c'] = f['tasks']['uS'][-1,:]
-        sS1['c'] = f['tasks']['s1S'][-1,:]
-        for f in [uB1, sB1]:
-            f.require_scales((L_fracB, L_fracB, N_fracB))
-            f['g']
-            f['c']
-        for f in [uS1, sS1]:
-            f.require_scales((L_fracS, L_fracS, N_fracS))
-            f['g']
-            f['c']
-        uB2['c'] = uB1['c'][:, :(new_LmaxB+2), :new_LmaxB+1, :new_NmaxB+1]
-        sB2['c'] = sB1['c'][   :(new_LmaxB+2), :new_LmaxB+1, :new_NmaxB+1]
-        uS2['c'] = uS1['c'][:, :(new_LmaxS+2), :new_LmaxS+1, :new_NmaxS+1]
-        sS2['c'] = sS1['c'][   :(new_LmaxS+2), :new_LmaxS+1, :new_NmaxS+1]
+#    if L_fracB >= 1 or N_fracB >= 1:
+#        uB2['c'][:, :(LmaxB+2), :LmaxB+1, :NmaxB+1] = f['tasks']['uB'][-1,:]
+#        sB2['c'][   :(LmaxB+2), :LmaxB+1, :NmaxB+1] = f['tasks']['s1B'][-1,:]
+#        pB2['c'][   :(LmaxB+2), :LmaxB+1, :NmaxB+1] = f['tasks']['pB'][-1,:]
+#        uS2['c'][:, :(LmaxS+2), :LmaxS+1, :NmaxS+1] = f['tasks']['uS'][-1,:]
+#        sS2['c'][   :(LmaxS+2), :LmaxS+1, :NmaxS+1] = f['tasks']['s1S'][-1,:]
+#        pS2['c'][   :(LmaxS+2), :LmaxS+1, :NmaxS+1] = f['tasks']['pS'][-1,:]
+#    else:
+#        uB1['c'] = f['tasks']['uB'][-1,:]
+#        sB1['c'] = f['tasks']['s1B'][-1,:]
+#        pB1['c'] = f['tasks']['pB'][-1,:]
+#        uS1['c'] = f['tasks']['uS'][-1,:]
+#        sS1['c'] = f['tasks']['s1S'][-1,:]
+#        pS1['c'] = f['tasks']['pS'][-1,:]
+#        for f in [uB1, sB1, pB1]:
+#            f.require_scales((L_fracB, L_fracB, N_fracB))
+#            f['g']
+#            f['c']
+#        for f in [uS1, sS1, pS1]:
+#            f.require_scales((L_fracS, L_fracS, N_fracS))
+#            f['g']
+#            f['c']
+#        uB2['c'] = uB1['c'][:, :(new_LmaxB+2), :new_LmaxB+1, :new_NmaxB+1]
+#        sB2['c'] = sB1['c'][   :(new_LmaxB+2), :new_LmaxB+1, :new_NmaxB+1]
+#        pB2['c'] = pB1['c'][   :(new_LmaxB+2), :new_LmaxB+1, :new_NmaxB+1]
+#        uS2['c'] = uS1['c'][:, :(new_LmaxS+2), :new_LmaxS+1, :new_NmaxS+1]
+#        sS2['c'] = sS1['c'][   :(new_LmaxS+2), :new_LmaxS+1, :new_NmaxS+1]
+#        pS2['c'] = pS1['c'][   :(new_LmaxS+2), :new_LmaxS+1, :new_NmaxS+1]
 
+
+
+    uB1['c'] = f['tasks']['uB'][-1,:]
+    sB1['c'] = f['tasks']['s1B'][-1,:]
+    pB1['c'] = f['tasks']['pB'][-1,:]
+    uS1['c'] = f['tasks']['uS'][-1,:]
+    sS1['c'] = f['tasks']['s1S'][-1,:]
+    pS1['c'] = f['tasks']['pS'][-1,:]
+    for f in [uB1, sB1, pB1]:
+        f.require_scales(((new_LmaxB+2)/(LmaxB+2), (new_LmaxB+1)/(LmaxB+1), (new_NmaxB+1)/(NmaxB+1)))
+    for f in [uS1, sS1, pS1]:
+        f.require_scales(((new_LmaxS+2)/(LmaxS+2), (new_LmaxS+1)/(LmaxS+1), (new_NmaxS+1)/(NmaxS+1)))
+    uB2['g'] = uB1['g']
+    sB2['g'] = sB1['g']
+    pB2['g'] = pB1['g']
+    uS2['g'] = uS1['g']
+    sS2['g'] = sS1['g']
+    pS2['g'] = pS1['g']
 
 check_str = 'checkpoint_LB{:.2f}_NB{:.2f}_LS{:.2f}_NS{:.2f}'.format(L_fracB, N_fracB, L_fracS, N_fracS)
 out_dir='{:s}/{:s}/'.format(root_dir, check_str)
@@ -278,10 +306,12 @@ if not os.path.exists('{:s}/'.format(out_dir)):
 with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir[:-1], check_str,), 'w') as f:
     print('{:s}/{:s}_s1.h5'.format(out_dir[:-1], check_str))
     task_group = f.create_group('tasks')
-    f['tasks']['uB']  = np.expand_dims(uB2['g'], axis=0)
-    f['tasks']['s1B'] = np.expand_dims(sB2['g'], axis=0)
-    f['tasks']['uS']  = np.expand_dims(uS2['g'], axis=0)
-    f['tasks']['s1S'] = np.expand_dims(sS2['g'], axis=0)
+    f['tasks']['uB']  = np.expand_dims(uB2['c'], axis=0)
+    f['tasks']['s1B'] = np.expand_dims(sB2['c'], axis=0)
+    f['tasks']['pB']  = np.expand_dims(pB2['c'], axis=0)
+    f['tasks']['uS']  = np.expand_dims(uS2['c'], axis=0)
+    f['tasks']['s1S'] = np.expand_dims(sS2['c'], axis=0)
+    f['tasks']['pS']  = np.expand_dims(pS2['c'], axis=0)
 
     f['rBg'] = rBg2
     f['φBg'] = φBg2
@@ -289,4 +319,3 @@ with h5py.File('{:s}/{:s}_s1.h5'.format(out_dir[:-1], check_str,), 'w') as f:
     f['rSg'] = rSg2
     f['φSg'] = φSg2
     f['θSg'] = θSg2
-     
