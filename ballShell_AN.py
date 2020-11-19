@@ -729,12 +729,13 @@ class AnelasticSSW(SphericalShellWriter):
     def __init__(self, *args, **kwargs):
         super(AnelasticSSW, self).__init__(*args, **kwargs)
         self.ops = OrderedDict()
-        self.ops['s1_r0.95'] = s1B(r=0.95)
+        self.ops['s1_r1']    = s1B(r=1)
         self.ops['s1_r0.5']  = s1B(r=0.5)
-        self.ops['s1_r0.25'] = s1B(r=0.25)
-        self.ops['ur_r0.95'] = radComp(uB(r=0.95))
+        self.ops['ur_r1']    = radComp(uB(r=1))
         self.ops['ur_r0.5']  = radComp(uB(r=0.5))
-        self.ops['ur_r0.25'] = radComp(uB(r=0.25))
+
+        self.ops['s1_r_near_surf']  = s1S(r=0.95*r_outer)
+        self.ops['ur_r_near_surf']  = radComp(uS(r=0.95*r_outer))
 
         self.global_shape   = (2*(Lmax+2), Lmax+1, 1)
         self.local_buff  = np.zeros(self.global_shape)
@@ -760,7 +761,7 @@ profileWriterS = AnelasticShellRPW(bS, d, out_dir, filename='profilesS', write_d
 msliceWriter  = AnelasticMSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
 esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB',  write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
 esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
-sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
+sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
 writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWriterS, msliceWriter, sshellWriter]
 
 ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
@@ -770,6 +771,10 @@ ball_checkpoint.add_task(uB, name='uB', scales=1, layout='c')
 ball_checkpoint.add_task(s1S, name='s1S', scales=1, layout='c')
 ball_checkpoint.add_task(pS, name='pS', scales=1, layout='c')
 ball_checkpoint.add_task(uS, name='uS', scales=1, layout='c')
+
+#surface_vel = solver.evaluator.add_file_handler('{:s}/surface_vel'.format(out_dir), max_writes=100, sim_dt=max_dt)
+#surface_vel.add_task(uS(r=r_outer), name='u_ang', scales=1, layout='g')
+
 
 
 
