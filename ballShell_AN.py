@@ -53,7 +53,7 @@ from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
 
-from d3_outputs.averaging    import BallShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, SphericalShellCommunicator
+from d3_outputs.averaging    import BallVolumeAverager, BallShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, SphericalShellCommunicator
 from d3_outputs.writing      import HandlerWriter, BallShellHandlerWriter
 
 import logging
@@ -612,9 +612,11 @@ visualsS.add_task(uθS, name='uθS', layout='g')
 visualsS.add_task(urS, name='urS', layout='g')
 visualsS.add_task(onesS*s1S,     name='s1S',  layout='g')
 
+re_ball = solver.evaluator.add_dictionary_handler(iter=10)
+re_ball.add_task(Re*(dot(uB,uB))**(1/2), name='Re_avg_ball', layout='g')
 scalars = solver.evaluator.add_dictionary_handler(sim_dt=scalar_dt)#, iter=10)
-scalars.add_task((dot(uB,uB))**(1/2), name='Re_avg_ball', layout='g')
-scalars.add_task((dot(uS,uS))**(1/2), name='Re_avg_shell', layout='g')
+scalars.add_task(Re*(dot(uB,uB))**(1/2), name='Re_avg_ball', layout='g')
+scalars.add_task(Re*(dot(uS,uS))**(1/2), name='Re_avg_shell', layout='g')
 scalars.add_task(ρB*dot(uB, uB)/2,    name='KE_ball', layout='g')
 scalars.add_task(ρS*dot(uS, uS)/2,    name='KE_shell', layout='g')
 scalars.add_task(ρB*TB*s1B,           name='TE_ball', layout='g')
@@ -652,6 +654,7 @@ surface_shells = solver.evaluator.add_dictionary_handler(sim_dt=max_dt)
 surface_shells.add_task(uφS(r=r_outer), name='u_phi_surf', layout='g')
 surface_shells.add_task(uθS(r=r_outer), name='u_theta_surf', layout='g')
 
+vol_averagerB      = BallVolumeAverager(pB)
 vol_averager       = BallShellVolumeAverager(pB, pS)
 radial_averagerB    = PhiThetaAverager(pB)
 radial_averagerS    = PhiThetaAverager(pS)
@@ -710,7 +713,7 @@ try:
         if solver.iteration % 10 == 0:
             KE  = vol_averager.volume*scalarWriter.tasks['KE']
             TE  = vol_averager.volume*scalarWriter.tasks['TE']
-            Re0  = scalarWriter.tasks['Re_avg']
+            Re0 = vol_averagerB(re_ball.fields['Re_avg_ball']['g'], comm=True)
             logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
 
 except:
