@@ -661,13 +661,13 @@ shell_commB         = SphericalShellCommunicator(pB)
 shell_commS         = SphericalShellCommunicator(pS)
 
 scalarWriter  = BallShellHandlerWriter(scalars, vol_averager,  out_dir, 'scalar')    
-profileWriterB = HandlerWriter(ball_fluxes, radial_averagerB,    out_dir, 'profilesB')
-profileWriterS = HandlerWriter(shell_fluxes, radial_averagerS,    out_dir, 'profilesS')
-esliceWriterB  = HandlerWriter(visualsB, equator_slicerB,     out_dir, 'eq_sliceB')  
-esliceWriterS  = HandlerWriter(visualsS, equator_slicerS,     out_dir, 'eq_sliceS')  
-sshellWriterB  = HandlerWriter(shell_visualsB, shell_commB,          out_dir, 'shell_sliceB')
-sshellWriterS  = HandlerWriter(shell_visualsS, shell_commS,          out_dir, 'shell_sliceS')
-surface_shellWriter = HandlerWriter(surface_shells, shell_commS, out_dir, 'surface_shells')
+profileWriterB = HandlerWriter(ball_fluxes, radial_averagerB,    out_dir, 'profilesB', max_writes=100)
+profileWriterS = HandlerWriter(shell_fluxes, radial_averagerS,    out_dir, 'profilesS', max_writes=100)
+esliceWriterB  = HandlerWriter(visualsB, equator_slicerB,     out_dir, 'eq_sliceB', max_writes=40)  
+esliceWriterS  = HandlerWriter(visualsS, equator_slicerS,     out_dir, 'eq_sliceS', max_writes=40)  
+sshellWriterB  = HandlerWriter(shell_visualsB, shell_commB,          out_dir, 'shell_sliceB', max_writes=100)
+sshellWriterS  = HandlerWriter(shell_visualsS, shell_commS,          out_dir, 'shell_sliceS', max_writes=100)
+surface_shellWriter = HandlerWriter(surface_shells, shell_commS, out_dir, 'surface_shells', max_writes=100)
 writers = [scalarWriter, profileWriterB, profileWriterS, esliceWriterB, esliceWriterS, sshellWriterB, sshellWriterS, surface_shellWriter]
 
 ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
@@ -683,7 +683,6 @@ imaginary_cadence = 100
 #CFL setup
 from dedalus.extras.flow_tools import CFL
 
-max_dt = dt = 0.5*t_buoy
 my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(uB)
 
