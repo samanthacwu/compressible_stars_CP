@@ -53,8 +53,8 @@ from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
 
-from output.averaging    import BallShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager
-from output.writing      import ScalarWriter,  RadialProfileWriter, MeridionalSliceWriter, EquatorialSliceWriter, SphericalShellWriter
+from d3_outputs.averaging    import BallShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, SphericalShellCommunicator
+from d3_outputs.writing      import HandlerWriter, BallShellHandlerWriter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -567,202 +567,108 @@ for subproblem in solver.subproblems:
 #    print(subproblem.group, np.linalg.cond((M + L).A))
 
 
+## Analysis Setup
+scalar_dt = 0.25*t_buoy
+flux_dt   = 0.5*t_buoy
+visual_dt = 0.05*t_buoy
+outer_shell_dt = max_dt
+onesB = field.Field(dist=d, bases=(bB,), dtype=dtype)
+onesS = field.Field(dist=d, bases=(bS,), dtype=dtype)
+eφB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+eθB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+eφB['g'][0] = 1
+eθB['g'][1] = 1
+eφS = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+eθS = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+eφS['g'][0] = 1
+eθS['g'][1] = 1
+onesB['g']  = 1
+onesS['g']  = 1
+eφB = operators.Grid(eφB).evaluate()
+eθB = operators.Grid(eθB).evaluate()
+erB = operators.Grid(erB).evaluate()
+eφS = operators.Grid(eφS).evaluate()
+eθS = operators.Grid(eθS).evaluate()
+erS = operators.Grid(erS).evaluate()
+onesB = operators.Grid(onesB).evaluate()
+onesS = operators.Grid(onesS).evaluate()
+uφB = dot(uB, eφB)
+uθB = dot(uB, eθB)
+urB = dot(erB, uB)
+uφS = dot(uS, eφS)
+uθS = dot(uS, eθS)
+urS = dot(erS, uS)
+hB = pB - 0.5*dot(uB,uB) + TB*s1B
+hS = pS - 0.5*dot(uS,uS) + TS*s1S
 
+visualsB = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
+visualsB.add_task(uφB, name='uφB', layout='g')
+visualsB.add_task(uθB, name='uθB', layout='g')
+visualsB.add_task(urB, name='urB', layout='g')
+visualsB.add_task(onesB*s1B,     name='s1B',  layout='g')
+visualsS = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
+visualsS.add_task(uφS, name='uφS', layout='g')
+visualsS.add_task(uθS, name='uθS', layout='g')
+visualsS.add_task(urS, name='urS', layout='g')
+visualsS.add_task(onesS*s1S,     name='s1S',  layout='g')
 
-# Analysis Setup
-vol_averager       = BallShellVolumeAverager(bB, bS, d, pB, pS, dealias=dealias, ball_radius=r_inner, shell_radius=r_outer)
-ball_radial_averager    = PhiThetaAverager(bB, d, dealias=dealias)
-shell_radial_averager   = PhiThetaAverager(bS, d, dealias=dealias)
-ball_azimuthal_averager = PhiAverager(bB, d, dealias=dealias)
-ball_equator_slicer     = EquatorSlicer(bB, d, dealias=dealias)
-shell_radial_averager    = PhiThetaAverager(bS, d, dealias=dealias)
-shell_azimuthal_averager = PhiAverager(bS, d, dealias=dealias)
-shell_equator_slicer     = EquatorSlicer(bS, d, dealias=dealias)
+scalars = solver.evaluator.add_dictionary_handler(sim_dt=scalar_dt)#, iter=10)
+scalars.add_task((dot(uB,uB))**(1/2), name='Re_avg_ball', layout='g')
+scalars.add_task((dot(uS,uS))**(1/2), name='Re_avg_shell', layout='g')
+scalars.add_task(ρB*dot(uB, uB)/2,    name='KE_ball', layout='g')
+scalars.add_task(ρS*dot(uS, uS)/2,    name='KE_shell', layout='g')
+scalars.add_task(ρB*TB*s1B,           name='TE_ball', layout='g')
+scalars.add_task(ρS*TS*s1S,           name='TE_shell', layout='g')
 
+#Radial averages (fluxes)
 
-def vol_avgmag_scalar(scalar_ball_field, scalar_shell_field, squared=False):
-    if squared:
-        fB = scalar_ball_field
-        fS = scalar_shell_field
-    else:
-        fB = scalar_ball_field**2
-        fS = scalar_shell_field**2
-    return vol_averager(np.sqrt(fB), np.sqrt(fS))
+ball_fluxes = solver.evaluator.add_dictionary_handler(sim_dt=flux_dt)
+shell_fluxes = solver.evaluator.add_dictionary_handler(sim_dt=flux_dt)
+ball_fluxes.add_task(ρB*urB*hB, name='enth_fluxB', layout='g')
+ball_fluxes.add_task(-ρB*dot(erB, dot(uB, σ_postB))/Re, name='visc_fluxB', layout='g')
+ball_fluxes.add_task(-ρB*TB*dot(erB, grad(s1B))/Pe, name='cond_fluxB', layout='g')
+ball_fluxes.add_task(0.5*ρB*urB*dot(uB, uB), name='KE_fluxB', layout='g')
+shell_fluxes.add_task( ρS*urS*hS, name='enth_fluxB', layout='g')
+shell_fluxes.add_task(-ρS*dot(erS, dot(uS, σ_postS))/Re, name='visc_fluxB', layout='g')
+shell_fluxes.add_task(-ρS*TS*dot(erS, grad(s1S))/Pe, name='cond_fluxB', layout='g')
+shell_fluxes.add_task(0.5*ρS*urS*dot(uS, uS), name='KE_fluxB', layout='g')
 
-def vol_rms_scalar(scalar_ball_field, scalar_shell_field, squared=False):
-    if squared:
-        fB = scalar_ball_field
-        fS = scalar_shell_field
-    else:
-        fB = scalar_ball_field**2
-        fS = scalar_shell_field**2
-    return np.sqrt(vol_averager(fB, fS))
+shell_visualsB = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
+shell_visualsB.add_task(uφB(r=0.5),         name='uφB_r0.5', layout='g')
+shell_visualsB.add_task(uθB(r=0.5),         name='uθB_r0.5', layout='g')              
+shell_visualsB.add_task(urB(r=0.5),         name='urB_r0.5', layout='g')                      
+shell_visualsB.add_task(s1B(r=0.5), name='s1B_r0.5',  layout='g')
+shell_visualsB.add_task(uφB(r=1),         name='uφB_r1', layout='g')
+shell_visualsB.add_task(uθB(r=1),         name='uθB_r1', layout='g')              
+shell_visualsB.add_task(urB(r=1),         name='urB_r1', layout='g')                      
+shell_visualsB.add_task(s1B(r=1), name='s1B_r1',  layout='g')
+shell_visualsS = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
+shell_visualsS.add_task(uφS(r=0.95*r_outer), name='uφS_near_surf', layout='g')              
+shell_visualsS.add_task(uθS(r=0.95*r_outer), name='uθS_near_surf', layout='g')              
+shell_visualsS.add_task(urS(r=0.95*r_outer), name='urS_near_surf', layout='g')                      
+shell_visualsS.add_task(s1S(r=0.95*r_outer),     name='s1S_near_surf',  layout='g')           
 
+surface_shells = solver.evaluator.add_dictionary_handler(sim_dt=max_dt)
+surface_shells.add_task(uφS(r=r_outer), name='u_phi_surf', layout='g')
+surface_shells.add_task(uθS(r=r_outer), name='u_theta_surf', layout='g')
 
-class AnelasticSW(ScalarWriter):
+vol_averager       = BallShellVolumeAverager(pB, pS)
+radial_averagerB    = PhiThetaAverager(pB)
+radial_averagerS    = PhiThetaAverager(pS)
+equator_slicerB     = EquatorSlicer(pB)
+equator_slicerS     = EquatorSlicer(pS)
+shell_commB         = SphericalShellCommunicator(pB)
+shell_commS         = SphericalShellCommunicator(pS)
 
-    def __init__(self, *args, **kwargs):
-        super(AnelasticSW, self).__init__(*args, **kwargs)
-        self.ops = OrderedDict()
-        self.ops['uB·uB'] = dot(uB, uB)
-        self.ops['uS·uS'] = dot(uS, uS)
-        self.fields = OrderedDict()
-
-    def evaluate_tasks(self):
-        for f in [uB, s1B, s1S, uS]:
-            f.require_scales(dealias)
-        for k, op in self.ops.items():
-            f = op.evaluate()
-            f.require_scales(dealias)
-            self.fields[k] = f['g']
-        #KE & Reynolds
-        self.tasks['TE']       = vol_averager(ρB['g']*TB['g']*s1B['g'], ρS['g']*TS['g']*s1S['g'])
-        self.tasks['s1']       = vol_averager(s1B['g'], s1S['g'])
-        self.tasks['KE']       = vol_averager(ρB['g']*self.fields['uB·uB']/2, ρS['g']*self.fields['uS·uS']/2)
-        self.tasks['Re_rms']   = Re*vol_rms_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
-        self.tasks['Re_avg']   = Re*vol_avgmag_scalar(self.fields['uB·uB'], self.fields['uS·uS'], squared=True)
-
-class AnelasticBallRPW(RadialProfileWriter):
-
-    def __init__(self, *args, **kwargs):
-        super(AnelasticBallRPW, self).__init__(*args, **kwargs)
-        self.ops = OrderedDict()
-        self.fields = OrderedDict()
-        self.ops['u·σ_r']   = dot(erB, dot(uB, σ_postB))
-        self.ops['u·u']     = dot(uB, uB)
-        self.ops['div_u']   = div(uB)
-        self.ops['grad_s']  = dot(erB, grad(s1B))
-        self.ops['ur']      = dot(erB, uB)
-        self.fields = OrderedDict()
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux']:
-            self.tasks[k] = np.zeros_like(ball_radial_averager.global_profile)
-
-    def evaluate_tasks(self):
-        for k, op in self.ops.items():
-            f = op.evaluate()
-            f.require_scales(dealias)
-            self.fields[k] = f['g']
-
-        for f in [s1B, uB, ρB, TB]:
-            f.require_scales(dealias)
-        self.tasks['s1'][:] = ball_radial_averager(s1B['g'])[:]
-        self.tasks['uφ'][:] = ball_radial_averager(uB['g'][0])[:]
-        self.tasks['uθ'][:] = ball_radial_averager(uB['g'][1])[:]
-
-
-        #Get fluxes for energy output
-        enthalpy = pB['g'] - 0.5*self.fields['u·u'] + TB['g']*s1B['g']
-        self.tasks['enth_flux'][:] = ball_radial_averager(ρB['g']*self.fields['ur']*(enthalpy))
-        self.tasks['visc_flux'][:] = ball_radial_averager(-ρB['g']*(self.fields['u·σ_r'])/Re)
-        self.tasks['cond_flux'][:] = ball_radial_averager(-ρB['g']*TB['g']*self.fields['grad_s']/Pe)
-        self.tasks['KE_flux'][:]   = ball_radial_averager(0.5*ρB['g']*self.fields['ur']*self.fields['u·u'])
-
-class AnelasticShellRPW(RadialProfileWriter):
-
-    def __init__(self, *args, **kwargs):
-        super(AnelasticShellRPW, self).__init__(*args, **kwargs)
-        self.ops = OrderedDict()
-        self.fields = OrderedDict()
-        self.ops['u·σ_r']   = dot(erS, dot(uS, σ_postS))
-        self.ops['u·u']     = dot(uS, uS)
-        self.ops['div_u']   = div(uS)
-        self.ops['grad_s']  = dot(erS, grad(s1S))
-        self.ops['ur']      = dot(erS, uS)
-        self.fields = OrderedDict()
-        for k in ['s1', 'uφ', 'uθ', 'ur', 'J_cond', 'J_conv', 'enth_flux', 'visc_flux', 'cond_flux', 'KE_flux']:
-            self.tasks[k] = np.zeros_like(shell_radial_averager.global_profile)
-
-    def evaluate_tasks(self):
-        for k, op in self.ops.items():
-            f = op.evaluate()
-            f.require_scales(dealias)
-            self.fields[k] = f['g']
-
-        for f in [s1S, uS, ρS, TS]:
-            f.require_scales(dealias)
-        self.tasks['s1'][:] = shell_radial_averager(s1S['g'])[:]
-        self.tasks['uφ'][:] = shell_radial_averager(uS['g'][0])[:]
-        self.tasks['uθ'][:] = shell_radial_averager(uS['g'][1])[:]
-
-
-        #Get fluxes for energy output
-        enthalpy = pS['g'] - 0.5*self.fields['u·u'] + TS['g']*s1S['g']
-        self.tasks['enth_flux'][:] = shell_radial_averager(ρS['g']*self.fields['ur']*(enthalpy))
-        self.tasks['visc_flux'][:] = shell_radial_averager(-ρS['g']*(self.fields['u·σ_r'])/Re)
-        self.tasks['cond_flux'][:] = shell_radial_averager(-ρS['g']*TS['g']*self.fields['grad_s']/Pe)
-        self.tasks['KE_flux'][:]   = shell_radial_averager(0.5*ρS['g']*self.fields['ur']*self.fields['u·u'])
-
-
-class AnelasticMSW(MeridionalSliceWriter):
-    
-    def evaluate_tasks(self):
-        for f in [s1B, uB]:
-            f.require_scales(dealias)
-        self.tasks['s1']  = ball_azimuthal_averager(s1B['g'],  comm=True)
-        self.tasks['uφ'] = ball_azimuthal_averager(uB['g'][0], comm=True)
-        self.tasks['uθ'] = ball_azimuthal_averager(uB['g'][1], comm=True)
-        self.tasks['ur'] = ball_azimuthal_averager(uB['g'][2], comm=True)
-
-class AnelasticBallESW(EquatorialSliceWriter):
-
-    def evaluate_tasks(self):
-        for f in [s1B, uB]:
-            f.require_scales(dealias)
-        self.tasks['s1_B'] = ball_equator_slicer(s1B['g'])
-        self.tasks['uφ_B'] = ball_equator_slicer(uB['g'][0])
-        self.tasks['uθ_B'] = ball_equator_slicer(uB['g'][1])
-        self.tasks['ur_B'] = ball_equator_slicer(uB['g'][2])
-
-class AnelasticShellESW(EquatorialSliceWriter):
-
-    def evaluate_tasks(self):
-        for f in [s1S, uS]:
-            f.require_scales(dealias)
-        self.tasks['s1_S'] = shell_equator_slicer(s1S['g'])
-        self.tasks['uφ_S'] = shell_equator_slicer(uS['g'][0])
-        self.tasks['uθ_S'] = shell_equator_slicer(uS['g'][1])
-        self.tasks['ur_S'] = shell_equator_slicer(uS['g'][2])
-
-
-
-class AnelasticSSW(SphericalShellWriter):
-    def __init__(self, *args, **kwargs):
-        super(AnelasticSSW, self).__init__(*args, **kwargs)
-        self.ops = OrderedDict()
-        self.ops['s1_r1']    = s1B(r=1)
-        self.ops['s1_r0.5']  = s1B(r=0.5)
-        self.ops['ur_r1']    = radComp(uB(r=1))
-        self.ops['ur_r0.5']  = radComp(uB(r=0.5))
-
-        self.ops['s1_r_near_surf']  = s1S(r=0.95*r_outer)
-        self.ops['ur_r_near_surf']  = radComp(uS(r=0.95*r_outer))
-
-        self.global_shape   = (2*(Lmax+2), Lmax+1, 1)
-        self.local_buff  = np.zeros(self.global_shape)
-        self.global_buff = np.zeros(self.global_shape)
-
-    def evaluate_tasks(self):
-        for f in [s1B, uB]:
-            f.require_scales(dealias)
-        for k, op in self.ops.items():
-            local_part = op.evaluate()
-            local_part.require_scales(dealias)
-            self.local_buff *= 0
-            if local_part['g'].shape[-1] == 1:
-                self.local_buff[slicesB[0], slicesB[1], :] = local_part['g']
-            d.comm_cart.Allreduce(self.local_buff, self.global_buff, op=MPI.SUM)
-            self.tasks[k] = np.copy(self.global_buff)
-
-
-
-scalarWriter  = AnelasticSW(bB, d, out_dir,  write_dt=0.25*t_buoy, dealias=dealias)
-profileWriterB = AnelasticBallRPW(bB, d, out_dir, filename='profilesB', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
-profileWriterS = AnelasticShellRPW(bS, d, out_dir, filename='profilesS', write_dt=0.5*t_buoy, max_writes=200, dealias=dealias)
-msliceWriter  = AnelasticMSW(bB, d, out_dir, write_dt=0.5*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterB = AnelasticBallESW(bB, d, out_dir, filename='eq_sliceB',  write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
-esliceWriterS = AnelasticShellESW(bS, d, out_dir, filename='eq_sliceS', write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
-sshellWriter  = AnelasticSSW(bB, d, out_dir, write_dt=0.05*t_buoy, max_writes=40, dealias=dealias)
-writers = [scalarWriter, esliceWriterB, esliceWriterS, profileWriterB, profileWriterS, msliceWriter, sshellWriter]
+scalarWriter  = BallShellHandlerWriter(scalars, vol_averager,  out_dir, 'scalar')    
+profileWriterB = HandlerWriter(ball_fluxes, radial_averagerB,    out_dir, 'profilesB')
+profileWriterS = HandlerWriter(shell_fluxes, radial_averagerS,    out_dir, 'profilesS')
+esliceWriterB  = HandlerWriter(visualsB, equator_slicerB,     out_dir, 'eq_sliceB')  
+esliceWriterS  = HandlerWriter(visualsS, equator_slicerS,     out_dir, 'eq_sliceS')  
+sshellWriterB  = HandlerWriter(shell_visualsB, shell_commB,          out_dir, 'shell_sliceB')
+sshellWriterS  = HandlerWriter(shell_visualsS, shell_commS,          out_dir, 'shell_sliceS')
+surface_shellWriter = HandlerWriter(surface_shells, shell_commS, out_dir, 'surface_shells')
+writers = [scalarWriter, profileWriterB, profileWriterS, esliceWriterB, esliceWriterS, sshellWriterB, sshellWriterS, surface_shellWriter]
 
 ball_checkpoint = solver.evaluator.add_file_handler('{:s}/ball_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 ball_checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
@@ -772,87 +678,15 @@ ball_checkpoint.add_task(s1S, name='s1S', scales=1, layout='c')
 ball_checkpoint.add_task(pS, name='pS', scales=1, layout='c')
 ball_checkpoint.add_task(uS, name='uS', scales=1, layout='c')
 
-#surface_vel = solver.evaluator.add_file_handler('{:s}/surface_vel'.format(out_dir), max_writes=100, sim_dt=max_dt)
-#surface_vel.add_task(uS(r=r_outer), name='u_ang', scales=1, layout='g')
-
-
-
-
 imaginary_cadence = 100
 
-
 #CFL setup
-class BallCFL:
-    """
-    A CFL to calculate the appropriate magnitude of the timestep for a spherical simulation
-    """
+from dedalus.extras.flow_tools import CFL
 
-    def __init__(self, distributor, r, Lmax, max_dt, safety=0.1, threshold=0.1, cadence=1, radius_cutoff=None):
-        """
-        Initialize the CFL class. 
+max_dt = dt = 0.5*t_buoy
+my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
+my_cfl.add_velocity(uB)
 
-        # Arguments
-            distributor (Dedalus Distributor) :
-                The distributor which guides the d3 simulation
-            r (NumPy array) :
-                The local radial grid points
-            Lmax (float) :
-                The maximum L value achieved by the simulation
-            max_dt (float) :
-                The maximum timestep size allowed, in simulation units.
-            safety (float) :
-                A factor to apply to the CFL calculation to adjust the timestep size
-            threshold (float) :
-                A factor by which the magnitude of dt must change in order for the timestep size to change
-            cadence (int) :
-                the number of iterations to wait between CFL calculations
-            radius_cutoff (float) :
-                Radial value beyond which to ignore CFL constraints
-        """
-        self.reducer   = GlobalArrayReducer(distributor.comm_cart)
-        self.dr        = np.gradient(r[0,0])
-        self.r         = r[0,0]
-        self.Lmax      = Lmax
-        self.max_dt    = max_dt
-        self.safety    = safety
-        self.threshold = threshold
-        self.cadence   = cadence
-        self.radius_cutoff = radius_cutoff
-        if self.radius_cutoff is not None:
-            self.bad_radius = self.r >= self.radius_cutoff
-            self.any_good = bool(1-np.min(self.bad_radius))
-        logger.info("CFL initialized with: max dt={:.2g}, safety={:.2g}, threshold={:.2g}, cutoff={}".format(max_dt, self.safety, self.threshold, self.radius_cutoff))
-
-    def calculate_dt(self, u, dt_old, r_index=2, φ_index=0, θ_index=1):
-        """
-        Calculates what the timestep should be according to the CFL condition
-
-        # Arguments
-            u (Dedalus Field) :
-                A Dedalus tensor field of the velocity
-            dt_old (float) : 
-                The current value of the timestep
-            r_index, φ_index, θ_index (int) :
-                The reference index (0, 1, 2) of the different bases, respectively
-        """
-        u.require_scales(dealias)
-        local_freq  = np.abs(u['g'][r_index]/self.dr) + (np.abs(u['g'][φ_index]) + np.abs(u['g'][θ_index]))*(self.Lmax + 1)
-        if self.radius_cutoff is not None:
-            if not self.any_good:
-                local_freq *= 0
-            else:
-                local_freq[:,:,self.bad_radius] *= 0
-        global_freq = self.reducer.global_max(local_freq)
-        if global_freq == 0.:
-            dt = np.inf
-        else:
-            dt = 1 / global_freq
-            dt *= self.safety
-            if dt > self.max_dt: dt = self.max_dt
-            if dt < dt_old*(1+self.threshold) and dt > dt_old*(1-self.threshold): dt = dt_old
-        return dt
-
-CFLB = BallCFL(d, rB, Lmax, max_dt, safety=float(args['--safety']), threshold=0.1, cadence=1, radius_cutoff=1.05)
 dt = max_dt
 if args['--restart'] is not None:
     dt = CFLB.calculate_dt(uB, dt)
@@ -860,26 +694,26 @@ if args['--restart'] is not None:
 
 # Main loop
 start_time = time.time()
-profileWriterB.evaluate_tasks()
-profileWriterS.evaluate_tasks()
+#profileWriterB.evaluate_tasks()
+#profileWriterS.evaluate_tasks()
 start_iter = solver.iteration
 try:
     while solver.ok:
-        if solver.iteration % 1 == 0:
-            scalarWriter.evaluate_tasks()
-            KE  = vol_averager.volume*scalarWriter.tasks['KE']
-            TE  = vol_averager.volume*scalarWriter.tasks['TE']
-            Re0  = scalarWriter.tasks['Re_rms']
-            logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
-        for writer in writers:
-            writer.process(solver)
         solver.step(dt)
-        if solver.iteration % CFLB.cadence == 0:
-            dt = CFLB.calculate_dt(uB, dt)
+        for writer in writers:
+            writer.process(solver, dt)
+        dt = my_cfl.compute_dt()
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
                 f.require_grid_space()
+
+        if solver.iteration % 10 == 0:
+            KE  = vol_averager.volume*scalarWriter.tasks['KE']
+            TE  = vol_averager.volume*scalarWriter.tasks['TE']
+            Re0  = scalarWriter.tasks['Re_avg']
+            logger.info("t = %f, dt = %f, Re = %e, KE / TE = %e / %e" %(solver.sim_time, dt, Re0, KE, TE))
+
 except:
     logger.info('something went wrong in main loop, making final checkpoint')
     raise
