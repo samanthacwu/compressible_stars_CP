@@ -435,7 +435,7 @@ problem.add_equation(eq_eval("tS2_top     = 0"), condition="nθ == 0")
 #Entropy BCs
 problem.add_equation(eq_eval("s1B(r=r_inner) - s1S(r=r_inner) = 0"))
 problem.add_equation(eq_eval("radComp(grad(s1B)(r=r_inner)) - radComp(grad(s1S)(r=r_inner))    = 0"))
-problem.add_equation(eq_eval("s1S(r=r_outer)    = 0"))
+problem.add_equation(eq_eval("radComp(grad(s1S)(r=r_outer))    = 0"))
 
 
 logger.info("Problem built")
@@ -690,9 +690,6 @@ my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=m
 my_cfl.add_velocity(uB)
 
 dt = max_dt
-if args['--restart'] is not None:
-    dt = CFLB.calculate_dt(uB, dt)
-
 
 # Main loop
 start_time = time.time()
