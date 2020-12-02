@@ -250,12 +250,11 @@ if args['--mesa_file'] is not None:
         TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
         inv_TS['g']     = 1/TS['g']
 
-        max_grad_s0 = f['grad_s0S'][2,0,0,-1]
 
         grad_s0B['g'] *= grads0_boost
         grad_s0S['g'] *= grads0_boost
-        max_grad_s0       *= grads0_boost
 
+        max_dt = f['max_dt'].value / np.sqrt(grads0_boost)
         t_buoy = 1
 else:
     logger.info("Using polytropic initial conditions")
@@ -266,6 +265,7 @@ else:
         grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
         H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
     max_grad_s0 = grad_s0_func(r_outer)
+    max_dt = 2/np.sqrt(max_grad_s0)
     t_buoy      = 1
 
 
@@ -287,7 +287,6 @@ else:
 inv_PeB['g'] += 1/Pe
 inv_PeS['g'] += 1/Pe
 
-max_dt = 2/np.sqrt(max_grad_s0)
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
