@@ -693,8 +693,6 @@ dt = max_dt
 
 # Main loop
 start_time = time.time()
-#profileWriterB.evaluate_tasks()
-#profileWriterS.evaluate_tasks()
 start_iter = solver.iteration
 try:
     while solver.ok:
@@ -702,6 +700,8 @@ try:
         for writer in writers:
             writer.process(solver, dt)
         dt = my_cfl.compute_dt()
+        int_frac = int(np.ceil(max_dt/dt))
+        dt = max_dt/int_frac
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
