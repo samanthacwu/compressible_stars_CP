@@ -164,12 +164,21 @@ r_shell = r[shell_bool]/L
 r_inner /= L
 r_outer /= L
 
-wave_tau_ball  = (1/20)*2*np.pi/np.sqrt(N2[ball_bool].max())
-wave_tau_shell = (1/20)*2*np.pi/np.sqrt(N2[shell_bool].max())
+N2max_ball = N2[ball_bool].max()
+N2max_shell = N2[shell_bool].max()
+N2plateau = N2[r < 4.5e11*u.cm][-1]
+wave_tau_ball  = (1/20)*2*np.pi/np.sqrt(N2max_ball)
+wave_tau_shell = (1/20)*2*np.pi/np.sqrt(N2max_shell)
+kepler_tau     = 30*60*u.s
 max_dt_ball    = wave_tau_ball/tau
 max_dt_shell   = wave_tau_shell/tau
+max_dt_kepler  = kepler_tau/tau
+if max_dt_kepler > max_dt_ball and max_dt_kepler > max_dt_shell:
+    max_dt = max_dt_kepler
+else:
+    max_dt = np.min((max_dt_ball, max_dt_shell))
 print('one time unit is {:.2e}'.format(tau))
-print('output cadence is {} s / {} % of a heating time'.format(np.min((wave_tau_ball.value, wave_tau_shell.value)), np.min((wave_tau_ball.value, wave_tau_shell.value))/tau.value*100))
+print('output cadence is {} s / {} % of a heating time'.format(max_dt*tau, max_dt*100))
 
 ### Make dedalus domain
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
@@ -314,4 +323,9 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['Ma2'] = tau 
     f['max_dt_ball'] = max_dt_ball
     f['max_dt_shell'] = max_dt_shell
-    f['max_dt'] = np.min((max_dt_shell, max_dt_ball))
+    f['max_dt'] = max_dt
+    f['s_c'] = s_c
+    f['N2max_ball'] = N2max_ball
+    f['N2max_shell'] = N2max_shell
+    f['N2max'] = np.max((N2max_ball.value, N2max_shell.value))
+    f['N2plateau'] = N2plateau
