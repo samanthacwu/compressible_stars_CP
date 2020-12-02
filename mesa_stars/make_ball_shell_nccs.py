@@ -2,7 +2,7 @@
 Turns a MESA .data file of a massive star into a .h5 file of NCCs for a d3 run.
 
 Usage:
-    make_coreCZ_nccs.py [options]
+    make_ball_shell_nccs.py [options]
 
 Options:
     --NB=<N>        Maximum radial coefficients (ball) [default: 63]
@@ -29,7 +29,6 @@ from scipy.signal import savgol_filter
 from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
-
 plot=True
 
 from scipy.special import erf
@@ -38,8 +37,6 @@ def one_to_zero(x, x0, width=0.1):
 
 def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
-
-
 
 def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False):
     fig = plt.figure()
@@ -66,8 +63,7 @@ def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.'
     fig.suptitle('coeff bandwidth = {}'.format(N))
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
-
-#def load_data(nr1, nr2, r_int, get_dimensions=False):
+### Read in command line args
 true_NmaxB = NmaxB = int(args['--NB'])
 true_NmaxS = NmaxS = int(args['--NS'])
 read_file = args['--file']
@@ -83,16 +79,11 @@ out_file = '{:s}/ballShell_nccs_B{}_S{}.h5'.format(out_dir, NmaxB, NmaxS)
 if not os.path.exists('{:s}'.format(out_dir)):
     os.mkdir('{:s}'.format(out_dir))
 
-
+### Read MESA file
 p = mr.MesaData(read_file)
-
-
 mass = p.mass[::-1] * u.M_sun
-mass = mass.to('g')
-
 r = p.radius[::-1] * u.R_sun
-r = r.to('cm')
-
+mass, r = mass.cgs, r.cgs
 rho = 10**p.logRho[::-1] * u.g / u.cm**3
 P = 10**p.logP[::-1] * u.g / u.cm / u.s**2
 eps = p.eps_nuc[::-1] * u.erg / u.g / u.s
@@ -106,19 +97,13 @@ N2 = p.brunt_N2[::-1] / u.s**2
 N2_structure   = p.brunt_N2_structure_term[::-1] / u.s**2
 N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
 Luminosity = p.luminosity[::-1] * u.L_sun
-Luminosity = Luminosity.to('erg/s')
+Luminosity = Luminosity.cgs
 L_conv = p.conv_L_div_L[::-1]*Luminosity
 csound = p.csound[::-1] * u.cm / u.s
-
 rad_diff = 16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)
 rad_diff = rad_diff.cgs
-
-
-cgs_G = constants.G.to('cm^3/(g*s^2)')
-g = cgs_G*mass/r**2
+g = constants.G.cgs*mass/r**2
 gamma = cp/cv
-
-#Thermo gradients
 chiRho  = p.chiRho[::-1]
 chiT    = p.chiT[::-1]
 nablaT =  p.gradT[::-1]
@@ -128,79 +113,65 @@ gamma1  = dlogPdr/(-g/csound**2)
 dlogrhodr = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
 dlogTdr   = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
+
+# Entropy gradient, for ncc
 grad_s = cp*N2/g #includes composition terms
-print(chiRho, chiT)
-
-
-
-# Heating
-#H = rho * eps
-#C = (np.gradient(Luminosity-L_conv,r)/(4*np.pi*r**2))
-#H_eff = H - C
+# Heating, for ncc, H = rho*eps - portion carried by radiation
 H_eff = (np.gradient(L_conv,r)/(4*np.pi*r**2))
-H_eff[0] = H_eff[1] #make gradient 0 at core, remove weird artifacts.
-
-H0 = H_eff[0]
-
+H_eff[0] = H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
 
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
-core_cz_bound = mass[cz_bool][-1] # 0.9 to avoid some of the cz->rz transition region.
-coreCZ_bound_ind = np.argmin(np.abs(mass - core_cz_bound))
+core_cz_mass_bound = mass[cz_bool][-1]
+core_cz_bound_ind = np.argmin(np.abs(mass - core_cz_mass_bound))
 
+#Find bottom edge of FeCZ
+fracStar = 0.95
+fe_cz = (mass > 1.1*mass[core_cz_bound_ind])*(L_conv.value > 1)
+bot_fe_cz_r = fracStar*r[fe_cz][0]
+fe_cz_bound_ind = np.argmin(np.abs(r - bot_fe_cz_r))
+print('fraction of FULL star simulated: {}'.format(bot_fe_cz_r/r[-1]))
+
+#Set things up to slice out the star appropriately
+halfStar_r = r[-1]/2
+r_inner    = r[cz_bool][-1]*1.1
+if args['--halfStar']:
+    r_outer    = halfStar_r
+else:
+    r_outer    = bot_fe_cz_r
+ball_bool  = r <= r_inner
+shell_bool = (r > r_inner)*(r <= r_outer)
 
 #Nondimensionalization
-halfStar_r = r[-1]/2
-L = L_CZ  = r[coreCZ_bound_ind]
-g0 = g[coreCZ_bound_ind] 
+L = L_CZ  = r[core_cz_bound_ind]
+g0 = g[core_cz_bound_ind] 
 rho0 = rho[0]
 P0 = P[0]
 T0 = T[0]
 cp0 = cp[0]
 gamma0 = gamma[0]
+H0 = H_eff[0]
 tau = (H0/L**2/rho0)**(-1/3)
 tau = tau.cgs
-print('one time unit is {:.2e}'.format(tau))
 u_H = L/tau
-
-
-
-
+Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
+s_c = Ma2*(gamma0-1)*cp0
 Pe_rad = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
 
-#Find bottom edge of FeCZ
-fracStar = 0.95
-
-FeCZ = (mass > 1.1*mass[coreCZ_bound_ind])*(L_conv.value > 1)
-bot_FeCZ_r = fracStar*r[FeCZ][0]
-FeCZ_bound_ind = np.argmin(np.abs(r - bot_FeCZ_r))
-
-print('fraction of FULL star simulated: {}'.format(bot_FeCZ_r/r[-1]))
-
-
-Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
-s_c = Ma2*(gamma0-1)*cp0
-
-
-r_inner    = r[cz_bool][-1]*1.1/L
-if args['--halfStar']:
-    r_outer    = halfStar_r/L
-else:
-    r_outer    = bot_FeCZ_r/L
-ball_bool  = r <= r_inner*L
-shell_bool = (r > r_inner*L)*(r <= r_outer*L)
-
 r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
-
+r_inner /= L
+r_outer /= L
 
 wave_tau_ball  = (1/20)*2*np.pi/np.sqrt(N2[ball_bool].max())
 wave_tau_shell = (1/20)*2*np.pi/np.sqrt(N2[shell_bool].max())
 max_dt_ball    = wave_tau_ball/tau
 max_dt_shell   = wave_tau_shell/tau
+print('one time unit is {:.2e}'.format(tau))
 print('output cadence is {} s / {} % of a heating time'.format(np.min((wave_tau_ball.value, wave_tau_shell.value)), np.min((wave_tau_ball.value, wave_tau_shell.value))/tau.value*100))
 
+### Make dedalus domain
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
 d = distributor.Distributor((c,), mesh=None)
 bB = basis.BallBasis(c, (1, 1, NmaxB+1), radius=r_inner, dtype=np.float64, dealias=(1, 1, 1))
@@ -222,9 +193,6 @@ def make_NCC(basis, interp_args, Nmax=32, vector=False):
         this_field['g'] = interp
         this_field['c'][:, :, Nmax:] = 0
     return this_field, interp
-
-r_vec  = field.Field(dist=d, bases=(bB,), dtype=np.float64, tensorsig=(c,))
-r_vec['g'][2,:] = 1
 
 ### Radiative diffusivity
 NmaxB, NmaxS = 8, 62
