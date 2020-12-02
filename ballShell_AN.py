@@ -653,6 +653,7 @@ shell_visualsS.add_task(s1S(r=0.95*r_outer),     name='s1S_near_surf',  layout='
 surface_shells = solver.evaluator.add_dictionary_handler(sim_dt=max_dt)
 surface_shells.add_task(uφS(r=r_outer), name='u_phi_surf', layout='g')
 surface_shells.add_task(uθS(r=r_outer), name='u_theta_surf', layout='g')
+surface_shells.add_task(s1S(r=r_outer), name='s1_surf', layout='g')
 
 vol_averagerB      = BallVolumeAverager(pB)
 vol_averager       = BallShellVolumeAverager(pB, pS)
