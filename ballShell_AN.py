@@ -168,10 +168,8 @@ s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
 tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
-tS2_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c_S2,))
-tS2_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype, tensorsig=(c_S2,))
-tSu_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
-tSu_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
+tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
+tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
 tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
 tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
@@ -254,7 +252,7 @@ if args['--mesa_file'] is not None:
         grad_s0B['g'] *= grads0_boost
         grad_s0S['g'] *= grads0_boost
 
-        max_dt = f['max_dt'].value / np.sqrt(grads0_boost)
+        max_dt = f['max_dt'][()] / np.sqrt(grads0_boost)
         t_buoy = 1
 else:
     logger.info("Using polytropic initial conditions")
@@ -395,16 +393,16 @@ else:
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 #Only velocity
-problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSu_bot, tS2_bot, tSu_top, tS2_top, tB, tS_bot, tS_top])
+problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top])
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
 #problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB   = cross(uB, curl(uB))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
 #problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS   = cross(uS, curl(uS))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -426,10 +424,8 @@ problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="
 problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
 # velocity BCs ell == 0
 problem.add_equation(eq_eval("tBt     = 0"),                         condition="nθ == 0")
-problem.add_equation(eq_eval("tSu_bot     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tS2_bot     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSu_top     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tS2_top     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("tSt_bot     = 0"), condition="nθ == 0")
+problem.add_equation(eq_eval("tSt_top     = 0"), condition="nθ == 0")
 
 #Entropy BCs
 problem.add_equation(eq_eval("s1B(r=r_inner) - s1S(r=r_inner) = 0"))
