@@ -78,12 +78,11 @@ dtype = np.float64
 
 # Bases
 dealias = 1
-c = coords.SphericalCoordinates('φ', 'θ', 'r')
+c = coords.S2Coordinates('φ', 'θ')
 d = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
-b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, 1), radius=float(args['--radius']), dtype=dtype)
-b_S2 = b.S2_basis()
-φ, θ, r = b.local_grids((dealias, dealias, dealias))
-φg, θg, rg = b.global_grids((dealias, dealias, dealias))
+b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dtype)
+φ, θ = b.local_grids((dealias, dealias))
+φg, θg = b.global_grids((dealias, dealias))
 
 ells = b.local_ell
 ms = b.local_m
@@ -92,9 +91,8 @@ m_values = np.unique(ms)
 ell_ms = np.zeros_like(ell_values)
 for i, ell in enumerate(ell_values):
     ell_ms[i] = int(np.sum(ells == ell)/2)
-print(ell_values, m_values, ell_ms)
 
-field = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
+field = field.Field(dist=d, bases=(b,), dtype=dtype)
 
 out_bs = None
 out_tsk = OrderedDict()
@@ -110,12 +108,12 @@ while plotter.files_remain(bases, fields):
     for f in fields:
         out_field = np.zeros((time.shape[0], ell_values.shape[0], m_values.shape[0]), dtype=np.complex128)
         for i in range(time.shape[0]):
-            field['g'] = tsk[f][i,:]
+            field['g'] = tsk[f][i,:,:,0]
             for j, ell in enumerate(ell_values):
                 for k, m in enumerate(m_values):
                     bool_map = (ell == ells)*(m == ms)
                     if np.sum(bool_map) > 0:
-                        values = field['c'][bool_map, 0]
+                        values = field['c'][bool_map]
                         out_field[i,j,k] = values[0] + 1j*values[1]
         outputs[f] = out_field
     with h5py.File('{}/{}/{}_s{}.h5'.format(root_dir, out_dir, out_dir, file_num), 'w') as f:
