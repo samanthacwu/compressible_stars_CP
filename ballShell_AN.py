@@ -290,18 +290,12 @@ logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
 
 # Stress matrices & viscous terms
-I_matrixB_post = field.Field(dist=d, bases=(bB,), tensorsig=(c,c,), dtype=dtype)
 I_matrixB = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,c,), dtype=dtype)
-I_matrixB_post['g'] = 0
 I_matrixB['g'] = 0
-I_matrixS_post = field.Field(dist=d, bases=(bS,), tensorsig=(c,c,), dtype=dtype)
 I_matrixS = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,c,), dtype=dtype)
-I_matrixS_post['g'] = 0
 I_matrixS['g'] = 0
 for i in range(3):
-    I_matrixB_post['g'][i,i,:] = 1
     I_matrixB['g'][i,i,:] = 1
-    I_matrixS_post['g'][i,i,:] = 1
     I_matrixS['g'][i,i,:] = 1
 
 #Ball stress
@@ -310,7 +304,6 @@ EB.store_last = True
 divUB = div(uB)
 divUB.store_last = True
 σB = 2*(EB - (1/3)*divUB*I_matrixB)
-σ_postB = 2*(EB - (1/3)*divUB*I_matrixB_post)
 momentum_viscous_termsB = div(σB) + dot(σB, grad_ln_ρB)
 
 VHB  = 2*(trace(dot(EB, EB)) - (1/3)*divUB*divUB)
@@ -321,7 +314,6 @@ ES.store_last = True
 divUS = div(uS)
 divUS.store_last = True
 σS = 2*(ES - (1/3)*divUS*I_matrixS)
-σ_postS = 2*(ES - (1/3)*divUS*I_matrixS_post)
 momentum_viscous_termsS = div(σS) + dot(σS, grad_ln_ρS)
 
 VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
@@ -385,8 +377,8 @@ else:
 
 
 
-#H_effB = operators.Grid(H_effB).evaluate()
-#H_effS = operators.Grid(H_effS).evaluate()
+H_effB = operators.Grid(H_effB).evaluate()
+H_effS = operators.Grid(H_effS).evaluate()
 
 
 # Problem
@@ -564,11 +556,13 @@ for subproblem in solver.subproblems:
 
 ## Analysis Setup
 scalar_dt = 0.25*t_buoy
-flux_dt   = 0.5*t_buoy
+lum_dt   = 0.5*t_buoy
 visual_dt = 0.05*t_buoy
 outer_shell_dt = max_dt
 onesB = field.Field(dist=d, bases=(bB,), dtype=dtype)
 onesS = field.Field(dist=d, bases=(bS,), dtype=dtype)
+r_valsB = field.Field(dist=d, bases=(bB,), dtype=dtype)
+r_valsS = field.Field(dist=d, bases=(bS,), dtype=dtype)
 eφB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 eθB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 eφB['g'][0] = 1
@@ -579,14 +573,18 @@ eφS['g'][0] = 1
 eθS['g'][1] = 1
 onesB['g']  = 1
 onesS['g']  = 1
-#eφB = operators.Grid(eφB).evaluate()
-#eθB = operators.Grid(eθB).evaluate()
-#erB = operators.Grid(erB).evaluate()
-#eφS = operators.Grid(eφS).evaluate()
-#eθS = operators.Grid(eθS).evaluate()
-#erS = operators.Grid(erS).evaluate()
-#onesB = operators.Grid(onesB).evaluate()
-#onesS = operators.Grid(onesS).evaluate()
+r_valsB['g'] = rB
+r_valsS['g'] = rS
+eφB = operators.Grid(eφB).evaluate()
+eθB = operators.Grid(eθB).evaluate()
+erB = operators.Grid(erB).evaluate()
+eφS = operators.Grid(eφS).evaluate()
+eθS = operators.Grid(eθS).evaluate()
+erS = operators.Grid(erS).evaluate()
+onesB = operators.Grid(onesB).evaluate()
+onesS = operators.Grid(onesS).evaluate()
+r_valsB = operators.Grid(r_valsB).evaluate()
+r_valsS = operators.Grid(r_valsS).evaluate()
 uφB = dot(uB, eφB)
 uθB = dot(uB, eθB)
 urB = dot(erB, uB)
@@ -595,6 +593,21 @@ uθS = dot(uS, eθS)
 urS = dot(erS, uS)
 hB = pB - 0.5*dot(uB,uB) + TB*s1B
 hS = pS - 0.5*dot(uS,uS) + TS*s1S
+
+I_matrixB_post = field.Field(dist=d, bases=(bB,), tensorsig=(c,c,), dtype=dtype)
+I_matrixB_post['g'] = 0
+I_matrixS_post = field.Field(dist=d, bases=(bS,), tensorsig=(c,c,), dtype=dtype)
+I_matrixS_post['g'] = 0
+for i in range(3):
+    I_matrixB_post['g'][i,i,:] = 1
+    I_matrixS_post['g'][i,i,:] = 1
+σ_postB = 2*(EB - (1/3)*divUB*I_matrixB_post)
+σ_postS = 2*(ES - (1/3)*divUS*I_matrixS_post)
+
+visc_fluxB_r = 2*(dot(erB, dot(uB, EB)) - (1/3) * urB * divUB)
+visc_fluxS_r = 2*(dot(erS, dot(uS, ES)) - (1/3) * urS * divUS)
+
+
 
 visualsB = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
 visualsB.add_task(uφB, name='uφB', layout='g')
@@ -617,18 +630,18 @@ scalars.add_task(ρS*dot(uS, uS)/2,    name='KE_shell', layout='g')
 scalars.add_task(ρB*TB*s1B,           name='TE_ball', layout='g')
 scalars.add_task(ρS*TS*s1S,           name='TE_shell', layout='g')
 
-#Radial averages (fluxes)
+#Radial averages (lums)
 
-ball_fluxes = solver.evaluator.add_dictionary_handler(sim_dt=flux_dt)
-shell_fluxes = solver.evaluator.add_dictionary_handler(sim_dt=flux_dt)
-ball_fluxes.add_task(ρB*urB*hB, name='enth_fluxB', layout='g')
-ball_fluxes.add_task(-ρB*dot(erB, dot(uB, σ_postB))/Re, name='visc_fluxB', layout='g')
-ball_fluxes.add_task(-ρB*TB*dot(erB, grad(s1B))/Pe, name='cond_fluxB', layout='g')
-ball_fluxes.add_task(0.5*ρB*urB*dot(uB, uB), name='KE_fluxB', layout='g')
-shell_fluxes.add_task( ρS*urS*hS, name='enth_fluxB', layout='g')
-shell_fluxes.add_task(-ρS*dot(erS, dot(uS, σ_postS))/Re, name='visc_fluxB', layout='g')
-shell_fluxes.add_task(-ρS*TS*dot(erS, grad(s1S))/Pe, name='cond_fluxB', layout='g')
-shell_fluxes.add_task(0.5*ρS*urS*dot(uS, uS), name='KE_fluxB', layout='g')
+ball_lums = solver.evaluator.add_dictionary_handler(sim_dt=lum_dt)
+shell_lums = solver.evaluator.add_dictionary_handler(sim_dt=lum_dt)
+ball_lums.add_task((4*np.pi*r_valsB**2)*(ρB*urB*hB), name='enth_lumB', layout='g')
+ball_lums.add_task((4*np.pi*r_valsB**2)*(-ρB*visc_fluxB_r/Re), name='visc_lumB', layout='g')
+ball_lums.add_task((4*np.pi*r_valsB**2)*(-ρB*TB*dot(erB, grad(s1B))/Pe), name='cond_lumB', layout='g')
+ball_lums.add_task((4*np.pi*r_valsB**2)*(0.5*ρB*urB*dot(uB, uB)), name='KE_lumB', layout='g')
+shell_lums.add_task((4*np.pi*r_valsS**2)*(ρS*urS*hS), name='enth_lumS', layout='g')
+shell_lums.add_task((4*np.pi*r_valsS**2)*(-ρS*visc_fluxS_r/Re), name='visc_lumS', layout='g')
+shell_lums.add_task((4*np.pi*r_valsS**2)*(-ρS*TS*dot(erS, grad(s1S))/Pe), name='cond_lumS', layout='g')
+shell_lums.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*dot(uS, uS)), name='KE_lumS', layout='g')
 
 shell_visualsB = solver.evaluator.add_dictionary_handler(sim_dt=visual_dt)
 shell_visualsB.add_task(uφB(r=0.5),         name='uφB_r0.5', layout='g')
@@ -660,8 +673,8 @@ shell_commB         = SphericalShellCommunicator(pB)
 shell_commS         = SphericalShellCommunicator(pS)
 
 scalarWriter  = BallShellHandlerWriter(scalars, vol_averager,  out_dir, 'scalar')    
-profileWriterB = HandlerWriter(ball_fluxes, radial_averagerB,    out_dir, 'profilesB', max_writes=100)
-profileWriterS = HandlerWriter(shell_fluxes, radial_averagerS,    out_dir, 'profilesS', max_writes=100)
+profileWriterB = HandlerWriter(ball_lums, radial_averagerB,    out_dir, 'profilesB', max_writes=100)
+profileWriterS = HandlerWriter(shell_lums, radial_averagerS,    out_dir, 'profilesS', max_writes=100)
 esliceWriterB  = HandlerWriter(visualsB, equator_slicerB,     out_dir, 'eq_sliceB', max_writes=40)  
 esliceWriterS  = HandlerWriter(visualsS, equator_slicerS,     out_dir, 'eq_sliceS', max_writes=40)  
 sshellWriterB  = HandlerWriter(shell_visualsB, shell_commB,          out_dir, 'shell_sliceB', max_writes=100)
