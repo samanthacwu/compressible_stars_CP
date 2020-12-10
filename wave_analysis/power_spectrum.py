@@ -96,6 +96,10 @@ while plotter.files_remain([], fields):
         writes += this_file_writes
     plotter.current_filenum += 1
 
+#Get back to proper grid units.
+data_cube[:,:,0]  /= np.sqrt(2) # m == 0
+data_cube[:,:,1:] /= np.sqrt(4) # m != 0
+
 print('taking transform')
 dt = np.mean(np.gradient(times))
 freqs = np.fft.fftfreq(times.shape[0], d=dt)
@@ -132,10 +136,26 @@ ymax = sum_power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
 plt.plot(freqs[good], sum_power[good], c = 'k')
 plt.yscale('log')
 plt.xscale('log')
-plt.ylabel(r'Power (erg cm$^2$ / g / K)$^2$ (?)')
+plt.ylabel(r'Power (simulation s1 units squared)')
 plt.xlabel(r'Frequency (day$^{-1}$)')
 plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
 plt.xlim(min_freq, max_freq)
 plt.ylim(ymin, ymax)
 plt.savefig('{}/summed_power.png'.format(full_out_dir), dpi=600)
+
+fig = plt.figure()
+ax1 = fig.add_subplot(1,1,1)
+for i, ell in enumerate(ells.flatten()):
+    plt.plot(freqs[good], power[good,i], c='k')
+    ax1.set_yscale('log')
+    ax1.set_xscale('log')
+    ax1.text(0.05, 0.95, r'$\ell = {{{}}}$'.format(ell), transform=ax1.transAxes)
+    ax1.set_ylabel(r'Power (simulation s1 units squared)')
+    ax1.set_xlabel(r'Frequency (day$^{-1}$)')
+    ax1.set_xlim(min_freq, max_freq)
+    ax1.set_ylim(ymin, ymax)
+    fig.savefig('{}/power_ell{}.png'.format(full_out_dir, ell), dpi=600)
+    ax1.cla()
+
+    
 
