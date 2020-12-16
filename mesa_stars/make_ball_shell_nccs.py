@@ -114,6 +114,7 @@ dlogrhodr = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
 dlogTdr   = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
 
+
 # Entropy gradient, for ncc
 grad_s = cp*N2/g #includes composition terms
 # Heating, for ncc, H = rho*eps - portion carried by radiation
@@ -142,6 +143,18 @@ else:
 ball_bool  = r <= r_inner
 shell_bool = (r > r_inner)*(r <= r_outer)
 
+cp_surf = cp[shell_bool][-1]
+
+
+#plt.plot(r, cv)#gamma, label=r'$\gamma = cp/cv$')
+##plt.plot(r, gamma, label=r'$\gamma = cp/cv$')
+##plt.plot(r, gamma1, label=r'$\Gamma_1 = dlogPdr/(-g/c_sound^2)$')
+##plt.legend(loc='best')
+#plt.axvline(bot_fe_cz_r.value)
+#plt.xlabel('r')
+#plt.ylabel('cp')
+#plt.show()
+
 #Nondimensionalization
 L = L_CZ  = r[core_cz_bound_ind]
 g0 = g[core_cz_bound_ind] 
@@ -163,6 +176,9 @@ r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
 r_inner /= L
 r_outer /= L
+
+cp_surf = cp[shell_bool][-1]
+print(s_c, cp_surf)
 
 N2max_ball = N2[ball_bool].max()
 N2max_shell = N2[shell_bool].max()
@@ -329,3 +345,4 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['N2max_shell'] = N2max_shell
     f['N2max'] = np.max((N2max_ball.value, N2max_shell.value))
     f['N2plateau'] = N2plateau
+    f['cp_surf'] = cp_surf
