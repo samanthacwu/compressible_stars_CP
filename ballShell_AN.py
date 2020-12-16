@@ -593,6 +593,8 @@ uθS = dot(uS, eθS)
 urS = dot(erS, uS)
 hB = pB - 0.5*dot(uB,uB) + TB*s1B
 hS = pS - 0.5*dot(uS,uS) + TS*s1S
+pomega_hat_B = pB - 0.5*dot(uB,uB)
+pomega_hat_S = pS - 0.5*dot(uS,uS)
 
 I_matrixB_post = field.Field(dist=d, bases=(bB,), tensorsig=(c,c,), dtype=dtype)
 I_matrixB_post['g'] = 0
@@ -634,10 +636,12 @@ scalars.add_task(ρS*TS*s1S,           name='TE_shell', layout='g')
 
 ball_lums = solver.evaluator.add_dictionary_handler(sim_dt=lum_dt)
 shell_lums = solver.evaluator.add_dictionary_handler(sim_dt=lum_dt)
+ball_lums.add_task((4*np.pi*r_valsB**2)*(ρB*urB*pomega_hat_B), name='wave_lumB', layout='g')
 ball_lums.add_task((4*np.pi*r_valsB**2)*(ρB*urB*hB), name='enth_lumB', layout='g')
 ball_lums.add_task((4*np.pi*r_valsB**2)*(-ρB*visc_fluxB_r/Re), name='visc_lumB', layout='g')
 ball_lums.add_task((4*np.pi*r_valsB**2)*(-ρB*TB*dot(erB, grad(s1B))/Pe), name='cond_lumB', layout='g')
 ball_lums.add_task((4*np.pi*r_valsB**2)*(0.5*ρB*urB*dot(uB, uB)), name='KE_lumB', layout='g')
+shell_lums.add_task((4*np.pi*r_valsS**2)*(ρS*urS*pomega_hat_S), name='wave_lumS', layout='g')
 shell_lums.add_task((4*np.pi*r_valsS**2)*(ρS*urS*hS), name='enth_lumS', layout='g')
 shell_lums.add_task((4*np.pi*r_valsS**2)*(-ρS*visc_fluxS_r/Re), name='visc_lumS', layout='g')
 shell_lums.add_task((4*np.pi*r_valsS**2)*(-ρS*TS*dot(erS, grad(s1S))/Pe), name='cond_lumS', layout='g')
