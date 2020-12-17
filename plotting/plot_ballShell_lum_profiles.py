@@ -152,4 +152,46 @@ with plotterB.my_sync:
             count += 1
 
         
+plotterS = SFP(root_dir, file_dir=data_dirS, fig_name='wave_lum', start_file=start_file, n_files=n_files, distribution='even')
+plotterB = SFP(root_dir, file_dir=data_dirB, fig_name='wave_lum', start_file=start_file, n_files=n_files, distribution='even')
+
+fields = ['wave_lum',]
+fieldsB = ['{}B'.format(f) for f in fields]
+fieldsS = ['{}S'.format(f) for f in fields]
+bases  = ['r']
+
+plot_grid = PG(1, 1, col_in=float(args['--col_inch']), row_in=float(args['--row_inch'])) 
+axs  = plot_grid.axes
+ax1 = axs['ax_0-0']
+axs = [ax1,]
+
+plotterS.set_read_fields(bases, fieldsS)
+count = 0
+r_inner = float(args['--r_inner'])
+r_outer = float(args['--r_outer'])
+
+with plotterB.my_sync:
+    if not plotterB.idle:
+        while plotterB.files_remain(bases, fieldsB):
+            basesB, tasksB, write_numB, sim_timeB = plotterB.read_next_file()
+            basesS, tasksS, write_numS, sim_timeS = plotterS.read_next_file()
+
+            rB = basesB['r']
+            rS = basesS['r']
+
+            for i, t in enumerate(sim_timeB):
+                ax1.plot(rB.flatten(), tasksB['wave_lumB'][i,0,0,:], c='k')
+                ax1.plot(rS.flatten(), tasksS['wave_lumS'][i,0,0,:], c='k')
+                ax1.plot(rB.flatten(), -tasksB['wave_lumB'][i,0,0,:], c='k', ls='--')
+                ax1.plot(rS.flatten(), -tasksS['wave_lumS'][i,0,0,:], c='k', ls='--')
+                ax1.set_yscale('log')
+                ax1.set_xlabel('r')
+                ax1.set_ylabel(r'wave lum = $4\pi r^2 u_r (h + \phi - T_0 s_1)$')
+                     
+                plt.savefig('{:s}/wave_lum/wave_lum_{:06d}.png'.format(root_dir, int(write_numB[i])), dpi=float(args['--dpi']), bbox_inches='tight')
+                ax1.cla()
+
+            count += 1
+
+        
 

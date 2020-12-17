@@ -11,7 +11,7 @@ Options:
     --data_dir=<dir>                    Name of data handler directory [default: surface_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
-    --n_files=<num_files>               Total number of files to plot [default: 100]
+    --n_files=<num_files>               Total number of files to plot [default: 100000]
     --dpi=<dpi>                         Image pixel density [default: 200]
 
     --col_inch=<in>                     Number of inches / column [default: 3]
@@ -87,15 +87,19 @@ b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dt
 φ, θ = b.local_grids((dealias, dealias))
 φg, θg = b.global_grids((dealias, dealias))
 
+hemisphere = (φg.flatten() >= 0)*(φg.flatten() <= np.pi)
 global_weight_φ = (np.ones_like(φg)*np.pi/((b.Lmax+1)*dealias))
-volume_φ = np.sum(global_weight_φ)
+hemisphere_weight_φ = global_weight_φ[hemisphere,:]
+volume_φ = np.sum(hemisphere_weight_φ)
 
 global_weight_θ = b.global_colatitude_weights(dealias)
 theta_vol = np.sum(global_weight_θ)
 
-phi_avg = lambda A: np.sum(global_weight_φ*A, axis=0)/volume_φ
+
+
+phi_avg = lambda A: np.sum(hemisphere_weight_φ*A, axis=0)/volume_φ
 theta_avg = lambda A: np.sum(global_weight_θ*A, axis=1)/theta_vol
-phi_theta_avg = lambda A: np.sum(global_weight_φ*global_weight_θ*A)/volume_φ/theta_vol
+phi_theta_avg = lambda A: np.sum(hemisphere_weight_φ*global_weight_θ*A)/volume_φ/theta_vol
 
 
 out_time   = []
@@ -113,7 +117,7 @@ if args['--analyze']:
         outputs = OrderedDict()
         for i, t in enumerate(time):
             out_time.append(t)
-            s1cp_surf = tsk['s1_surf'][i].squeeze()/cp_surf
+            s1cp_surf = tsk['s1_surf'][i,hemisphere,:,0]/cp_surf
             lum_fluc = (1 + s1cp_surf)**4
             out_lum_fluc.append(phi_theta_avg(lum_fluc))
     out_time = np.array(out_time)
@@ -133,3 +137,19 @@ plt.plot(out_time, out_lum_fluc - 1, c='k')
 plt.xlabel('sim time (days)')
 plt.ylabel('fractional luminosity change')
 fig.savefig('{}/{}/plot_{}.png'.format(root_dir, out_dir, out_dir), dpi=300, bbox_inches='tight')
+
+fft_lum = np.fft.fft(out_lum_fluc - 1) / (out_lum_fluc.shape[0]/2)
+power = (fft_lum*np.conj(fft_lum)).real
+fft_freq = np.fft.fftfreq(len(out_time), np.mean(np.gradient(out_time)))
+true_freqs = fft_freq[fft_freq >= 0]
+true_power = np.zeros_like(true_freqs)
+for i,f in enumerate(true_freqs):
+    true_power[i] += power[fft_freq == f]
+    if f != 0:
+        true_power[i] += power[fft_freq == -f]
+fig = plt.figure(figsize=(8,3))
+plt.loglog(true_freqs, np.sqrt(true_power))
+plt.xlim(5e-2, 1e1)
+plt.xlabel('frequency (1/day)')
+plt.ylabel('amplitude')
+fig.savefig('{}/{}/amplitude_{}.png'.format(root_dir, out_dir, out_dir), dpi=300, bbox_inches='tight')
