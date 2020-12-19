@@ -14,8 +14,8 @@ Options:
     --N=<Nmax>           The value of Nmax   [default: 31]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
-    --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
     --safety=<s>         Timestep CFL safety factor [default: 0.4]
+    --niter=<n>          Number of iterations to run [default: 110]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
     --A0=<A>             Amplitude of initial noise [default: 1e-6]
@@ -105,9 +105,19 @@ else:
     ts = timesteppers.SBDF2
     timestepper_history = [0, 1,]
 dtype = np.float64
+
+comm = MPI.COMM_WORLD
+ncpu = comm.size
+rank = comm.rank
 mesh = args['--mesh']
 if mesh is not None:
-    mesh = [int(m) for m in mesh.split(',')]
+    mesh = mesh.split(',')
+    mesh = [int(mesh[0]), int(mesh[1])]
+else:
+    log2 = np.log2(ncpu)
+    if log2 == int(log2):
+        mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
+    logger.info("running on processor mesh={}".format(mesh))
 
 Re  = float(args['--Re'])
 Pr  = 1
@@ -191,7 +201,7 @@ if args['--mesa_file'] is not None:
 else:
     logger.info("Using polytropic initial conditions")
     from scipy.interpolate import interp1d
-    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
+    with h5py.File('../polytropes/poly_nOuter1.6.h5', 'r') as f:
         T_func = interp1d(f['r'][()], f['T'][()])
         ρ_func = interp1d(f['r'][()], f['ρ'][()])
         grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
@@ -212,17 +222,18 @@ else:
     t_buoy      = 1
 
 max_dt = 3/np.sqrt(max_grad_s0)
-
 logger.info('buoyancy time is {}'.format(t_buoy))
-t_end = float(args['--buoy_end_time'])*t_buoy
 
 for f in [u, s1, p, ln_ρ, ln_T, inv_T, H_eff, ρ]:
     f.require_scales(dealias)
 
 # Stress matrices & viscous terms
+I_matrix_post = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
 I_matrix = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c,), dtype=dtype)
+I_matrix_post['g'] = 0
 I_matrix['g'] = 0
 for i in range(3):
+    I_matrix_post['g'][i,i,:] = 1
     I_matrix['g'][i,i,:] = 1
 
 E = 0.5*(grad(u) + transpose(grad(u)))
@@ -230,6 +241,7 @@ E.store_last = True
 divU = div(u)
 divU.store_last = True
 σ = 2*(E - (1/3)*divU*I_matrix)
+σ_post = 2*(E - (1/3)*divU*I_matrix_post)
 momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
 #trace_E = trace(E)
@@ -241,10 +253,10 @@ u_r_bc    = radComp(u(r=radius))
 u_perp_bc = radComp(angComp(E(r=radius), index=1))
 therm_bc  = s1(r=radius)
 
-
 H_eff = operators.Grid(H_eff).evaluate()
 inv_T = operators.Grid(inv_T).evaluate()
 grads1 = grad(s1)
+grads1.store_last = True
 
 # Problem
 def eq_eval(eq_str):
@@ -264,7 +276,7 @@ problem.add_equation(eq_eval("therm_bc  = 0"))
 logger.info("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
-solver.stop_sim_time = t_end
+solver.stop_iteration = int(args['--niter'])
 logger.info("solver built")
 
 ## Analysis Setup
@@ -277,7 +289,6 @@ u_squared = dot(u,u)
 h = p - 0.5*u_squared + T*s1
 pomega_hat = p - 0.5*u_squared
 visc_flux_r = 2*(dot(er, dot(u, E)) - (1/3) * ur * divU)
-
 
 r_vals = field.Field(dist=d, bases=(b,), dtype=dtype)
 r_vals['g'] = r
@@ -365,12 +376,19 @@ else:
         s1['g']
         s1.require_scales(dealias)
 
-# Main loop
 start_time = time.time()
+for i in range(10):
+    logger.info('initial timestep {}'.format(i))
+    solver.step(dt)
+    dt = my_cfl.compute_dt()
+
+# Main loop
 start_iter = solver.iteration
-try:
+def main_loop():
+    global dt
     while solver.ok:
         solver.step(dt)
+        d.comm_cart.Barrier()
         dt = my_cfl.compute_dt()
 
         if solver.iteration % 10 == 0:
@@ -380,28 +398,25 @@ try:
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
                 f.require_grid_space()
-except:
-    logger.info('something went wrong in main loop, making final checkpoint')
-    raise
-finally:
-    fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
-    fcheckpoint.add_task(s1, name='s1', scales=1, layout='c')
-    fcheckpoint.add_task(u, name='u', scales=1, layout='c')
-    solver.step(1e-5*dt)
 
-    end_time = time.time()
-    end_iter = solver.iteration
-    cpu_sec  = end_time - start_time
-    n_iter   = end_iter - start_iter
+import cProfile
+main_start = time.time()
+cProfile.run('main_loop()', filename='{}/prof.{:d}'.format(out_dir, rank))
+end_time = time.time()
 
-    #TODO: Make the end-of-sim report better
-    n_coeffs = 2*(Nmax+1)*(Lmax+1)*(Lmax+2)
-    n_cpu    = d.comm_cart.size
-    dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
-    logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
-    logger.info('Run iterations: {:e}'.format(n_iter))
-    logger.info('Sim end time: {:e}'.format(solver.sim_time))
-    logger.info('Run time: {}'.format(cpu_sec))
+niter = solver.iteration - start_iter
+
+startup_time = main_start - start_time
+main_loop_time = end_time - main_start
+DOF = (2*(Lmax+2))*(Lmax+1)*(Nmax+1)
+if rank==0:
+    print('performance metrics:')
+    print('    startup time   : {:}'.format(startup_time))
+    print('    main loop time : {:}'.format(main_loop_time))
+    print('    main loop iter : {:d}'.format(niter))
+    print('    wall time/iter : {:f}'.format(main_loop_time/niter))
+    print('          iter/sec : {:f}'.format(niter/main_loop_time))
+    print('DOF-cycles/cpu-sec : {:}'.format(DOF*niter/(ncpu*main_loop_time)))
 
 from d3_outputs import post
 for t in analysis_tasks:
