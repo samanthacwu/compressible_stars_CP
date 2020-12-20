@@ -620,6 +620,7 @@ scalars.add_task(ρB*uB_squared/2,    name='KE_ball',   layout='g', extra_op = v
 scalars.add_task(ρS*uS_squared/2,    name='KE_shell',  layout='g', extra_op = vol_averagerS, extra_op_comm=True)
 scalars.add_task(ρB*TB*s1B,           name='TE_ball',  layout='g', extra_op = vol_averagerB, extra_op_comm=True)
 scalars.add_task(ρS*TS*s1S,           name='TE_shell', layout='g', extra_op = vol_averagerS, extra_op_comm=True)
+analysis_tasks.append(scalars)
 
 profiles = d3FileHandler(solver, '{:s}/profiles'.format(out_dir), sim_dt=visual_dt, max_writes=100)
 profiles.add_task((4*np.pi*r_valsB**2)*(ρB*urB*pomega_hat_B),         name='wave_lumB', layout='g', extra_op = profile_averagerB, extra_op_comm=True)
@@ -632,11 +633,13 @@ profiles.add_task((4*np.pi*r_valsB**2)*(-ρB*TB*dot(erB, grads1B)/Pe), name='con
 profiles.add_task((4*np.pi*r_valsS**2)*(-ρS*TS*dot(erS, grads1S)/Pe), name='cond_lumS', layout='g', extra_op = profile_averagerS, extra_op_comm=True)
 profiles.add_task((4*np.pi*r_valsB**2)*(0.5*ρB*urB*uB_squared),       name='KE_lumB',   layout='g', extra_op = profile_averagerB, extra_op_comm=True)
 profiles.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*uS_squared),       name='KE_lumS',   layout='g', extra_op = profile_averagerS, extra_op_comm=True)
+analysis_tasks.append(profiles)
 
 surface_shells = solver.evaluator.add_dictionary_handler(sim_dt=max_dt)
 surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
 surface_shell_slices.add_task(angComp(uS(r=r_outer), index=0), name='u_ang_surf', layout='g', extra_op=ORI(pS, angComp(uS(r=r_outer), index=0)))
 surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
+analysis_tasks.append(surface_shell_slices)
 
 checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
@@ -706,3 +709,7 @@ finally:
     logger.info('Run iterations: {:e}'.format(n_iter))
     logger.info('Sim end time: {:e}'.format(solver.sim_time))
     logger.info('Run time: {}'.format(cpu_sec))
+
+from d3_outputs import post
+for t in analysis_tasks:
+    post.merge_analysis(t.base_path)
