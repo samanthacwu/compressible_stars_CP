@@ -23,13 +23,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from docopt import docopt
 args = docopt(__doc__)
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from plotpal.file_reader import SingleFiletypePlotter as SFP
 from plotpal.plot_grid import ColorbarPlotGrid as CPG
 
 # Read in master output directory
 root_dir    = args['<root_dir>']
-data_dirB   = 'eq_sliceB'
-data_dirS   = 'eq_sliceS'
+data_dir   = 'slices'
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
     import sys
@@ -42,13 +42,11 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-plotterS = SFP(root_dir, file_dir=data_dirS, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
-plotterB = SFP(root_dir, file_dir=data_dirB, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
+plotter = SFP(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
 
-fields = ['s1', 'ur', 'uφ', 'uθ']
-fieldsB = ['{}_B'.format(f) for f in fields]
-fieldsS = ['{}_S'.format(f) for f in fields]
-bases  = ['φ', 'r']
+fields = ['s1B_eq', 's1S_eq', 'uB_eq', 'uS_eq']
+bases  = []
+#bases  = ['φ', 'r']
 
 plot_grid = CPG(2, 2, polar=True, col_in=3, row_in=3) 
 axs  = plot_grid.axes
@@ -62,7 +60,6 @@ cax2 = caxs['ax_1-0']
 cax3 = caxs['ax_0-1']
 cax4 = caxs['ax_1-1']
 
-plotterS.set_read_fields(bases, fieldsS)
 count = 0
 r_inner = float(args['--r_inner'])
 r_outer = float(args['--r_outer'])
@@ -71,70 +68,90 @@ if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
-       
-with plotterB.my_sync:
-    if not plotterB.idle:
-        while plotterB.files_remain(bases, fieldsB):
-            basesB, tasksB, write_numB, sim_timeB = plotterB.read_next_file()
-            basesS, tasksS, write_numS, sim_timeS = plotterS.read_next_file()
 
-            rB = basesB['r']
-            rS = basesS['r']
-            φB = basesB['φ']
-            φS = basesB['φ']
+first = True
+shell_basis_grids = None
+ball_basis_grids = None
+if not plotter.idle:
+    while plotter.files_remain(bases, fields):
+        bases, tasks, write_num, sim_time = plotter.read_next_file()
 
-            φB_plot = np.append(φB.flatten(), 2*np.pi)
-            φS_plot = np.append(φS.flatten(), 2*np.pi)
+        if first:
+            b_shape = tasks['s1B_eq'].shape[1:]
+            s_shape = tasks['s1S_eq'].shape[1:]
+            Lmax = b_shape[0]/2 - 2
+            NmaxB = b_shape[2] - 1
+            NmaxS = s_shape[2] - 1
+            from mpi4py import MPI
+            c    = coords.SphericalCoordinates('φ', 'θ', 'r')
+            d    = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
+            bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=np.float64)
+            bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=np.float64)
+            dealias=1
+            ball_basis_grids = bB.global_grids((dealias, dealias, dealias))
+            shell_basis_grids = bS.global_grids((dealias, dealias, dealias))
+            first = False
 
-            rB_plot = np.pad(rB, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(0, r_inner))
-            rS_plot = np.pad(rS, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(r_inner, r_outer))
+        φB, θB, rB = ball_basis_grids
+        φS, θS, rS = shell_basis_grids
 
-            rrB, φφB = np.meshgrid(rB_plot.flatten(),  φB_plot)
-            rrS, φφS = np.meshgrid(rS_plot.flatten(),  φS_plot)
+        φB_plot = np.append(φB.flatten(), 2*np.pi)
+        φS_plot = np.append(φS.flatten(), 2*np.pi)
 
-            for i, n in enumerate(write_numB):
-                print('writing filenum {}'.format(n))
-                s1B = tasksB['s1_B'][i,:,0,:]
-                s1S = tasksS['s1_S'][i,:,0,:]
-                urB = tasksB['ur_B'][i,:,0,:]
-                urS = tasksS['ur_S'][i,:,0,:]
-                uφB = tasksB['uφ_B'][i,:,0,:]
-                uφS = tasksS['uφ_S'][i,:,0,:]
-                uθB = tasksB['uθ_B'][i,:,0,:]
-                uθS = tasksS['uθ_S'][i,:,0,:]
+        rB_plot = np.pad(rB, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(0, r_inner))
+        rS_plot = np.pad(rS, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(r_inner, r_outer))
 
-                s1B -= np.mean(s1B, axis=0)
-                s1S -= np.mean(s1S, axis=0)
-                s1B /= np.mean(np.abs(s1B), axis=0)
-                s1S /= np.mean(np.abs(s1S), axis=0)
+        rrB, φφB = np.meshgrid(rB_plot.flatten(),  φB_plot)
+        rrS, φφS = np.meshgrid(rS_plot.flatten(),  φS_plot)
 
-                for ax, cax, fB, fS in zip((ax1, ax2, ax3, ax4), (cax1, cax2, cax3, cax4), (s1B, uθB, uφB, urB), (s1S, uθS, uφS, urS)):
+        for i, n in enumerate(write_num):
+            print('writing filenum {}'.format(n))
+            s1B = tasks['s1B_eq'][i,:,0,:]
+            s1S = tasks['s1S_eq'][i,:,0,:]
+            uφB = tasks['uB_eq'][i,0,:,0,:]
+            uφS = tasks['uS_eq'][i,0,:,0,:]
+            uθB = tasks['uB_eq'][i,1,:,0,:]
+            uθS = tasks['uS_eq'][i,1,:,0,:]
+            urB = tasks['uB_eq'][i,2,:,0,:]
+            urS = tasks['uS_eq'][i,2,:,0,:]
 
-                    fB = np.pad(fB, ((0, 0), (1, 0)), mode='edge')
-                    fS = np.pad(fS, ((0, 0), (1, 0)), mode='edge')
+            s1B -= np.mean(s1B, axis=0)
+            s1S -= np.mean(s1S, axis=0)
+            s1B /= np.mean(np.abs(s1B), axis=0)
+            s1S /= np.mean(np.abs(s1S), axis=0)
 
-                    vals = np.sort(np.abs(np.concatenate((fB.flatten(), fS.flatten()))))
-                    vmax  = vals[int(0.998*len(vals))]
-                    vmin  = -vmax
+            uφB /= np.std(uφB, axis=0)
+            uφS /= np.std(uφS, axis=0)
+            uθB /= np.std(uθB, axis=0)
+            uθS /= np.std(uθS, axis=0)
 
-                    p = ax.pcolormesh(φφB, rrB, fB, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
-                    ax.pcolormesh(φφS, rrS, fS, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
-                    plt.colorbar(p, cax, orientation='horizontal')
-                plt.suptitle('t = {:.2f}'.format(sim_timeB[i]))
-                for ax in [ax1, ax2, ax3, ax4]:
-                    ax.set_xticks([])
-                    ax.set_rticks([])
-                    ax.set_aspect(1)
-                cax1.text(0.5, 0.5, 's1', ha='center', va='center', transform=cax1.transAxes)
-                cax2.text(0.5, 0.5, 'u_theta', ha='center', va='center', transform=cax2.transAxes)
-                cax3.text(0.5, 0.5, 'u_phi',   ha='center', va='center', transform=cax3.transAxes)
-                cax4.text(0.5, 0.5, 'u_r',     ha='center', va='center', transform=cax4.transAxes)
-                plt.savefig('{:s}/{:s}/{:s}_{:04d}.png'.format(root_dir, fig_name, fig_name, int(n)), dpi=float(args['--dpi']))#, bbox_inches='tight')
-                for ax in [ax1, ax2, ax3, ax4, cax1, cax2, cax3, cax4]:
-                    ax.cla()
+            for ax, cax, fB, fS in zip((ax1, ax2, ax3, ax4), (cax1, cax2, cax3, cax4), (s1B, uθB, uφB, urB), (s1S, uθS, uφS, urS)):
+
+                fB = np.pad(fB, ((0, 0), (1, 0)), mode='edge')
+                fS = np.pad(fS, ((0, 0), (1, 0)), mode='edge')
+
+                vals = np.sort(np.abs(np.concatenate((fB.flatten(), fS.flatten()))))
+                vmax  = vals[int(0.998*len(vals))]
+                vmin  = -vmax
+
+                p = ax.pcolormesh(φφB, rrB, fB, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
+                ax.pcolormesh(φφS, rrS, fS, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
+                plt.colorbar(p, cax, orientation='horizontal')
+            plt.suptitle('t = {:.2f}'.format(sim_time[i]))
+            for ax in [ax1, ax2, ax3, ax4]:
+                ax.set_xticks([])
+                ax.set_rticks([])
+                ax.set_aspect(1)
+            cax1.text(0.5, 0.5, r'$s_1$', ha='center', va='center', transform=cax1.transAxes)
+            cax2.text(0.5, 0.5, r'$u_\theta$', ha='center', va='center', transform=cax2.transAxes)
+            cax3.text(0.5, 0.5, r'$u_\phi$',   ha='center', va='center', transform=cax3.transAxes)
+            cax4.text(0.5, 0.5, r'$u_r$',     ha='center', va='center', transform=cax4.transAxes)
+            plt.savefig('{:s}/{:s}/{:s}_{:04d}.png'.format(root_dir, fig_name, fig_name, int(n)), dpi=float(args['--dpi']))#, bbox_inches='tight')
+            for ax in [ax1, ax2, ax3, ax4, cax1, cax2, cax3, cax4]:
+                ax.cla()
 
 
-                count += 1
+            count += 1
 
-            
+        
 
