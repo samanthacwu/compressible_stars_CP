@@ -18,6 +18,8 @@ Options:
     --polytrope                         Use polytropic background
     --r_inner=<r>                       linking shell-ball radius [default: 1.2]
     --r_outer=<r>                       outer shell radius [default: 2]
+
+    --entropy_only
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -42,23 +44,33 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
+if args['--entropy_only']:
+    fig_name = 'entropy_' + fig_name
+
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
 
 fields = ['s1B_eq', 's1S_eq', 'uB_eq', 'uS_eq']
 bases  = []
 #bases  = ['φ', 'r']
 
-plot_grid = CPG(2, 2, polar=True, col_in=3, row_in=3) 
-axs  = plot_grid.axes
-caxs = plot_grid.cbar_axes
-ax1 = axs['ax_0-0']
-ax2 = axs['ax_1-0']
-ax3 = axs['ax_0-1']
-ax4 = axs['ax_1-1']
-cax1 = caxs['ax_0-0']
-cax2 = caxs['ax_1-0']
-cax3 = caxs['ax_0-1']
-cax4 = caxs['ax_1-1']
+if args['--entropy_only']:
+    plot_grid = CPG(1, 1, polar=True, col_in=5, row_in=5) 
+    axs  = plot_grid.axes
+    caxs = plot_grid.cbar_axes
+    ax1 = axs['ax_0-0']
+    cax1 = caxs['ax_0-0']
+else:
+    plot_grid = CPG(2, 2, polar=True, col_in=3, row_in=3) 
+    axs  = plot_grid.axes
+    caxs = plot_grid.cbar_axes
+    ax1 = axs['ax_0-0']
+    ax2 = axs['ax_1-0']
+    ax3 = axs['ax_0-1']
+    ax4 = axs['ax_1-1']
+    cax1 = caxs['ax_0-0']
+    cax2 = caxs['ax_1-0']
+    cax3 = caxs['ax_0-1']
+    cax4 = caxs['ax_1-1']
 
 count = 0
 r_inner = float(args['--r_inner'])
@@ -125,7 +137,12 @@ if not plotter.idle:
             uθB /= np.std(uθB, axis=0)
             uθS /= np.std(uθS, axis=0)
 
-            for ax, cax, fB, fS in zip((ax1, ax2, ax3, ax4), (cax1, cax2, cax3, cax4), (s1B, uθB, uφB, urB), (s1S, uθS, uφS, urS)):
+            if args['--entropy_only']:
+                zip_list = zip((ax1,), (cax1,), (s1B,), (s1S,))
+            else:
+                zip_list = zip((ax1, ax2, ax3, ax4), (cax1, cax2, cax3, cax4), (s1B, uθB, uφB, urB), (s1S, uθS, uφS, urS))
+
+            for ax, cax, fB, fS in zip_list:
 
                 fB = np.pad(fB, ((0, 0), (1, 0)), mode='edge')
                 fS = np.pad(fS, ((0, 0), (1, 0)), mode='edge')
@@ -134,21 +151,24 @@ if not plotter.idle:
                 vmax  = vals[int(0.998*len(vals))]
                 vmin  = -vmax
 
-                p = ax.pcolormesh(φφB, rrB, fB, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
-                ax.pcolormesh(φφS, rrS, fS, cmap='RdBu_r', vmin=vmin, vmax=vmax)#tasksB['s1_B'][0,:,0,:])
+                p = ax.pcolormesh(φφB, rrB, fB, cmap='RdBu_r', vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
+                ax.pcolormesh(φφS, rrS, fS, cmap='RdBu_r', vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
                 plt.colorbar(p, cax, orientation='horizontal')
             plt.suptitle('t = {:.2f}'.format(sim_time[i]))
-            for ax in [ax1, ax2, ax3, ax4]:
+            for k, ax in axs.items():
                 ax.set_xticks([])
                 ax.set_rticks([])
                 ax.set_aspect(1)
             cax1.text(0.5, 0.5, r'$s_1$', ha='center', va='center', transform=cax1.transAxes)
-            cax2.text(0.5, 0.5, r'$u_\theta$', ha='center', va='center', transform=cax2.transAxes)
-            cax3.text(0.5, 0.5, r'$u_\phi$',   ha='center', va='center', transform=cax3.transAxes)
-            cax4.text(0.5, 0.5, r'$u_r$',     ha='center', va='center', transform=cax4.transAxes)
-            plt.savefig('{:s}/{:s}/{:s}_{:04d}.png'.format(root_dir, fig_name, fig_name, int(n)), dpi=float(args['--dpi']))#, bbox_inches='tight')
-            for ax in [ax1, ax2, ax3, ax4, cax1, cax2, cax3, cax4]:
+            if not args['--entropy_only']:
+                cax2.text(0.5, 0.5, r'$u_\theta$', ha='center', va='center', transform=cax2.transAxes)
+                cax3.text(0.5, 0.5, r'$u_\phi$',   ha='center', va='center', transform=cax3.transAxes)
+                cax4.text(0.5, 0.5, r'$u_r$',     ha='center', va='center', transform=cax4.transAxes)
+            plt.savefig('{:s}/{:s}/{:s}_{:06d}.png'.format(root_dir, fig_name, fig_name, int(n)), dpi=float(args['--dpi']))#, bbox_inches='tight')
+            for k, ax in axs.items():
                 ax.cla()
+            for k, cax in caxs.items():
+                cax.cla()
 
 
             count += 1
