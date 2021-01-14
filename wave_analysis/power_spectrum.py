@@ -20,8 +20,6 @@ Options:
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
     --plot_only
-    --writes_per_spectrum=<w>           Max number of writes per power spectrum
-
 """
 
 import os
@@ -133,21 +131,21 @@ freqs /= tau
 good = freqs >= 0
 min_freq = 1e-1
 max_freq = freqs.max()
-sum_power2 = np.sum(power, axis=1)
 sum_power = np.zeros(power.shape[0])
+sum_power2 = np.zeros(power.shape[0])
+#sum_power2 = np.sum(power, axis=1)
 for i, ell in enumerate(ells.flatten()):
     if ell == 0:
         continue
-    print(ell)
     sum_power += power[:,i].real/ell
+    if ell <= 10:
+        sum_power2 += power[:,i].real/ell
         
-print(freqs)
 ymin = sum_power[(freqs > 5e-2)*(freqs < max_freq)][-1].min()/2
 ymax = sum_power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
 
-
-plt.plot(freqs[good], sum_power[good], c = 'k', ls='--')
-plt.plot(freqs[good], sum_power2[good], c = 'k')
+plt.plot(freqs[good], sum_power2[good], c = 'green', ls='--', label=r'$\ell <= 10$')
+plt.plot(freqs[good], sum_power[good], c = 'k', label=r'all $\ell$ values')
 plt.yscale('log')
 plt.xscale('log')
 plt.ylabel(r'Power (simulation s1 units squared)')
@@ -155,28 +153,29 @@ plt.xlabel(r'Frequency (day$^{-1}$)')
 plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
 plt.xlim(min_freq, max_freq)
 plt.ylim(ymin, ymax)
+plt.legend(loc='best')
 plt.savefig('{}/summed_power.png'.format(full_out_dir), dpi=600)
 
 fig = plt.figure()
 ax1 = fig.add_subplot(1,1,1)
-small_sum = np.zeros_like(sum_power)
-last_N = 20
-for i, ell in enumerate(ells.flatten()):
-    j = last_N - i
-    this_ell = last_N - ell
-    if this_ell == 0:
-        break
-    plt.plot(freqs[good], power[good,j].real/this_ell, label=r'$\ell={{{}}}$'.format(this_ell))
-    small_sum += power[:,j].real/this_ell
-    ax1.set_yscale('log')
-    ax1.set_xscale('log')
-    ax1.set_ylabel(r'Power$/\ell$ (simulation s1 units squared)')
-    ax1.set_xlabel(r'Frequency (day$^{-1}$)')
-    ax1.set_xlim(min_freq, max_freq)
-    ax1.set_ylim(ymin, ymax)
-ax1.plot(freqs[good], small_sum[good], c='k', label='sum')
-plt.legend(loc='upper right')
-fig.savefig('{}/power_ell0-{}.png'.format(full_out_dir, last_N), dpi=600)
+#small_sum = np.zeros_like(sum_power)
+#last_N = 20
+#for i, ell in enumerate(ells.flatten()):
+#    j = last_N - i
+#    this_ell = last_N - ell
+#    if this_ell == 0:
+#        break
+#    plt.plot(freqs[good], power[good,j].real/this_ell, label=r'$\ell={{{}}}$'.format(this_ell))
+#    small_sum += power[:,j].real/this_ell
+#    ax1.set_yscale('log')
+#    ax1.set_xscale('log')
+#    ax1.set_ylabel(r'Power$/\ell$ (simulation s1 units squared)')
+#    ax1.set_xlabel(r'Frequency (day$^{-1}$)')
+#    ax1.set_xlim(min_freq, max_freq)
+#    ax1.set_ylim(ymin, ymax)
+#ax1.plot(freqs[good], small_sum[good], c='k', label='sum')
+#plt.legend(loc='upper right')
+#fig.savefig('{}/power_ell0-{}.png'.format(full_out_dir, last_N), dpi=600)
 ax1.cla()
 for i, ell in enumerate(ells.flatten()):
     if ell == 0:
@@ -191,6 +190,8 @@ for i, ell in enumerate(ells.flatten()):
     ax1.set_ylim(ymin, ymax)
     fig.savefig('{}/power_ell{}.png'.format(full_out_dir, ell), dpi=600)
     ax1.cla()
+    if ell > 10:
+        break
 
     
 

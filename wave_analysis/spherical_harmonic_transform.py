@@ -8,7 +8,7 @@ Usage:
     plot_mollweide_snapshots.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: surface_shells]
+    --data_dir=<dir>                    Name of data handler directory [default: surface_shell_slices]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
@@ -68,8 +68,8 @@ if n_files is not None:
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_transform_{}'.format(data_dir)
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='even')
-fields = ['s1_surf',]#, 'u_theta_surf',]
-bases  = ['φ', 'θ']
+fields = ['s1_surf',]
+bases  = []
 
 Lmax = int(root_dir.split('Re')[-1].split('_')[1].split('x')[0])
 

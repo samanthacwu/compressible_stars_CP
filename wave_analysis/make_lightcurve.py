@@ -5,10 +5,10 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    surface_brightness.py <root_dir> [options]
+    make_lightcurve.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: surface_shells]
+    --data_dir=<dir>                    Name of data handler directory [default: surface_shell_slices]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot [default: 100000]
@@ -20,7 +20,8 @@ Options:
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
     --plot_only
-    --writes_per_spectrum=<w>           Max number of writes per power spectrum
+    --writes_per_spectrum=<w>           Max number of writes per power spectrum [default: 1e4]
+    --dwrite=<dw>                       Number of writes to move before next power spectrum [default: 2e2]
 
     --mesa_file=<mf>                    MESA file
     --analyze
@@ -69,10 +70,10 @@ start_file  = int(args['--start_file'])
 n_files     = int(args['--n_files'])
 
 # Create Plotter object, tell it which fields to plot
-out_dir = 'lum_fluc'
+out_dir = 'lightcurve'
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='even')
 fields = ['s1_surf',]#, 'u_theta_surf',]
-bases  = ['φ', 'θ']
+bases  = []
 
 Lmax = int(root_dir.split('Re')[-1].split('_')[1].split('x')[0])
 
@@ -95,8 +96,6 @@ volume_φ = np.sum(hemisphere_weight_φ)
 global_weight_θ = b.global_colatitude_weights(dealias)
 theta_vol = np.sum(global_weight_θ)
 
-
-
 phi_avg = lambda A: np.sum(hemisphere_weight_φ*A, axis=0)/volume_φ
 theta_avg = lambda A: np.sum(global_weight_θ*A, axis=1)/theta_vol
 phi_theta_avg = lambda A: np.sum(hemisphere_weight_φ*global_weight_θ*A)/volume_φ/theta_vol
@@ -113,7 +112,6 @@ if args['--analyze']:
         file_name = plotter.files[plotter.current_filenum]
         file_num  = int(file_name.split('_s')[-1].split('.h5')[0])
         bs, tsk, write, time = plotter.read_next_file()
-        out_bs = bs
         outputs = OrderedDict()
         for i, t in enumerate(time):
             out_time.append(t)
@@ -131,25 +129,39 @@ with h5py.File('{}/{}/{}.h5'.format(root_dir, out_dir, out_dir), 'r') as f:
     out_lum_fluc = f['lum_fluc'][()]
 
 fig = plt.figure(figsize=(8,3))
-print(out_time.shape, out_lum_fluc.shape)
-
 plt.plot(out_time, out_lum_fluc - 1, c='k')
 plt.xlabel('sim time (days)')
 plt.ylabel('fractional luminosity change')
 fig.savefig('{}/{}/plot_{}.png'.format(root_dir, out_dir, out_dir), dpi=300, bbox_inches='tight')
 
-fft_lum = np.fft.fft(out_lum_fluc - 1) / (out_lum_fluc.shape[0]/2)
-power = (fft_lum*np.conj(fft_lum)).real
-fft_freq = np.fft.fftfreq(len(out_time), np.mean(np.gradient(out_time)))
-true_freqs = fft_freq[fft_freq >= 0]
-true_power = np.zeros_like(true_freqs)
-for i,f in enumerate(true_freqs):
-    true_power[i] += power[fft_freq == f]
-    if f != 0:
-        true_power[i] += power[fft_freq == -f]
-fig = plt.figure(figsize=(8,3))
-plt.loglog(true_freqs, np.sqrt(true_power))
-plt.xlim(5e-2, 1e1)
-plt.xlabel('frequency (1/day)')
-plt.ylabel('amplitude')
-fig.savefig('{}/{}/amplitude_{}.png'.format(root_dir, out_dir, out_dir), dpi=300, bbox_inches='tight')
+writes_per = int(float(args['--writes_per_spectrum']))
+dwrite = int(float(args['--dwrite']))
+n_points = out_time.squeeze().shape[0]
+slices = []
+if writes_per > n_points:
+    slices.append(slice(0,n_points,1))
+else:
+    for i in range(int(np.floor((n_points-writes_per)/dwrite))):
+        slices.append(slice(i*dwrite, i*dwrite+writes_per,1))
+
+for i, sl in enumerate(slices):
+    print('plotting slice {}/{}'.format(i, len(slices)))
+    N = out_lum_fluc[sl].shape[0]
+    window = np.hanning(N)
+    fft_lum = np.fft.fft(window*(out_lum_fluc[sl] - 1)) / (N/2)
+    power = (fft_lum*np.conj(fft_lum)).real
+    fft_freq = np.fft.fftfreq(len(out_time[sl]), np.mean(np.gradient(out_time[sl])))
+    true_freqs = fft_freq[fft_freq >= 0]
+    true_power = np.zeros_like(true_freqs)
+    for j,f in enumerate(true_freqs):
+        true_power[j] += power[fft_freq == f]
+        if f != 0:
+            true_power[j] += power[fft_freq == -f]
+    fig = plt.figure(figsize=(8,3))
+    plt.loglog(true_freqs, np.sqrt(true_power))
+    plt.xlim(5e-2, 1e1)
+    plt.xlabel('frequency (1/day)')
+    plt.ylabel('amplitude')
+    plt.title('t={:.2e}-{:.2e}'.format(out_time[sl].min(), out_time[sl].max()))
+    fig.savefig('{}/{}/amplitude_{}_{:06d}.png'.format(root_dir, out_dir, out_dir, i+1), dpi=300, bbox_inches='tight')
+    plt.clf()

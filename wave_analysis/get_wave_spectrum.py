@@ -5,10 +5,10 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    plot_mollweide_snapshots.py <root_dir> [options]
+    get_wave_spectrum.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: surface_shells]
+    --data_dir=<dir>                    Name of data handler directory [default: surface_shell_slices]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
