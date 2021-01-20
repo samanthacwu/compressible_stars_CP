@@ -53,7 +53,7 @@ from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
 
-from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer
+from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer, MeridionSlicer
 from d3_outputs.writing      import d3FileHandler
 
 import logging
@@ -592,6 +592,14 @@ profile_averagerB    = PhiThetaAverager(pB)
 profile_averagerS    = PhiThetaAverager(pS)
 equator_slicerB     = EquatorSlicer(pB)
 equator_slicerS     = EquatorSlicer(pS)
+mer_slicer1B          = extra_ops.MeridionSlicer(pB, phi_target=0)
+mer_slicer2B          = extra_ops.MeridionSlicer(pB, phi_target=np.pi/2)
+mer_slicer3B          = extra_ops.MeridionSlicer(pB, phi_target=np.pi)
+mer_slicer4B          = extra_ops.MeridionSlicer(pB, phi_target=3*np.pi/2)
+mer_slicer1S          = extra_ops.MeridionSlicer(pS, phi_target=0)
+mer_slicer2S          = extra_ops.MeridionSlicer(pS, phi_target=np.pi/2)
+mer_slicer3S          = extra_ops.MeridionSlicer(pS, phi_target=np.pi)
+mer_slicer4S          = extra_ops.MeridionSlicer(pS, phi_target=3*np.pi/2)
 ORI = OutputRadialInterpolate
 analysis_tasks = []
 
@@ -608,6 +616,14 @@ for fd, name in zip((uS, s1S), ('uS', 's1S')):
     for radius, r_str in zip((0.95*r_outer,), ('0.95R',)):
         operation = fd(r=radius)
         slices.add_task(operation, name=name+'(r={})'.format(r_str), layout='g', extra_op=ORI(pS, operation))
+for extra_op, name in zip([mer_slicer1B, mer_slicer2B, mer_slicer3B, mer_slicer4B], ['(phi=0)', '(phi=0.5*pi)', '(phi=pi)', '(phi=1.5*pi)',]):
+    slices.add_task(uB,  extra_op=extra_op, name='uB' +name, layout='g', extra_op_comm=False)
+    slices.add_task(s1B,  extra_op=extra_op, name='s1B' +name, layout='g', extra_op_comm=False)
+for extra_op, name in zip([mer_slicer1S, mer_slicer2S, mer_slicer3S, mer_slicer4S], ['(phi=0)', '(phi=0.5*pi)', '(phi=pi)', '(phi=1.5*pi)',]):
+    slices.add_task(uS,  extra_op=extra_op, name='uS' +name, layout='g', extra_op_comm=False)
+    slices.add_task(s1S,  extra_op=extra_op, name='s1S' +name, layout='g', extra_op_comm=False)
+
+
 analysis_tasks.append(slices)
 
 re_ball = solver.evaluator.add_dictionary_handler(iter=10)
