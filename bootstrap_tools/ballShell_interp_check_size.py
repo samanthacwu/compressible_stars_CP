@@ -36,9 +36,6 @@ from dedalus.tools.general import natural_sort
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 import dedalus_sphere
 
-from output.averaging    import VolumeAverager, EquatorSlicer, PhiAverager
-from output.writing      import ScalarWriter,  MeridionalSliceWriter, EquatorialSliceWriter, SphericalShellWriter
-
 import logging
 logger = logging.getLogger(__name__)
 matplotlib_logger = logging.getLogger('matplotlib')

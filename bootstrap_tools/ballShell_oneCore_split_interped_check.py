@@ -7,7 +7,7 @@ While the inputs are Ra, Ek, and Pr, the control parameters are the modified Ray
 Ram = Ra * Ek / Pr, where Ra is the traditional Rayleigh number.
 
 Usage:
-    ballShell_split_interped_check.py <root_dir> --res_fracB=<f> --res_fracS_<f> --mesh=<m> --mesa_file=<f> [options]
+    ballShell_split_interped_check.py <root_dir> --res_fracB=<f> --res_fracS=<f> --mesh=<m> --mesa_file=<f> [options]
     ballShell_split_interped_check.py <root_dir> --L_frac=<f> --N_fracB=<f> --N_fracS=<f> --mesh=<m> --mesa_file=<f> [options]
 
 Options:
@@ -32,9 +32,6 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 import dedalus_sphere
-
-from output.averaging    import VolumeAverager, EquatorSlicer, PhiAverager
-from output.writing      import ScalarWriter,  MeridionalSliceWriter, EquatorialSliceWriter, SphericalShellWriter
 
 import logging
 logger = logging.getLogger(__name__)
