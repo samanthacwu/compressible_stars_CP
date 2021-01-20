@@ -635,13 +635,12 @@ profiles.add_task((4*np.pi*r_valsB**2)*(0.5*ρB*urB*uB_squared),       name='KE_
 profiles.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*uS_squared),       name='KE_lumS',   layout='g', extra_op = profile_averagerS, extra_op_comm=True)
 analysis_tasks.append(profiles)
 
-surface_shells = solver.evaluator.add_dictionary_handler(sim_dt=max_dt)
 surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
 surface_shell_slices.add_task(angComp(uS(r=r_outer), index=0), name='u_ang_surf', layout='g', extra_op=ORI(pS, angComp(uS(r=r_outer), index=0)))
 surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
 analysis_tasks.append(surface_shell_slices)
 
-checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
+checkpoint = d3FileHandler(solver, '{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
 checkpoint.add_task(pB, name='pB', scales=1, layout='c')
 checkpoint.add_task(uB, name='uB', scales=1, layout='c')
@@ -692,7 +691,7 @@ finally:
     n_iter   = end_iter - start_iter
 
 
-    fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
+    fcheckpoint = d3FileHandler(solver, '{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1)
     fcheckpoint.add_task(s1B, name='s1B', scales=1, layout='c')
     fcheckpoint.add_task(uB, name='uB', scales=1, layout='c')
     fcheckpoint.add_task(pB, name='pB', scales=1, layout='c')

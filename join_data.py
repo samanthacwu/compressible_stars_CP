@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import dedalus.public
-from dedalus.tools  import post
+from d3_outputs import post
 
 from docopt import docopt
 import glob
@@ -34,14 +34,15 @@ for d in glob.glob(data_dir):
     if args['--data_type'] is not None:
         data_types=[args['--data_type']]
     else:
-        data_types = ['slices', 'profiles', 'final_checkpoint', 'checkpoint', 'volumes', 'scalar']
+        data_types = ['surface_shell_slices', 'scalars', 'slices', 'checkpoint', 'final_checkpoint']
 
     for data_type in data_types:
         logger.info("merging {}".format(data_type))
         try:
             print(base_path+data_type)
-            post.merge_process_files('{:s}/{:s}/'.format(base_path,data_type), cleanup=cleanup)
+            post.merge_analysis('{:s}/{:s}/'.format(base_path,data_type), cleanup=cleanup)
         except:
+            raise
             logger.info("missing {}".format(data_type))
             
     logger.info("done join operation for {:s}".format(d))
