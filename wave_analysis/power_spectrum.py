@@ -21,7 +21,7 @@ Options:
 
     --plot_only
 """
-
+import gc
 import os
 import time
 import sys
@@ -115,11 +115,13 @@ if not args['--plot_only']:
     window = np.hanning(times.shape[0]).reshape((times.shape[0], 1))
 #    transform = np.fft.fft(data_cube, axis=0)
     transform = np.zeros(data_cube.shape, dtype=np.complex128)
+    full_power = np.zeros(tuple(data_cube.shape), dtype=np.float64)
     for i in range(data_cube.shape[2]):
         print('taking transform {}/{}'.format(i+1, data_cube.shape[2]))
         transform[:,:,i] = 4*np.pi*np.fft.fft(window*data_cube[:,:,i], axis=0)
-    power = transform*np.conj(transform) / (freqs.shape[0]/2)**2
-    power = np.sum(power, axis=2) #sum over m's
+        gc.collect()
+    full_power[:] = (transform*np.conj(transform)).real / (freqs.shape[0]/2)**2
+    power = np.sum(full_power, axis=2) #sum over m's
 
     with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as f:
         f['power'] = power

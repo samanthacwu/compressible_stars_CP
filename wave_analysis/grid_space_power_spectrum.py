@@ -21,7 +21,7 @@ Options:
 
     --plot_only
 """
-
+import gc
 import os
 import time
 import sys
@@ -126,13 +126,20 @@ if not args['--plot_only']:
     freqs = np.fft.fftfreq(times.shape[0], d=dt)
     window = np.hanning(times.shape[0]).reshape((times.shape[0], 1))
     transform = np.zeros(tuple(data_cube.shape), dtype=np.complex128)
+    full_power = np.zeros(tuple(data_cube.shape), dtype=np.float64)
     for i in range(data_cube.shape[2]):
         print('taking transform {}/{}'.format(i+1, data_cube.shape[2]))
         transform[:,:,i] = np.fft.fft(window*data_cube[:,:,i], axis=0)
-    power = transform*np.conj(transform) / (freqs.shape[0]/2)**2
+        gc.collect()
+    del window
+    del data_cube
+    gc.collect()
+    full_power[:] = (transform*np.conj(transform)).real / (freqs.shape[0]/2)**2
 
     #Sum over theta and phi, use weights & volume to get vol_avg, then scale by true vol (4pi)
-    power = 4*np.pi*np.sum(np.sum(weight*power, axis=2), axis=1)/volume
+    power = 4*np.pi*np.sum(np.sum(weight*full_power, axis=2), axis=1)/volume
+    del full_power
+    gc.collect()
 
     with h5py.File('{}/grid_power_spectra.h5'.format(full_out_dir), 'w') as f:
         f['power'] = power
