@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 
+from power_spectrum_functions import clean_cfft, normalize_cfft_power
+
 args = docopt(__doc__)
 
 # Read in master output directory
@@ -73,7 +75,7 @@ with h5py.File(star_file, 'r') as f:
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
-out_dir = 'power_spectra'.format(data_dir)
+out_dir = 'SH_power_spectra'.format(data_dir)
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
 if not args['--plot_only']:
     plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
@@ -105,32 +107,31 @@ if not args['--plot_only']:
             writes += this_file_writes
         plotter.current_filenum += 1
 
-    #Get back to proper grid units.
-    data_cube[:,:,0]  /= np.sqrt(2) # m == 0
-    data_cube[:,:,1:] /= np.sqrt(4) # m != 0
-
     print('taking transform')
-    dt = np.mean(np.gradient(times))
-    freqs = np.fft.fftfreq(times.shape[0], d=dt)
-    window = np.hanning(times.shape[0]).reshape((times.shape[0], 1))
-#    transform = np.fft.fft(data_cube, axis=0)
     transform = np.zeros(data_cube.shape, dtype=np.complex128)
-    full_power = np.zeros(tuple(data_cube.shape), dtype=np.float64)
-    for i in range(data_cube.shape[2]):
-        print('taking transform {}/{}'.format(i+1, data_cube.shape[2]))
-        transform[:,:,i] = 4*np.pi*np.fft.fft(window*data_cube[:,:,i], axis=0)
-        gc.collect()
-    full_power[:] = (transform*np.conj(transform)).real / (freqs.shape[0]/2)**2
-    power = np.sum(full_power, axis=2) #sum over m's
+    for ell in range(data_cube.shape[1]):
+        print('taking transforms {}/{}'.format(ell+1, data_cube.shape[1]))
+        for m in range(data_cube.shape[2]):
+            if m > ell: continue
+            freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
+    del data_cube
+    gc.collect()
+    freqs, full_power = normalize_cfft_power(freqs, transform)
+    del transform
+    gc.collect()
+
+    power_per_ell = np.sum(full_power, axis=2) #sum over m's
+    del full_power
+    gc.collect()
 
     with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as f:
-        f['power'] = power
+        f['power_per_ell'] = power_per_ell
         f['ells']  = ells
         f['freqs'] = freqs 
         f['freqs_inv_day'] = freqs/tau
 else:  
     with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as f:
-        power = f['power'][()]
+        power_per_ell = f['power_per_ell'][()]
         ells = f['ells'][()]
         freqs = f['freqs'][()]
 
@@ -138,18 +139,16 @@ freqs /= tau
 good = freqs >= 0
 min_freq = 1e-1
 max_freq = freqs.max()
-sum_power = np.zeros(power.shape[0])
-sum_power2 = np.zeros(power.shape[0])
-#sum_power2 = np.sum(power, axis=1)
+sum_power = np.sum(power_per_ell, axis=1)
+sum_power2 = np.zeros(power_per_ell.shape[0])
+#sum_power2 = np.sum(power_per_ell, axis=1)
 for i, ell in enumerate(ells.flatten()):
-    if ell == 0:
-        continue
-    sum_power += power[:,i].real/ell
     if ell <= 10:
-        sum_power2 += power[:,i].real/ell
+        sum_power2 += power_per_ell[:,i].real
         
 ymin = sum_power[(freqs > 5e-2)*(freqs < max_freq)][-1].min()/2
 ymax = sum_power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
+print(ymin, ymax)
 
 plt.plot(freqs[good], sum_power2[good], c = 'green', ls='--', label=r'$\ell <= 10$')
 plt.plot(freqs[good], sum_power[good], c = 'k', label=r'all $\ell$ values')
@@ -165,29 +164,10 @@ plt.savefig('{}/summed_power.png'.format(full_out_dir), dpi=600)
 
 fig = plt.figure()
 ax1 = fig.add_subplot(1,1,1)
-#small_sum = np.zeros_like(sum_power)
-#last_N = 20
-#for i, ell in enumerate(ells.flatten()):
-#    j = last_N - i
-#    this_ell = last_N - ell
-#    if this_ell == 0:
-#        break
-#    plt.plot(freqs[good], power[good,j].real/this_ell, label=r'$\ell={{{}}}$'.format(this_ell))
-#    small_sum += power[:,j].real/this_ell
-#    ax1.set_yscale('log')
-#    ax1.set_xscale('log')
-#    ax1.set_ylabel(r'Power$/\ell$ (simulation s1 units squared)')
-#    ax1.set_xlabel(r'Frequency (day$^{-1}$)')
-#    ax1.set_xlim(min_freq, max_freq)
-#    ax1.set_ylim(ymin, ymax)
-#ax1.plot(freqs[good], small_sum[good], c='k', label='sum')
-#plt.legend(loc='upper right')
-#fig.savefig('{}/power_ell0-{}.png'.format(full_out_dir, last_N), dpi=600)
-ax1.cla()
 for i, ell in enumerate(ells.flatten()):
     if ell == 0:
         continue
-    plt.plot(freqs[good], power[good,i].real/ell, c='k')
+    plt.plot(freqs[good], power_per_ell[good,i].real/ell, c='k')
     ax1.set_yscale('log')
     ax1.set_xscale('log')
     ax1.text(0.05, 0.95, r'$\ell = {{{}}}$'.format(ell), transform=ax1.transAxes)
@@ -199,6 +179,3 @@ for i, ell in enumerate(ells.flatten()):
     ax1.cla()
     if ell > 10:
         break
-
-    
-

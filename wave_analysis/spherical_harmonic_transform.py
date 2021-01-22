@@ -115,6 +115,9 @@ while plotter.files_remain(bases, fields):
                     if np.sum(bool_map) > 0:
                         values = field['c'][bool_map]
                         out_field[i,j,k] = values[0] + 1j*values[1]
+
+            out_field[i,:,0]  /= np.sqrt(2) #m == 0 normalization
+            out_field[i,:,1:] /= 2          #m != 0 normalization
         outputs[f] = out_field
     with h5py.File('{}/{}/{}_s{}.h5'.format(root_dir, out_dir, out_dir, file_num), 'w') as f:
         f['ells'] = np.expand_dims(ell_values, axis=(0,2))

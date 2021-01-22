@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 
+from power_spectrum_functions import clean_rfft
+
 args = docopt(__doc__)
 
 # Read in master output directory
@@ -122,21 +124,18 @@ if not args['--plot_only']:
         plotter.current_filenum += 1
 
     print('taking transform')
-    dt = np.mean(np.gradient(times))
-    freqs = np.fft.fftfreq(times.shape[0], d=dt)
-    window = np.hanning(times.shape[0]).reshape((times.shape[0], 1))
-    transform = np.zeros(tuple(data_cube.shape), dtype=np.complex128)
-    full_power = np.zeros(tuple(data_cube.shape), dtype=np.float64)
-    for i in range(data_cube.shape[2]):
-        print('taking transform {}/{}'.format(i+1, data_cube.shape[2]))
-        transform[:,:,i] = np.fft.fft(window*data_cube[:,:,i], axis=0)
-        gc.collect()
-    del window
+    transform = np.zeros((int(times.shape[0]/2)+1, *tuple(field['g'].shape)), dtype=np.complex128)
+    for i in range(transform.shape[1]):
+        print('taking transforms {}/{}'.format(i+1, data_cube.shape[1]))
+        for j in range(transform.shape[2]):
+            freqs, transform[:,i,j] = clean_rfft(times, data_cube[:,i,j])
     del data_cube
     gc.collect()
-    full_power[:] = (transform*np.conj(transform)).real / (freqs.shape[0]/2)**2
-
-    #Sum over theta and phi, use weights & volume to get vol_avg, then scale by true vol (4pi)
+    print ('making power spectrum')
+    full_power = (transform*np.conj(transform)).real
+    del transform
+    gc.collect()
+    print('summing power over grid space')
     power = 4*np.pi*np.sum(np.sum(weight*full_power, axis=2), axis=1)/volume
     del full_power
     gc.collect()
