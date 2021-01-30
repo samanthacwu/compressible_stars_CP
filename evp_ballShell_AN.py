@@ -24,6 +24,8 @@ Options:
     --restart=<chk_f>    path to a checkpoint file to restart from
 
     --boost=<b>          Inverse Mach number boost squared [default: 1]
+
+    --freq_power=<p>     Power exponent of wave frequency for Shiode comparison [default: -6.5]
 """
 import os
 import time
@@ -110,8 +112,8 @@ logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
 c_S2 = c.S2coordsys 
 d    = distributor.Distributor((c,), mesh=None)
-bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
+bB   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
+bS   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
 b_mid = bB.S2_basis(radius=r_inner)
 b_midS = bS.S2_basis(radius=r_inner)
 b_top = bS.S2_basis(radius=r_outer)
@@ -119,6 +121,9 @@ b_top = bS.S2_basis(radius=r_outer)
 φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
 φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
 φSg, θSg, rSg = bS.global_grids((dealias, dealias, dealias))
+
+shell_ell = bS.local_ell
+shell_m = bS.local_m
 
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
@@ -175,7 +180,8 @@ H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-    
+
+
 
 # Get local slices
 slicesB     = GridSlicer(pB)
@@ -479,15 +485,123 @@ for subproblem in solver.subproblems:
 #    plt.clf()
 #    print(subproblem.group, np.linalg.cond((M + L).A))
 
-
+mesa_file = args['--mesa_file']
+if mesa_file is not None:
+    with h5py.File(mesa_file, 'r') as f:
+        tau = f['tau'][()]/(60*60*24)
+else:
+    tau = 1
+logger.info('using tau = {} days'.format(tau))
 #only solve ell = 1 one right now.
+from scipy.interpolate import interp1d
+print(solver.subsystems, len(solver.subsystems), len(solver.subproblems))
+
+weight_φ = np.gradient(φSg.flatten()).reshape(φSg.shape)#(np.ones_like(φg)*np.pi/((b.Lmax+2)*dealias))
+weight_θ = bS.global_colatitude_weights(dealias)
+weight = weight_θ * weight_φ
+volume = np.sum(weight)
+
+s1_surf = s1S(r=r_outer)
+#KES = (ρS*dot(uS, np.conj(uS))/2)#(r=r_outer)
+#KEB = (ρB*dot(uB, np.conj(uB))/2)#(r=r_outer)
+
+def get_KES():
+    return ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)
+
+def get_KEB():
+    return ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)
+
+
+KEB_field      = field.Field(dist=d, bases=(bB,), dtype=dtype)
+KES_field      = field.Field(dist=d, bases=(bS,), dtype=dtype)
+
+ball_avg = BallVolumeAverager(s1B)
+shell_avg = ShellVolumeAverager(s1S)
+
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    if ell == 1:
-        logger.info("solving")
-        solver.solve_dense(subproblem)
-        logger.info("finished solve")
-        good_eigs = np.isfinite(solver.eigenvalues)
-        print(solver.eigenvalues[good_eigs])
-        print(solver.eigenvalues[good_eigs].shape)
-        print(solver.eigenvectors)
+    good_subsystems = []
+    for subsystem in solver.subsystems:
+        ss_m, ss_ell, r_couple = subsystem.group
+        if ell == ss_ell and ss_m == 0:
+            good_subsystems.append(subsystem)
+    #TODO: Output to file.
+    logger.info("solving ell = {}".format(ell))
+    solver.solve_dense(subproblem)
+    logger.info("finished solve")
+    evalues = solver.eigenvalues #convert to frequency.
+    i_sort = np.argsort(evalues)
+    sorted_evalues = evalues[i_sort]
+    good_evalues = sorted_evalues[np.isfinite(sorted_evalues)]
+    good_omegas   = np.abs(good_evalues[good_evalues.real < 0].real)
+    domegas = np.abs(np.gradient(good_omegas))
+
+#    Nm = good_omegas/domegas
+#    Nm_func = interp1d(good_omegas, Nm)
+#    power_slope = lambda om: om**(float(args['--freq_power']))
+
+    integrated_energy = np.zeros_like(evalues, dtype=np.float64) 
+    surface_s1_amplitude = np.zeros_like(evalues, dtype=np.float64)  
+    for i, e in enumerate(evalues):
+        subsys = good_subsystems[0]
+        solver.set_state(i, subsys)
+        #Calculate integrated kinetic energy
+        KEB_field['g'] = get_KEB()
+        KES_field['g'] = get_KES()
+        integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
+        integrated_energy[i] = integ_energy.real
+#        this_om = np.abs(e.real)
+#        decay   = np.abs(e.imag)
+#        shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
+#        power_boost = shiode_energy/integ_energy
+        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)
+        surface_s1_amplitude[i] = np.sqrt(s1_surf_value.real)
+
+#        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)*power_boost
+#        amplitudes[i] = np.sqrt(s1_surf_value)
+    good_s1_amplitudes  = surface_s1_amplitude[i_sort][np.isfinite(sorted_evalues)]
+    good_integ_energies = integrated_energy[i_sort][np.isfinite(sorted_evalues)]
+
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['raw_evalues'] = evalues/tau
+        f['raw_s1_amplitudes'] = surface_s1_amplitude
+        f['raw_integ_energies'] = integrated_energy
+        f['i_sort']      = i_sort
+        f['good_evalues'] = good_evalues/tau
+        f['good_omegas']  = good_omegas/tau
+        f['good_s1_amplitudes'] = good_s1_amplitudes
+        f['good_integ_energies'] = good_integ_energies
+
+#
+#n = 0
+#good_eig_freqs = eig_freqs.real > 0
+#omegas = np.abs(2*np.pi*eig_freqs[good_eig_freqs].real)
+##shiode_Nm = lambda n: (ell/2 + n)
+#shiode_dEdot_dlnom_dell = lambda omega: omega**(-13/2)
+##shiode_eqn_nine = lambda eigval, n: shiode_Nm(n)*shiode_dEdot_dlnom_dell(np.abs(eigval.real))/np.abs(eigval.imag)
+#shiode_eqn_nine = lambda eigval: Nm(2*np.pi*np.abs(eigval.real))*shiode_dEdot_dlnom_dell(2*np.pi*np.abs(eigval.real))/np.abs(eigval.imag)
+#
+#E_of_om = shiode_eqn_nine(eig_freqs[good_eig_freqs])
+#match_freq = eig_freqs[good_eig_freqs].real[np.abs(eig_freqs[good_eig_freqs].real) > 2.5e-1][-1]
+#match_freq_sim = np.argmin(np.abs(freqs - match_freq))
+#E_of_om *= power[match_freq_sim]/E_of_om[np.abs(eig_freqs[good_eig_freqs].real) > 2.5e-1][-1]
+#
+#
+#
+#
+##    print(good_sorted_eigenvalues.real)
+##    print(solver.eigenvalues[good_eigs].shape)
+##    print(solver.eigenvectors)
+#    import matplotlib.pyplot as plt
+#    fig = plt.figure()
+##    print(good_sorted_eigenvalues.real.shape)
+#    positive = good_sorted_eigenvalues.real > 0
+#    negative = good_sorted_eigenvalues.real < 0
+#    plt.scatter(np.arange(len(good_sorted_eigenvalues.real[positive])),  good_sorted_eigenvalues.real[positive], s=20, c='k', label='positive frequency magnitude')
+#    plt.scatter(np.arange(len(good_sorted_eigenvalues.real[negative])), -good_sorted_eigenvalues.real[negative], s=5 , c='orange', label='negative frequency magnitude')
+#    plt.yscale('log')
+#    plt.ylabel('frequency')
+#    plt.legend(loc='best')
+#    fig.savefig('{:s}/ell{:03d}_frequency_spectrum.png'.format(out_dir, ell), dpi=300)
+#
+##    plt.show()
