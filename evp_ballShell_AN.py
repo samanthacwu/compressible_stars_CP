@@ -10,9 +10,11 @@ Usage:
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 2]
+    --L=<Lmax>           The value of Lmax   [default: 1]
     --NB=<Nmax>          The ball value of Nmax   [default: 63]
     --NS=<Nmax>          The shell value of Nmax   [default: 63]
+    --NB_hires=<Nmax>    The ball value of Nmax
+    --NS_hires=<Nmax>    The shell value of Nmax
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -21,6 +23,7 @@ Options:
     --label=<label>      A label to add to the end of the output directory
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
+    --mesa_file_hires=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
 
     --boost=<b>          Inverse Mach number boost squared [default: 1]
@@ -78,7 +81,18 @@ if args['<config>'] is not None:
 Lmax      = int(args['--L'])
 NmaxB      = int(args['--NB'])
 NmaxS      = int(args['--NS'])
+mesa_file1  = args['--mesa_file']
 L_dealias = N_dealias = dealias = 1
+
+if args['--NB_hires'] is not None and args['--NS_hires'] is not None and args['--mesa_file_hires'] is not None:
+    NmaxB_hires = int(args['--NB_hires'])
+    NmaxS_hires = int(args['--NS_hires'])
+    mesa_file_hires = args['--mesa_file_hires']
+else:
+    NmaxB_hires = None
+    NmaxS_hires = None
+    mesa_file_hires = None
+
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--mesa_file'] is None:
@@ -99,8 +113,8 @@ Pr  = 1
 Pe  = Pr*Re
 
 
-if args['--mesa_file'] is not None:
-    with h5py.File(args['--mesa_file'], 'r') as f:
+if mesa_file1 is not None:
+    with h5py.File(mesa_file1, 'r') as f:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
 else:
@@ -110,20 +124,41 @@ logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
-c_S2 = c.S2coordsys 
 d    = distributor.Distributor((c,), mesh=None)
-bB   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
-b_mid = bB.S2_basis(radius=r_inner)
-b_midS = bS.S2_basis(radius=r_inner)
-b_top = bS.S2_basis(radius=r_outer)
-φB,  θB,  rB  = bB.local_grids((dealias, dealias, dealias))
-φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
-φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
-φSg, θSg, rSg = bS.global_grids((dealias, dealias, dealias))
+bB1   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
+bS1   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
+b_mid1 = bB1.S2_basis(radius=r_inner)
+b_midS1 = bS1.S2_basis(radius=r_inner)
+b_top1 = bS1.S2_basis(radius=r_outer)
+φB1,  θB1,  rB1  = bB1.local_grids((dealias, dealias, dealias))
+φBg1, θBg1, rBg1 = bB1.global_grids((dealias, dealias, dealias))
+φS1,  θS1,  rS1  = bS1.local_grids((dealias, dealias, dealias))
+φSg1, θSg1, rSg1 = bS1.global_grids((dealias, dealias, dealias))
+shell_ell1 = bS1.local_ell
+shell_m1 = bS1.local_m
 
-shell_ell = bS.local_ell
-shell_m = bS.local_m
+weight_φ1 = np.gradient(φSg1.flatten()).reshape(φSg1.shape)
+weight_θ1 = bS1.global_colatitude_weights(dealias)
+weight1 = weight_θ1 * weight_φ1
+volume1 = np.sum(weight1)
+
+if NmaxB_hires is not None:
+    bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
+    bS2   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS_hires+1), radii=(r_inner, r_outer), dtype=dtype)
+    b_mid2 = bB2.S2_basis(radius=r_inner)
+    b_midS2 = bS2.S2_basis(radius=r_inner)
+    b_top2 = bS2.S2_basis(radius=r_outer)
+    φB2,  θB2,  rB2  = bB2.local_grids((dealias, dealias, dealias))
+    φBg2, θBg2, rBg2 = bB2.global_grids((dealias, dealias, dealias))
+    φS2,  θS2,  rS2  = bS2.local_grids((dealias, dealias, dealias))
+    φSg2, θSg2, rSg2 = bS2.global_grids((dealias, dealias, dealias))
+    shell_ell2 = bS2.local_ell
+    shell_m2 = bS2.local_m
+
+    weight_φ2 = np.gradient(φSg2.flatten()).reshape(φSg2.shape)
+    weight_θ2 = bS2.global_colatitude_weights(dealias)
+    weight2 = weight_θ2 * weight_φ2
+    volume2 = np.sum(weight2)
 
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
@@ -137,380 +172,467 @@ transpose = lambda A: operators.TransposeComponents(A)
 radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
-# Fields
-uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
-pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
-s1B   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-uS    = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
-pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
-s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
+def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
+    # Fields
+    uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+    pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    s1B   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    uS    = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+    pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
+    s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
-tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
-tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
-tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
-tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
-tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
-tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
+    tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
+    tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
+    tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
+    tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
+    tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
+    tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
-ρB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-TB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-ρS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
-
-#nccs
-grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
-H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
-grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
-H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
-grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+    ρB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    TB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    ρS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
+    TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 
+    #nccs
+    grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+    ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
+    H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+    ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
+    H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
-# Get local slices
-slicesB     = GridSlicer(pB)
-slicesS     = GridSlicer(pS)
-
-grads0_boost = float(args['--boost'])#1/100
-logger.info("Boost: {}".format(grads0_boost))
-
-if args['--mesa_file'] is not None:
-    with h5py.File(args['--mesa_file'], 'r') as f:
-        if np.prod(grad_s0B['g'].shape) > 0:
-            grad_s0B['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape), axis=0), axis=0), axis=0)
-            grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
-            grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
-        if np.prod(grad_s0S['g'].shape) > 0:
-            grad_s0S['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape), axis=0), axis=0), axis=0)
-            grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
-            grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
-        inv_PeB['g']= f['inv_Pe_radB'][:,:,slicesB[-1]]
-        ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
-        ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
-        H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
-        T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
-        ρB['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρB'][:,:,slicesB[-1]]), axis=0), axis=0)
-        TB['g']         = np.expand_dims(np.expand_dims(f['TB'][:,:,slicesB[-1]], axis=0), axis=0)
-        inv_TB['g']     = 1/TB['g']
-
-        inv_PeS['g']= f['inv_Pe_radS'][:,:,slicesS[-1]]
-        ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
-        ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
-        H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
-        T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
-        ρS['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρS'][:,:,slicesS[-1]]), axis=0), axis=0)
-        TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
-        inv_TS['g']     = 1/TS['g']
+    grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 
 
-        grad_s0B['g'] *= grads0_boost
-        grad_s0S['g'] *= grads0_boost
 
-        max_dt = f['max_dt'][()] / np.sqrt(grads0_boost)
-        t_buoy = 1
-else:
-    logger.info("Using polytropic initial conditions")
-    from scipy.interpolate import interp1d
-    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
-        T_func = interp1d(f['r'][()], f['T'][()])
-        ρ_func = interp1d(f['r'][()], f['ρ'][()])
-        grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-        H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
-    max_grad_s0 = grad_s0_func(r_outer)
-    max_dt = 2/np.sqrt(max_grad_s0)
-    t_buoy      = 1
+    # Get local slices
+    slicesB     = GridSlicer(pB)
+    slicesS     = GridSlicer(pS)
 
+    grads0_boost = float(args['--boost'])#1/100
+    logger.info("Boost: {}".format(grads0_boost))
 
-    for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
-        T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
+    if mesa_file is not None:
+        with h5py.File(mesa_file, 'r') as f:
+            if np.prod(grad_s0B['g'].shape) > 0:
+                grad_s0B['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape), axis=0), axis=0), axis=0)
+                grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+                grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            if np.prod(grad_s0S['g'].shape) > 0:
+                grad_s0S['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape), axis=0), axis=0), axis=0)
+                grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+                grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            inv_PeB['g']= f['inv_Pe_radB'][:,:,slicesB[-1]]
+            ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
+            ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
+            H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
+            T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
+            ρB['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρB'][:,:,slicesB[-1]]), axis=0), axis=0)
+            TB['g']         = np.expand_dims(np.expand_dims(f['TB'][:,:,slicesB[-1]], axis=0), axis=0)
+            inv_TB['g']     = 1/TB['g']
 
-        grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
-        T['g']           = T_func(basis_r)
-        T_NCC['g']       = T_func(basis_r)
-        ρ['g']           = ρ_func(basis_r)
-        ρ_NCC['g']       = ρ_func(basis_r)
-        inv_T['g']       = T_func(basis_r)
-        H_eff['g']       = H_eff_func(basis_r)
-        ln_T['g']        = np.log(T_func(basis_r))
-        ln_ρ['g']        = np.log(ρ_func(basis_r))
-        grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
-        grad_ln_T['g']        = grad(ln_T).evaluate()['g']
-
-inv_PeB['g'] += 1/Pe
-inv_PeS['g'] += 1/Pe
-
-
-logger.info('buoyancy time is {}'.format(t_buoy))
-t_end = float(args['--buoy_end_time'])*t_buoy
-
-# Stress matrices & viscous terms
-I_matrixB = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,c,), dtype=dtype)
-I_matrixB['g'] = 0
-I_matrixS = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,c,), dtype=dtype)
-I_matrixS['g'] = 0
-for i in range(3):
-    I_matrixB['g'][i,i,:] = 1
-    I_matrixS['g'][i,i,:] = 1
-
-#Ball stress
-EB = 0.5*(grad(uB) + transpose(grad(uB)))
-EB.store_last = True
-divUB = div(uB)
-divUB.store_last = True
-σB = 2*(EB - (1/3)*divUB*I_matrixB)
-momentum_viscous_termsB = div(σB) + dot(σB, grad_ln_ρB)
-
-VHB  = 2*(trace(dot(EB, EB)) - (1/3)*divUB*divUB)
-
-#Shell stress
-ES = 0.5*(grad(uS) + transpose(grad(uS)))
-ES.store_last = True
-divUS = div(uS)
-divUS.store_last = True
-σS = 2*(ES - (1/3)*divUS*I_matrixS)
-momentum_viscous_termsS = div(σS) + dot(σS, grad_ln_ρS)
-
-VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
+            inv_PeS['g']= f['inv_Pe_radS'][:,:,slicesS[-1]]
+            ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
+            ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
+            H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
+            T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
+            ρS['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρS'][:,:,slicesS[-1]]), axis=0), axis=0)
+            TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
+            inv_TS['g']     = 1/TS['g']
 
 
-#Impenetrable, stress-free boundary conditions
-u_r_bcB_mid    = pB(r=r_inner)
-u_r_bcS_mid    = pS(r=r_inner)
-u_perp_bcB_mid = angComp(radComp(σB(r=r_inner)), index=0)
-u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
-uS_r_bc        = radComp(uS(r=r_outer))
-u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
+            grad_s0B['g'] *= grads0_boost
+            grad_s0S['g'] *= grads0_boost
 
-H_effB = operators.Grid(H_effB).evaluate()
-H_effS = operators.Grid(H_effS).evaluate()
-inv_TB = operators.Grid(inv_TB).evaluate()
-inv_TS = operators.Grid(inv_TS).evaluate()
-
-
-# Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in split_equation(eq_str)]
-
-omega = field.Field(name='omega', dist=d, dtype=dtype)
-ddt       = lambda A: -1j * omega * A
-problem = problems.EVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], omega)
-
-### Ball momentum
-problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = cross(uB, curl(uB))"), condition = "nθ != 0")
-### Shell momentum
-problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = cross(uS, curl(uS))"), condition = "nθ != 0")
-## ell == 0 momentum
-problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
-
-### Ball energy
-grads1B = grad(s1B)
-grads1S = grad(s1S)
-grads1B.store_last = True
-grads1S.store_last = True
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
-### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+            max_dt = f['max_dt'][()] / np.sqrt(grads0_boost)
+            t_buoy = 1
+    else:
+        logger.info("Using polytropic initial conditions")
+        from scipy.interpolate import interp1d
+        with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
+            T_func = interp1d(f['r'][()], f['T'][()])
+            ρ_func = interp1d(f['r'][()], f['ρ'][()])
+            grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
+            H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+        max_grad_s0 = grad_s0_func(r_outer)
+        max_dt = 2/np.sqrt(max_grad_s0)
+        t_buoy      = 1
 
 
-#Velocity BCs ell != 0
-problem.add_equation(eq_eval("uB(r=r_inner) - uS(r=r_inner)    = 0"),            condition="nθ != 0")
-problem.add_equation(eq_eval("u_r_bcB_mid - u_r_bcS_mid    = 0"),            condition="nθ != 0")
-#problem.add_equation(eq_eval("radComp(grad(uB)(r=r_inner) - grad(uS)(r=r_inner)) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="nθ != 0")
-problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
-# velocity BCs ell == 0
-problem.add_equation(eq_eval("tBt     = 0"),                         condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_bot     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_top     = 0"), condition="nθ == 0")
+        for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
+            T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
 
-#Entropy BCs
-problem.add_equation(eq_eval("s1B(r=r_inner) - s1S(r=r_inner) = 0"))
-problem.add_equation(eq_eval("radComp(grads1B(r=r_inner)) - radComp(grads1S(r=r_inner))    = 0"))
-problem.add_equation(eq_eval("radComp(grads1S(r=r_outer))    = 0"))
+            grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
+            T['g']           = T_func(basis_r)
+            T_NCC['g']       = T_func(basis_r)
+            ρ['g']           = ρ_func(basis_r)
+            ρ_NCC['g']       = ρ_func(basis_r)
+            inv_T['g']       = T_func(basis_r)
+            H_eff['g']       = H_eff_func(basis_r)
+            ln_T['g']        = np.log(T_func(basis_r))
+            ln_ρ['g']        = np.log(ρ_func(basis_r))
+            grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
+            grad_ln_T['g']        = grad(ln_T).evaluate()['g']
 
-
-logger.info("Problem built")
-# Solver
-solver = solvers.EigenvalueSolver(problem)
-logger.info("solver built")
-
-# Add taus
-alpha_BC_ball = 0
-
-def C_ball(N, ell, deg):
-    ab = (alpha_BC_ball,ell+deg+0.5)
-    cd = (2,            ell+deg+0.5)
-    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
-
-# ChebyshevV
-alpha_BC_shell = (2-1/2, 2-1/2)
-
-def C_shell(N):
-    ab = alpha_BC_shell
-    cd = (bS.radial_basis.alpha[0]+2,bS.radial_basis.alpha[1]+2)
-    return dedalus_sphere.jacobi.coefficient_connection(N,ab,cd)
-
-def BC_rows(N, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N + 1)
-    return N_list
-
-#Velocity only
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    L = subproblem.left_perm.T @ subproblem.L_min
-    shape = L.shape
-    NL = NmaxB - ell//2 + 1
-    NS = bS.shape[-1]
+    inv_PeB['g'] += 1/Pe
+    inv_PeS['g'] += 1/Pe
 
 
-    if dtype == np.complex128:
-        tau_columns = np.zeros((shape[0], 12))
-        N0, N1, N2, N3 = BC_rows(NmaxB - ell//2, 4)
-        N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4)
-        N8 = N7 + NL
-        N9 = N8 + NS
-        if ell != 0:
-            #velocity
-            #ball
-            tau_columns[N0:N1, 0] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N1:N2, 1] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N2:N3, 2] = (C_ball(NmaxB, ell,  0))[:,-1]
-            #shell
-            tau_columns[N4:N5, 3]  = (C_shell(NS))[:,-1]
-            tau_columns[N4:N5, 4]  = (C_shell(NS))[:,-2]
-            tau_columns[N5:N6, 5]  = (C_shell(NS))[:,-1]
-            tau_columns[N5:N6, 6]  = (C_shell(NS))[:,-2]
-            tau_columns[N6:N7, 7]  = (C_shell(NS))[:,-1]
-            tau_columns[N6:N7, 8]  = (C_shell(NS))[:,-2]
+    logger.info('buoyancy time is {}'.format(t_buoy))
+    t_end = float(args['--buoy_end_time'])*t_buoy
 
-            #Temperature
-            tau_columns[N7:N8, 9] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N9, 10]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N9, 11]  = (C_shell(NS))[:,-2]
-            L[:,-12:] = tau_columns
-        else:
-            tau_columns[N7:N8, 9] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N9, 10]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N9, 11]  = (C_shell(NS))[:,-2]
-            L[:,N8+NS+9] = tau_columns[:,9].reshape((shape[0],1))
-            L[:,N8+NS+10] = tau_columns[:,10].reshape((shape[0],1))
-            L[:,N8+NS+11] = tau_columns[:,11].reshape((shape[0],1))
-    elif dtype == np.float64:
-        tau_columns = np.zeros((shape[0], 24))
-        N0, N1, N2, N3 = BC_rows(NmaxB - ell//2, 4) *2
-        N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4) * 2
-        if ell != 0:
-            #velocity
-            #ball
-            tau_columns[N0:N0+NL, 0] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N1:N1+NL, 1] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N2:N2+NL, 2] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N0+NL:N0+2*NL, 3] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N1+NL:N1+2*NL, 4] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N2+NL:N2+2*NL, 5] = (C_ball(NmaxB, ell,  0))[:,-1]
-            #shell
-            tau_columns[N4:N4+NS, 6]   = (C_shell(NS))[:,-1]
-            tau_columns[N4:N4+NS, 7]   = (C_shell(NS))[:,-2]
-            tau_columns[N5:N5+NS, 10]  = (C_shell(NS))[:,-1]
-            tau_columns[N5:N5+NS, 11]  = (C_shell(NS))[:,-2]
-            tau_columns[N6:N6+NS, 14]  = (C_shell(NS))[:,-1]
-            tau_columns[N6:N6+NS, 15]  = (C_shell(NS))[:,-2]
-            tau_columns[N4+NS:N4+2*NS, 8]  = (C_shell(NS))[:,-1]
-            tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-2]
-            tau_columns[N5+NS:N5+2*NS, 12] = (C_shell(NS))[:,-1]
-            tau_columns[N5+NS:N5+2*NS, 13] = (C_shell(NS))[:,-2]
-            tau_columns[N6+NS:N6+2*NS, 16] = (C_shell(NS))[:,-1]
-            tau_columns[N6+NS:N6+2*NS, 17] = (C_shell(NS))[:,-2]
+    # Stress matrices & viscous terms
+    I_matrixB = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,c,), dtype=dtype)
+    I_matrixB['g'] = 0
+    I_matrixS = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,c,), dtype=dtype)
+    I_matrixS['g'] = 0
+    for i in range(3):
+        I_matrixB['g'][i,i,:] = 1
+        I_matrixS['g'][i,i,:] = 1
 
-            #entropy
-            N8 = N7+2*NL
-            tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
-            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
-            tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
+    #Ball stress
+    EB = 0.5*(grad(uB) + transpose(grad(uB)))
+    EB.store_last = True
+    divUB = div(uB)
+    divUB.store_last = True
+    σB = 2*(EB - (1/3)*divUB*I_matrixB)
+    momentum_viscous_termsB = div(σB) + dot(σB, grad_ln_ρB)
 
-            L[:,-24:] = tau_columns
-        else:
-            N8 = N7+2*NL
-            tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
-            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
-            tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
+    VHB  = 2*(trace(dot(EB, EB)) - (1/3)*divUB*divUB)
 
-            L[:,-6:] = tau_columns[:,-6:].reshape((shape[0], 6))
-          
-    L.eliminate_zeros()
-    subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
+    #Shell stress
+    ES = 0.5*(grad(uS) + transpose(grad(uS)))
+    ES.store_last = True
+    divUS = div(uS)
+    divUS.store_last = True
+    σS = 2*(ES - (1/3)*divUS*I_matrixS)
+    momentum_viscous_termsS = div(σS) + dot(σS, grad_ln_ρS)
 
-## Check condition number and plot matrices
-#import matplotlib.pyplot as plt
-#plt.figure()
-#for subproblem in solver.subproblems:
-#    ell = subproblem.group[1]
-#    M = subproblem.left_perm.T @ subproblem.M_min
-#    L = subproblem.left_perm.T @ subproblem.L_min
-#    plt.imshow(np.log10(np.abs(L.A.real)))
-#    plt.colorbar()
-#    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
-#    plt.clf()
-#    print(subproblem.group, np.linalg.cond((M + L).A))
+    VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
 
-mesa_file = args['--mesa_file']
-if mesa_file is not None:
-    with h5py.File(mesa_file, 'r') as f:
+
+    #Impenetrable, stress-free boundary conditions
+    u_r_bcB_mid    = pB(r=r_inner)
+    u_r_bcS_mid    = pS(r=r_inner)
+    u_perp_bcB_mid = angComp(radComp(σB(r=r_inner)), index=0)
+    u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
+    uS_r_bc        = radComp(uS(r=r_outer))
+    u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
+
+    H_effB = operators.Grid(H_effB).evaluate()
+    H_effS = operators.Grid(H_effS).evaluate()
+    inv_TB = operators.Grid(inv_TB).evaluate()
+    inv_TS = operators.Grid(inv_TS).evaluate()
+
+    omega = field.Field(name='omega', dist=d, dtype=dtype)
+    ddt       = lambda A: -1j * omega * A
+    grads1B = grad(s1B)
+    grads1S = grad(s1S)
+    grads1B.store_last = True
+    grads1S.store_last = True
+
+    # Problem
+    these_locals = locals()
+    def eq_eval(eq_str, namespace=these_locals):
+        for k, i in namespace.items():
+            try:
+                locals()[k] = i 
+            except:
+                print('failed {}'.format(k))
+        exprs = []
+        for expr in split_equation(eq_str):
+            exprs.append(eval(expr))
+        return exprs
+
+    problem = problems.EVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], omega)
+
+
+    ### Ball momentum
+    problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
+    #problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = cross(uB, curl(uB))"), condition = "nθ != 0")
+    ### Shell momentum
+    problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
+    #problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = cross(uS, curl(uS))"), condition = "nθ != 0")
+    ## ell == 0 momentum
+    problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
+    problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
+    problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
+    problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
+
+    ### Ball energy
+    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
+    ### Shell energy
+    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+
+
+    #Velocity BCs ell != 0
+    problem.add_equation(eq_eval("uB(r=r_inner) - uS(r=r_inner)    = 0"),            condition="nθ != 0")
+    problem.add_equation(eq_eval("u_r_bcB_mid - u_r_bcS_mid    = 0"),            condition="nθ != 0")
+    #problem.add_equation(eq_eval("radComp(grad(uB)(r=r_inner) - grad(uS)(r=r_inner)) = 0"), condition="nθ != 0")
+    problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
+    problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="nθ != 0")
+    problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
+    # velocity BCs ell == 0
+    problem.add_equation(eq_eval("tBt     = 0"),                         condition="nθ == 0")
+    problem.add_equation(eq_eval("tSt_bot     = 0"), condition="nθ == 0")
+    problem.add_equation(eq_eval("tSt_top     = 0"), condition="nθ == 0")
+
+    #Entropy BCs
+    problem.add_equation(eq_eval("s1B(r=r_inner) - s1S(r=r_inner) = 0"))
+    problem.add_equation(eq_eval("radComp(grads1B(r=r_inner)) - radComp(grads1S(r=r_inner))    = 0"))
+    problem.add_equation(eq_eval("radComp(grads1S(r=r_outer))    = 0"))
+
+
+    logger.info("Problem built")
+    # Solver
+    solver = solvers.EigenvalueSolver(problem)
+    logger.info("solver built")
+
+    # Add taus
+    alpha_BC_ball = 0
+
+    def C_ball(N, ell, deg):
+        ab = (alpha_BC_ball,ell+deg+0.5)
+        cd = (2,            ell+deg+0.5)
+        return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
+
+    # ChebyshevV
+    alpha_BC_shell = (2-1/2, 2-1/2)
+
+    def C_shell(N):
+        ab = alpha_BC_shell
+        cd = (bS.radial_basis.alpha[0]+2,bS.radial_basis.alpha[1]+2)
+        return dedalus_sphere.jacobi.coefficient_connection(N,ab,cd)
+
+    def BC_rows(N, num_comp):
+        N_list = (np.arange(num_comp)+1)*(N + 1)
+        return N_list
+
+    #Velocity only
+    for subproblem in solver.subproblems:
+        ell = subproblem.group[1]
+        L = subproblem.left_perm.T @ subproblem.L_min
+        shape = L.shape
+        NL = NmaxB - ell//2 + 1
+        NS = bS.shape[-1]
+
+
+        if dtype == np.complex128:
+            tau_columns = np.zeros((shape[0], 12))
+            N0, N1, N2, N3 = BC_rows(NmaxB - ell//2, 4)
+            N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4)
+            N8 = N7 + NL
+            N9 = N8 + NS
+            if ell != 0:
+                #velocity
+                #ball
+                tau_columns[N0:N1, 0] = (C_ball(NmaxB, ell, -1))[:,-1]
+                tau_columns[N1:N2, 1] = (C_ball(NmaxB, ell, +1))[:,-1]
+                tau_columns[N2:N3, 2] = (C_ball(NmaxB, ell,  0))[:,-1]
+                #shell
+                tau_columns[N4:N5, 3]  = (C_shell(NS))[:,-1]
+                tau_columns[N4:N5, 4]  = (C_shell(NS))[:,-2]
+                tau_columns[N5:N6, 5]  = (C_shell(NS))[:,-1]
+                tau_columns[N5:N6, 6]  = (C_shell(NS))[:,-2]
+                tau_columns[N6:N7, 7]  = (C_shell(NS))[:,-1]
+                tau_columns[N6:N7, 8]  = (C_shell(NS))[:,-2]
+
+                #Temperature
+                tau_columns[N7:N8, 9] = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N8:N9, 10]  = (C_shell(NS))[:,-1]
+                tau_columns[N8:N9, 11]  = (C_shell(NS))[:,-2]
+                L[:,-12:] = tau_columns
+            else:
+                tau_columns[N7:N8, 9] = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N8:N9, 10]  = (C_shell(NS))[:,-1]
+                tau_columns[N8:N9, 11]  = (C_shell(NS))[:,-2]
+                L[:,N8+NS+9] = tau_columns[:,9].reshape((shape[0],1))
+                L[:,N8+NS+10] = tau_columns[:,10].reshape((shape[0],1))
+                L[:,N8+NS+11] = tau_columns[:,11].reshape((shape[0],1))
+        elif dtype == np.float64:
+            tau_columns = np.zeros((shape[0], 24))
+            N0, N1, N2, N3 = BC_rows(NmaxB - ell//2, 4) *2
+            N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4) * 2
+            if ell != 0:
+                #velocity
+                #ball
+                tau_columns[N0:N0+NL, 0] = (C_ball(NmaxB, ell, -1))[:,-1]
+                tau_columns[N1:N1+NL, 1] = (C_ball(NmaxB, ell, +1))[:,-1]
+                tau_columns[N2:N2+NL, 2] = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N0+NL:N0+2*NL, 3] = (C_ball(NmaxB, ell, -1))[:,-1]
+                tau_columns[N1+NL:N1+2*NL, 4] = (C_ball(NmaxB, ell, +1))[:,-1]
+                tau_columns[N2+NL:N2+2*NL, 5] = (C_ball(NmaxB, ell,  0))[:,-1]
+                #shell
+                tau_columns[N4:N4+NS, 6]   = (C_shell(NS))[:,-1]
+                tau_columns[N4:N4+NS, 7]   = (C_shell(NS))[:,-2]
+                tau_columns[N5:N5+NS, 10]  = (C_shell(NS))[:,-1]
+                tau_columns[N5:N5+NS, 11]  = (C_shell(NS))[:,-2]
+                tau_columns[N6:N6+NS, 14]  = (C_shell(NS))[:,-1]
+                tau_columns[N6:N6+NS, 15]  = (C_shell(NS))[:,-2]
+                tau_columns[N4+NS:N4+2*NS, 8]  = (C_shell(NS))[:,-1]
+                tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-2]
+                tau_columns[N5+NS:N5+2*NS, 12] = (C_shell(NS))[:,-1]
+                tau_columns[N5+NS:N5+2*NS, 13] = (C_shell(NS))[:,-2]
+                tau_columns[N6+NS:N6+2*NS, 16] = (C_shell(NS))[:,-1]
+                tau_columns[N6+NS:N6+2*NS, 17] = (C_shell(NS))[:,-2]
+
+                #entropy
+                N8 = N7+2*NL
+                tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
+                tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
+                tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
+                tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
+
+                L[:,-24:] = tau_columns
+            else:
+                N8 = N7+2*NL
+                tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
+                tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
+                tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
+                tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
+                tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
+
+                L[:,-6:] = tau_columns[:,-6:].reshape((shape[0], 6))
+              
+        L.eliminate_zeros()
+        subproblem.L_min = subproblem.left_perm @ L
+        if problem.STORE_EXPANDED_MATRICES:
+            subproblem.expand_matrices(['M','L'])
+    logger.info('tau columns adjusted')
+
+    ## Check condition number and plot matrices
+    #import matplotlib.pyplot as plt
+    #plt.figure()
+    #for subproblem in solver.subproblems:
+    #    ell = subproblem.group[1]
+    #    M = subproblem.left_perm.T @ subproblem.M_min
+    #    L = subproblem.left_perm.T @ subproblem.L_min
+    #    plt.imshow(np.log10(np.abs(L.A.real)))
+    #    plt.colorbar()
+    #    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+    #    plt.clf()
+    #    print(subproblem.group, np.linalg.cond((M + L).A))
+    return solver
+
+def solve_dense(solver, ell):
+    for subproblem in solver.subproblems:
+        this_ell = subproblem.group[1]
+        if this_ell != ell:
+            continue
+        #TODO: Output to file.
+        logger.info("solving ell = {}".format(ell))
+        solver.solve_dense(subproblem)
+        logger.info("finished solve")
+
+        values = solver.eigenvalues
+        vectors = solver.eigenvectors
+
+        print(vectors.shape)
+
+        #filter out nans
+        cond1 = np.isfinite(values)
+        values = values[cond1]
+        vectors = vectors[:, cond1]
+
+        print(vectors.shape)
+
+        #Only take positive frequencies
+        cond2 = values.real > 0
+        values = values[cond2]
+        vectors = vectors[:, cond2]
+
+        print(vectors.shape)
+
+        #Sort by decay timescales
+        order = np.argsort(-values.imag)
+        values = values[order]
+        vectors = vectors[:, order]
+
+        #Update solver
+        solver.eigenvalues = values
+        solver.eigenvectors = vectors
+        return solver
+
+def check_eigen(solver1, solver2, subsystem1, subsystem2, cutoff=1e-2):
+    good_values1 = []
+    good_values2 = []
+    cutoff2 = np.sqrt(cutoff)
+    for i, v1 in enumerate(solver1.eigenvalues):
+        for j, v2 in enumerate(solver2.eigenvalues):
+            if np.abs(1 - v1.real/v2.real) < cutoff and np.abs(1 - v1.imag/v2.imag) < cutoff:
+                solver1.set_state(i, subsystem1)
+                solver2.set_state(j, subsystem2)
+                #TODO: Normalize eigenvectors like Daniel.
+                #TODO: Calculate energy0
+
+                
+        
+   
+
+if mesa_file1 is not None:
+    with h5py.File(mesa_file1, 'r') as f:
         tau = f['tau'][()]/(60*60*24)
 else:
     tau = 1
 logger.info('using tau = {} days'.format(tau))
 #only solve ell = 1 one right now.
 from scipy.interpolate import interp1d
-print(solver.subsystems, len(solver.subsystems), len(solver.subproblems))
 
-weight_φ = np.gradient(φSg.flatten()).reshape(φSg.shape)#(np.ones_like(φg)*np.pi/((b.Lmax+2)*dealias))
-weight_θ = bS.global_colatitude_weights(dealias)
-weight = weight_θ * weight_φ
-volume = np.sum(weight)
 
-s1_surf = s1S(r=r_outer)
+#s1_surf = s1S(r=r_outer)
 #KES = (ρS*dot(uS, np.conj(uS))/2)#(r=r_outer)
 #KEB = (ρB*dot(uB, np.conj(uB))/2)#(r=r_outer)
+solver1 = build_solver(bB1, bS1, b_mid1, b_midS1, b_top1, mesa_file1)
+solver1 = solve_dense(solver1, 1)
+for subsystem in solver.subsystems:
+    ss_m, ss_ell, r_couple = subsystem.group
+    if ss_ell == 0 and ss_m == 0:
+        subsystem1 = subsystem
+        break
 
-def get_KES():
+if NmaxB_hires is not None:
+    solver2 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
+    solver2 = solve_dense(solver2, 1)
+    for subsystem in solver.subsystems:
+        ss_m, ss_ell, r_couple = subsystem.group
+        if ss_ell == 0 and ss_m == 0:
+            subsystem2 = subsystem
+            break
+
+
+
+
+
+def get_KES(ρS, uS):
     return ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)
 
-def get_KEB():
+def get_KEB(ρB, uB):
     return ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)
 
+def get_KE(ρS, ρB, uS, uB):
+    KEB_field['g'] = get_KEB()
+    KES_field['g'] = get_KES()
+    integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
+    integrated_energy[i] = integ_energy.real
 
 KEB_field      = field.Field(dist=d, bases=(bB,), dtype=dtype)
 KES_field      = field.Field(dist=d, bases=(bS,), dtype=dtype)
