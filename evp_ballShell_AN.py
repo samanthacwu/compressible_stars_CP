@@ -47,6 +47,8 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
 import dedalus_sphere
 from mpi4py import MPI
+import matplotlib.pyplot as plt
+from scipy.linalg import eig
 
 from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer
 from d3_outputs.writing      import d3FileHandler
@@ -84,7 +86,7 @@ NmaxS      = int(args['--NS'])
 mesa_file1  = args['--mesa_file']
 L_dealias = N_dealias = dealias = 1
 
-if args['--NB_hires'] is not None and args['--NS_hires'] is not None and args['--mesa_file_hires'] is not None:
+if args['--NB_hires'] is not None and args['--NS_hires'] is not None:
     NmaxB_hires = int(args['--NB_hires'])
     NmaxS_hires = int(args['--NS_hires'])
     mesa_file_hires = args['--mesa_file_hires']
@@ -173,6 +175,11 @@ radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
 def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
+
+    φB,  θB,  rB  = bB.local_grids((dealias, dealias, dealias))
+    φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
+    φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
+    φSg, θSg, rSg = bS.global_grids((dealias, dealias, dealias))
     # Fields
     uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
     pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
@@ -215,7 +222,9 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
     grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_s0B_cond      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+    grad_s0S_cond  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 
 
 
@@ -267,10 +276,12 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
             T_func = interp1d(f['r'][()], f['T'][()])
             ρ_func = interp1d(f['r'][()], f['ρ'][()])
             grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-            H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+#            H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+            H_eff_func = lambda r: one_to_zero(r, 0.75, width=0.1)
         max_grad_s0 = grad_s0_func(r_outer)
         max_dt = 2/np.sqrt(max_grad_s0)
         t_buoy      = 1
+
 
 
         for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
@@ -338,6 +349,17 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     inv_TB = operators.Grid(inv_TB).evaluate()
     inv_TS = operators.Grid(inv_TS).evaluate()
 
+    if mesa_file is not None:
+        d_grads = rB**2*ρB['g']*TB['g']*H_effB['g']*np.gradient(rB.flatten())
+        grads = np.zeros((1,1,d_grads.shape[-1]))
+        for i in range(d_grads.shape[-1]-1):
+            grads[0,0,i+1] = grads[0,0,i] + d_grads[0,0,i]
+        grad_s0B_cond['g'][2,:,:,:] = - (1/(rB**2*ρB['g'][0,0,:]*TB['g'][0,0,:]*inv_PeB['g']))*grads
+    else:
+        grad_s0B_cond['g'][2,:,:,:] = - zero_to_one(rB, 0.2, width=0.1)*one_to_zero(rB, 0.75, width=0.1)/inv_PeB['g']
+#    plt.plot(rB.flatten(), grad_s0B_cond['g'][2,0,0,:])
+#    plt.show()
+
     omega = field.Field(name='omega', dist=d, dtype=dtype)
     ddt       = lambda A: -1j * omega * A
     grads1B = grad(s1B)
@@ -360,15 +382,12 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
 
     problem = problems.EVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], omega)
 
-
     ### Ball momentum
     problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-    #problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-    problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = cross(uB, curl(uB))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = 0"), condition = "nθ != 0")
     ### Shell momentum
     problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-    #problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = cross(uS, curl(uS))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = 0"), condition = "nθ != 0")
     ## ell == 0 momentum
     problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
     problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -376,9 +395,9 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
     ### Ball energy
-    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
+    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) = 0 "))
     ### Shell energy
-    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) = 0 "))
 
 
     #Velocity BCs ell != 0
@@ -519,19 +538,37 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
             subproblem.expand_matrices(['M','L'])
     logger.info('tau columns adjusted')
 
-    ## Check condition number and plot matrices
-    #import matplotlib.pyplot as plt
-    #plt.figure()
-    #for subproblem in solver.subproblems:
-    #    ell = subproblem.group[1]
-    #    M = subproblem.left_perm.T @ subproblem.M_min
-    #    L = subproblem.left_perm.T @ subproblem.L_min
-    #    plt.imshow(np.log10(np.abs(L.A.real)))
-    #    plt.colorbar()
-    #    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
-    #    plt.clf()
-    #    print(subproblem.group, np.linalg.cond((M + L).A))
-    return solver
+    # Check condition number and plot matrices
+#    import matplotlib.pyplot as plt
+#    plt.figure()
+#    for subproblem in solver.subproblems:
+#        ell = subproblem.group[1]
+#        M = subproblem.left_perm.T @ subproblem.M_min
+#        L = subproblem.left_perm.T @ subproblem.L_min
+##        M = subproblem.M_min
+##        L = subproblem.L_min
+#        fig = plt.figure()
+#        ax1 = fig.add_subplot(2,2,1)
+#        ax2 = fig.add_subplot(2,2,2)
+#        ax3 = fig.add_subplot(2,2,3)
+#        ax4 = fig.add_subplot(2,2,4)
+#        print(M)
+#        ax1.imshow(np.log10(np.abs(M.A.real)))
+#        ax1.set_title('(left_perm.T @ M_min).A real', size=10)
+##        plt.colorbar()
+#        ax2.imshow(np.log10(np.abs(M.A.imag)))
+#        ax2.set_title('(left_perm.T @ M_min).A imag', size=10)
+##        plt.colorbar()
+#        ax3.imshow(np.log10(np.abs(L.A.real)))
+#        ax3.set_title('(left_perm.T @ L_min).A real', size=10)
+##        plt.colorbar()
+#        ax4.imshow(np.log10(np.abs(L.A.imag)))
+#        ax4.set_title('(left_perm.T @ L_min).A imag', size=10)
+##        plt.colorbar()
+#        plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+#        plt.clf()
+#        print(subproblem.group, np.linalg.cond((M + L).A))
+    return solver, locals()
 
 def solve_dense(solver, ell):
     for subproblem in solver.subproblems:
@@ -541,6 +578,15 @@ def solve_dense(solver, ell):
         #TODO: Output to file.
         logger.info("solving ell = {}".format(ell))
         solver.solve_dense(subproblem)
+#        eig_output = eig(subproblem.L_min.A, b=-subproblem.M_min.A)
+#        # Unpack output
+#        if len(eig_output) == 2:
+#            solver.eigenvalues, solver.eigenvectors = eig_output
+#        elif len(eig_output) == 3:
+#            solver.eigenvalues, solver.left_eigenvectors, solver.eigenvectors = eig_output
+##        solver.eigenvectors = subproblem.pre_right @ solver.eigenvectors
+#        solver.eigenvalue_subproblem = subproblem
+
         logger.info("finished solve")
 
         values = solver.eigenvalues
@@ -563,7 +609,7 @@ def solve_dense(solver, ell):
         print(vectors.shape)
 
         #Sort by decay timescales
-        order = np.argsort(-values.imag)
+        order = np.argsort(1/values.real)#-values.imag)
         values = values[order]
         vectors = vectors[:, order]
 
@@ -572,21 +618,93 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystem1, subsystem2, cutoff=1e-2):
+def set_state(solver, namespace, i):
+    pB = namespace['pB']
+    uB = namespace['uB']
+    pS = namespace['pS']
+    uS = namespace['uS']
+    s1B = namespace['s1B']
+    s1S = namespace['s1S']
+
+    for f in [pB, uB, pS, uS, s1B, s1S]:
+        f['c'] = 0
+
+    NcB = pB['c'].shape[-1]
+    NcS = pS['c'].shape[-1]
+
+    eigenvector = solver.eigenvectors[:,i]
+    pB['c'][0,0,:] = eigenvector[:NcB]
+    uB['c'][:,0,0,:] = eigenvector[NcB*1:NcB*4].reshape((3, NcB))
+    pS['c'][0,0,:] = eigenvector[NcB*4:4*NcB+NcS]
+    uS['c'][:,0,0,:] = eigenvector[NcB*4+NcS*1:NcB*4+NcS*4].reshape((3, NcS))
+    s1B['c'][0,0,:] = eigenvector[4*(NcB+NcS):4*(NcB+NcS) + NcB]
+    s1S['c'][0,0,:] = eigenvector[4*(NcB+NcS) + NcB:5*(NcB+NcS)]
+
+
+def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-2):
     good_values1 = []
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
+
+    bB1 = namespace1['bB']
+    bS1 = namespace1['bS']
+    bB2 = namespace2['bB']
+    bS2 = namespace2['bS']
+#    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, 1))
+    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, (NmaxB_hires+1)/(NmaxB+1)))
+    φB2,  θB2,  rB2  = bB2.local_grids((1, 1, 1))
+    φS1_0,  θS1_0,  rS1_0  = bS1.local_grids((1, 1, 1))
+    φS1,  θS1,  rS1  = bS1.local_grids((1, 1, (NmaxS_hires+1)/(NmaxS+1)))
+    φS2,  θS2,  rS2  = bS2.local_grids((1, 1, 1))
+
+    r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
+    r2 = np.concatenate((rB2.flatten(), rS2.flatten()))
+
     for i, v1 in enumerate(solver1.eigenvalues):
         for j, v2 in enumerate(solver2.eigenvalues):
-            if np.abs(1 - v1.real/v2.real) < cutoff and np.abs(1 - v1.imag/v2.imag) < cutoff:
+            real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
+            if real_goodness < cutoff:# or (j == 0 and (i == 2 or i == 3)):# and (np.abs(v1.imag - v2.imag)/np.abs(v1.imag)).min() < 1e-1:
+                print(v1/(2*np.pi), v2/(2*np.pi))
+                
+#                print((np.abs(v1 - v2)/np.abs(v1)).min())
                 solver1.set_state(i, subsystem1)
                 solver2.set_state(j, subsystem2)
-                #TODO: Normalize eigenvectors like Daniel.
-                #TODO: Calculate energy0
+                uB1 = namespace1['uB']
+                uS1 = namespace1['uS']
+                uB2 = namespace2['uB']
+                uS2 = namespace2['uS']
 
-                
-        
-   
+                if uB2['g'].shape[-1]/uB1['g'].shape[-1] != 1:
+                    uB1.require_scales((1, 1, uB2['g'].shape[-1]/uB1['g'].shape[-1]))
+                if uS2['g'].shape[-1]/uS1['g'].shape[-1] != 1:
+                    uS1.require_scales((1, 1, uS2['g'].shape[-1]/uS1['g'].shape[-1]))
+                u1 = np.concatenate((uB1['g'], uS1['g']), axis=-1)
+                u2 = np.concatenate((uB2['g'], uS2['g']), axis=-1)
+                phi_theta_ind = np.unravel_index(np.abs(uB1['g'].argmax()), uB1['g'].shape)
+                u1 = u1[:,phi_theta_ind[1], phi_theta_ind[2], :]
+                phi_theta_ind = np.unravel_index(np.abs(uB2['g'].argmax()), uB2['g'].shape)
+                u2 = u2[:,phi_theta_ind[1], phi_theta_ind[2], :]
+
+                u1 = np.abs(u1).real
+                u2 = np.abs(u2).real
+                u1 /= u1[2,:].max()
+                u2 /= u2[2,:].max()
+
+                plt.plot(r1, u1[2,:].real, c='orange', lw=3)
+                plt.plot(r2, u2[2,:].real, c='indigo')
+                plt.show()
+
+                vector_diff = np.max(np.abs(u1[2,:] - u2[2,:]))
+                print('vdiff', vector_diff)
+                if vector_diff < cutoff2:
+                    good_values1.append(i)
+                    good_values2.append(j)
+
+    solver1.eigenvalues = solver1.eigenvalues[good_values1]
+    solver2.eigenvalues = solver2.eigenvalues[good_values2]
+    solver1.eigenvectors = solver1.eigenvectors[:, good_values1]
+    solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
+    return solver1, solver2
 
 if mesa_file1 is not None:
     with h5py.File(mesa_file1, 'r') as f:
@@ -601,129 +719,121 @@ from scipy.interpolate import interp1d
 #s1_surf = s1S(r=r_outer)
 #KES = (ρS*dot(uS, np.conj(uS))/2)#(r=r_outer)
 #KEB = (ρB*dot(uB, np.conj(uB))/2)#(r=r_outer)
-solver1 = build_solver(bB1, bS1, b_mid1, b_midS1, b_top1, mesa_file1)
-solver1 = solve_dense(solver1, 1)
-for subsystem in solver.subsystems:
+logger.info('solving lores eigenvalue')
+ell = 1
+#solver1, namespace1 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
+solver1, namespace1 = build_solver(bB1, bS1, b_mid1, b_midS1, b_top1, mesa_file1)
+solver1 = solve_dense(solver1, ell)
+for subsystem in solver1.eigenvalue_subproblem.subsystems:
     ss_m, ss_ell, r_couple = subsystem.group
-    if ss_ell == 0 and ss_m == 0:
+    print(ss_m, ss_ell, r_couple)
+    if ss_ell == ell and ss_m == 0:
         subsystem1 = subsystem
         break
+solver1.eigenvalues /= tau
+
+import gc
+gc.collect()
+
+
+with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+    f['good_evalues'] = solver1.eigenvalues
+    f['good_omegas']  = solver1.eigenvalues.real
 
 if NmaxB_hires is not None:
-    solver2 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
-    solver2 = solve_dense(solver2, 1)
-    for subsystem in solver.subsystems:
+    logger.info('solving hires eigenvalue')
+    solver2, namespace2 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
+    solver2 = solve_dense(solver2, ell)
+    for subsystem in solver2.eigenvalue_subproblem.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
-        if ss_ell == 0 and ss_m == 0:
+        if ss_ell == ell and ss_m == 0:
             subsystem2 = subsystem
             break
+    solver2.eigenvalues /= tau
+    logger.info('cleaning bad eigenvalues out')
+    solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
+print(solver1.eigenvalues.real/(2*np.pi))
+print(solver2.eigenvalues.real/(2*np.pi))
+
+with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+    f['good_evalues'] = solver1.eigenvalues
+    f['good_omegas']  = solver1.eigenvalues.real
+#    f['good_s1_amplitudes'] = good_s1_amplitudes
+#    f['good_integ_energies'] = good_integ_energies
 
 
-
-
-
-def get_KES(ρS, uS):
-    return ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)
-
-def get_KEB(ρB, uB):
-    return ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)
-
-def get_KE(ρS, ρB, uS, uB):
-    KEB_field['g'] = get_KEB()
-    KES_field['g'] = get_KES()
-    integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
-    integrated_energy[i] = integ_energy.real
-
-KEB_field      = field.Field(dist=d, bases=(bB,), dtype=dtype)
-KES_field      = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
-ball_avg = BallVolumeAverager(s1B)
-shell_avg = ShellVolumeAverager(s1S)
-
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    good_subsystems = []
-    for subsystem in solver.subsystems:
-        ss_m, ss_ell, r_couple = subsystem.group
-        if ell == ss_ell and ss_m == 0:
-            good_subsystems.append(subsystem)
-    #TODO: Output to file.
-    logger.info("solving ell = {}".format(ell))
-    solver.solve_dense(subproblem)
-    logger.info("finished solve")
-    evalues = solver.eigenvalues #convert to frequency.
-    i_sort = np.argsort(evalues)
-    sorted_evalues = evalues[i_sort]
-    good_evalues = sorted_evalues[np.isfinite(sorted_evalues)]
-    good_omegas   = np.abs(good_evalues[good_evalues.real < 0].real)
-    domegas = np.abs(np.gradient(good_omegas))
-
-#    Nm = good_omegas/domegas
-#    Nm_func = interp1d(good_omegas, Nm)
-#    power_slope = lambda om: om**(float(args['--freq_power']))
-
-    integrated_energy = np.zeros_like(evalues, dtype=np.float64) 
-    surface_s1_amplitude = np.zeros_like(evalues, dtype=np.float64)  
-    for i, e in enumerate(evalues):
-        subsys = good_subsystems[0]
-        solver.set_state(i, subsys)
-        #Calculate integrated kinetic energy
-        KEB_field['g'] = get_KEB()
-        KES_field['g'] = get_KES()
-        integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
-        integrated_energy[i] = integ_energy.real
-#        this_om = np.abs(e.real)
-#        decay   = np.abs(e.imag)
-#        shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
-#        power_boost = shiode_energy/integ_energy
-        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)
-        surface_s1_amplitude[i] = np.sqrt(s1_surf_value.real)
-
-#        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)*power_boost
-#        amplitudes[i] = np.sqrt(s1_surf_value)
-    good_s1_amplitudes  = surface_s1_amplitude[i_sort][np.isfinite(sorted_evalues)]
-    good_integ_energies = integrated_energy[i_sort][np.isfinite(sorted_evalues)]
-
-    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-        f['raw_evalues'] = evalues/tau
-        f['raw_s1_amplitudes'] = surface_s1_amplitude
-        f['raw_integ_energies'] = integrated_energy
-        f['i_sort']      = i_sort
-        f['good_evalues'] = good_evalues/tau
-        f['good_omegas']  = good_omegas/tau
-        f['good_s1_amplitudes'] = good_s1_amplitudes
-        f['good_integ_energies'] = good_integ_energies
 
 #
-#n = 0
-#good_eig_freqs = eig_freqs.real > 0
-#omegas = np.abs(2*np.pi*eig_freqs[good_eig_freqs].real)
-##shiode_Nm = lambda n: (ell/2 + n)
-#shiode_dEdot_dlnom_dell = lambda omega: omega**(-13/2)
-##shiode_eqn_nine = lambda eigval, n: shiode_Nm(n)*shiode_dEdot_dlnom_dell(np.abs(eigval.real))/np.abs(eigval.imag)
-#shiode_eqn_nine = lambda eigval: Nm(2*np.pi*np.abs(eigval.real))*shiode_dEdot_dlnom_dell(2*np.pi*np.abs(eigval.real))/np.abs(eigval.imag)
+#def get_KES(ρS, uS):
+#    return ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)
 #
-#E_of_om = shiode_eqn_nine(eig_freqs[good_eig_freqs])
-#match_freq = eig_freqs[good_eig_freqs].real[np.abs(eig_freqs[good_eig_freqs].real) > 2.5e-1][-1]
-#match_freq_sim = np.argmin(np.abs(freqs - match_freq))
-#E_of_om *= power[match_freq_sim]/E_of_om[np.abs(eig_freqs[good_eig_freqs].real) > 2.5e-1][-1]
+#def get_KEB(ρB, uB):
+#    return ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)
 #
+#def get_KE():
+#    KEB_field['g'] = get_KEB()
+#    KES_field['g'] = get_KES()
+#    integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
+#    integrated_energy[i] = integ_energy.real
 #
 #
+#KEB_field      = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#KES_field      = field.Field(dist=d, bases=(bS,), dtype=dtype)
 #
-##    print(good_sorted_eigenvalues.real)
-##    print(solver.eigenvalues[good_eigs].shape)
-##    print(solver.eigenvectors)
-#    import matplotlib.pyplot as plt
-#    fig = plt.figure()
-##    print(good_sorted_eigenvalues.real.shape)
-#    positive = good_sorted_eigenvalues.real > 0
-#    negative = good_sorted_eigenvalues.real < 0
-#    plt.scatter(np.arange(len(good_sorted_eigenvalues.real[positive])),  good_sorted_eigenvalues.real[positive], s=20, c='k', label='positive frequency magnitude')
-#    plt.scatter(np.arange(len(good_sorted_eigenvalues.real[negative])), -good_sorted_eigenvalues.real[negative], s=5 , c='orange', label='negative frequency magnitude')
-#    plt.yscale('log')
-#    plt.ylabel('frequency')
-#    plt.legend(loc='best')
-#    fig.savefig('{:s}/ell{:03d}_frequency_spectrum.png'.format(out_dir, ell), dpi=300)
+#ball_avg = BallVolumeAverager(s1B)
+#shell_avg = ShellVolumeAverager(s1S)
+
+#for subproblem in solver.subproblems:
+#    ell = subproblem.group[1]
+#    good_subsystems = []
+#    for subsystem in solver.subsystems:
+#        ss_m, ss_ell, r_couple = subsystem.group
+#        if ell == ss_ell and ss_m == 0:
+#            good_subsystems.append(subsystem)
+##    #TODO: Output to file.
+#    logger.info("solving ell = {}".format(ell))
+#    solver.solve_dense(subproblem)
+#    logger.info("finished solve")
+#    evalues = solver.eigenvalues #convert to frequency.
+#    i_sort = np.argsort(evalues)
+#    sorted_evalues = evalues[i_sort]
+#    good_evalues = sorted_evalues[np.isfinite(sorted_evalues)]
+#    good_omegas   = np.abs(good_evalues[good_evalues.real < 0].real)
+#    domegas = np.abs(np.gradient(good_omegas))
 #
-##    plt.show()
+##    Nm = good_omegas/domegas
+##    Nm_func = interp1d(good_omegas, Nm)
+##    power_slope = lambda om: om**(float(args['--freq_power']))
+#
+#    integrated_energy = np.zeros_like(evalues, dtype=np.float64) 
+#    surface_s1_amplitude = np.zeros_like(evalues, dtype=np.float64)  
+#    for i, e in enumerate(evalues):
+#        subsys = good_subsystems[0]
+#        solver.set_state(i, subsys)
+#        #Calculate integrated kinetic energy
+#        KEB_field['g'] = get_KEB()
+#        KES_field['g'] = get_KES()
+#        integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
+#        integrated_energy[i] = integ_energy.real
+##        this_om = np.abs(e.real)
+##        decay   = np.abs(e.imag)
+##        shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
+##        power_boost = shiode_energy/integ_energy
+#        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)
+#        surface_s1_amplitude[i] = np.sqrt(s1_surf_value.real)
+#
+##        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)*power_boost
+##        amplitudes[i] = np.sqrt(s1_surf_value)
+#    good_s1_amplitudes  = surface_s1_amplitude[i_sort][np.isfinite(sorted_evalues)]
+#    good_integ_energies = integrated_energy[i_sort][np.isfinite(sorted_evalues)]
+#
+#    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+#        f['raw_evalues'] = evalues/tau
+#        f['raw_s1_amplitudes'] = surface_s1_amplitude
+#        f['raw_integ_energies'] = integrated_energy
+#        f['i_sort']      = i_sort
+#        f['good_evalues'] = good_evalues/tau
+#        f['good_omegas']  = good_omegas/tau
+#        f['good_s1_amplitudes'] = good_s1_amplitudes
+#        f['good_integ_energies'] = good_integ_energies
+#
