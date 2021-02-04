@@ -6,7 +6,7 @@ Usage:
     compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file_lores> <evp_data_file_hires> [options]
 
 Options:
-    --freq_power=<p>    Power law exponent for convective wave driving [default: -13/2]
+    --freq_power=<p>    Power law exponent for convective wave driving [default: -3.25]
 
 """
 from fractions import Fraction
@@ -27,69 +27,8 @@ if evp_data_file_hires is None:
     ell = int(evp_data_file.split('ell')[-1].split('_')[0])
     with h5py.File(evp_data_file, 'r') as ef:
         complex_eigenvalues = ef['good_evalues'][()]
-        good_values = complex_eigenvalues.real >= 0
-        complex_eigenvalues = complex_eigenvalues[good_values]
-        s1_amplitudes = ef['good_s1_amplitudes'][()][good_values]
-        mode_energies = ef['good_integ_energies'][()][good_values]
-
-        #TODO: come up with a better way of filtering out bad eigenvalues.
-    #    good_values = np.abs(1/(complex_eigenvalues.imag/(2*np.pi))) > 10
-        good_values = np.isfinite(complex_eigenvalues)
-else:
-    ell = int(evp_data_file_lores.split('ell')[-1].split('_')[0])
-    with h5py.File(evp_data_file_lores, 'r') as ef:
-        lores_complex_eigenvalues = ef['good_evalues'][()]
-        lores_good_values = lores_complex_eigenvalues.real >= 0
-        lores_complex_eigenvalues = lores_complex_eigenvalues[lores_good_values]
-        lores_s1_amplitudes = ef['good_s1_amplitudes'][()][lores_good_values]
-        lores_mode_energies = ef['good_integ_energies'][()][lores_good_values]
-    with h5py.File(evp_data_file_hires, 'r') as ef:
-        hires_complex_eigenvalues = ef['good_evalues'][()]
-        hires_good_values = hires_complex_eigenvalues.real >= 0
-        hires_complex_eigenvalues = hires_complex_eigenvalues[hires_good_values]
-        hires_s1_amplitudes = ef['good_s1_amplitudes'][()][hires_good_values]
-        hires_mode_energies = ef['good_integ_energies'][()][hires_good_values]
-
-    lores_freqs = lores_complex_eigenvalues.real/(2*np.pi)
-    hires_freqs = hires_complex_eigenvalues.real/(2*np.pi)
-    good_lores_eigenvalues = []
-    good_lores_s1_amplitudes = []
-    good_lores_mode_energies = []
-    good_hires_eigenvalues = []
-    good_hires_s1_amplitudes = []
-    good_hires_mode_energies = []
-    for i, f in enumerate(lores_freqs):
-        if f < 1e-2 or f > 1e2:
-            continue
-        else:
-            hires_error = np.abs(hires_freqs - f)/f
-            if hires_error.min() < 1e-2:
-                good_lores_eigenvalues.append(lores_complex_eigenvalues[i])
-                good_lores_s1_amplitudes.append(lores_s1_amplitudes[i])
-                good_lores_mode_energies.append(lores_mode_energies[i])
-                good_hires_eigenvalues.append(hires_complex_eigenvalues[np.argmin(hires_error)])
-                good_hires_s1_amplitudes.append(hires_s1_amplitudes[np.argmin(hires_error)])
-                good_hires_mode_energies.append(hires_mode_energies[np.argmin(hires_error)])
-
-    good_lores_eigenvalues = np.array(good_lores_eigenvalues)
-    good_hires_eigenvalues = np.array(good_hires_eigenvalues)
-    good_hires_s1_amplitudes = np.array(good_hires_s1_amplitudes)
-    good_hires_mode_energies = np.array(good_hires_mode_energies)
-
-    print(good_lores_eigenvalues.real/(2*np.pi))
-    plt.scatter(good_lores_eigenvalues.real/(2*np.pi), good_lores_mode_energies, c='r', label='lores')
-    plt.scatter(good_hires_eigenvalues.real/(2*np.pi), good_hires_mode_energies, c='k', label='hires')
-    plt.xlim(1e-1, 1e1)
-    plt.yscale("log")
-    plt.xscale('log')
-    plt.legend(loc='best')
-    plt.xlabel('frequency (1/day)')
-    plt.ylabel('eigenvalue KE')
-    plt.title(r'$\ell = ${}'.format(ell))
-    plt.savefig('scratch/ell{:03d}_lores_hires_energies.png'.format(ell), dpi=300)
-
-
-
+        s1_amplitudes = ef['s1_amplitudes'][()]
+        integ_energies = ef['integ_energies'][()]
 
 with h5py.File(sh_spectrum_file, 'r') as sf:
     power_per_ell = sf['power_per_ell'][()]
@@ -98,7 +37,8 @@ with h5py.File(sh_spectrum_file, 'r') as sf:
     power = power_per_ell[:,ells.flatten() == ell]
 
 fig = plt.figure()
-for f in good_hires_eigenvalues:
+for f in complex_eigenvalues:
+    print(f.real)
     plt.axvline(np.abs(f.real)/(2*np.pi), c='b', lw=0.5)
 
 plt.loglog(freqs, power, c='k')
@@ -109,7 +49,7 @@ plt.title(r'$\ell = ${}'.format(ell))
 plt.savefig('scratch/ell{:03d}_identified_eigenmodes.png'.format(ell), dpi=300)
 
 fig = plt.figure()
-for f in good_hires_eigenvalues:
+for f in complex_eigenvalues:
     plt.scatter(np.abs(f.real)/(2*np.pi), np.abs(1/f.imag)*(2*np.pi), c='b')
 plt.yscale('log')
 plt.xscale('log')
@@ -121,18 +61,18 @@ plt.ylabel('decay time (day)')
 plt.title(r'$\ell = ${}'.format(ell))
 plt.savefig('scratch/ell{:03d}_decay_times.png'.format(ell), dpi=300)
 
-good_omegas = good_hires_eigenvalues.real
+good_omegas = complex_eigenvalues.real
 domegas = np.abs(np.gradient(good_omegas))
 Nm = good_omegas/domegas
 Nm_func = interp1d(good_omegas, Nm)
 power_slope = lambda om: om**(float(Fraction(args['--freq_power'])))
 
-adjusted_energies = np.zeros_like(good_hires_eigenvalues, dtype=np.float64)
-for i, e in enumerate(good_hires_eigenvalues):
+adjusted_energies = np.zeros_like(complex_eigenvalues, dtype=np.float64)
+for i, e in enumerate(complex_eigenvalues):
     this_om = np.abs(e.real)
     decay   = np.abs(e.imag)
     shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
-    adjusted_energies[i] = good_hires_s1_amplitudes[i]**2 * (shiode_energy / good_hires_mode_energies[i])
+    adjusted_energies[i] = s1_amplitudes[i]**2 * (shiode_energy / integ_energies[i])
 
 match_freq_guess = 2.9e-1
 if ell == 2:
@@ -141,9 +81,19 @@ elif ell == 3:
     match_freq_guess = 5e-1
 elif ell == 4:
     match_freq_guess = 6.4e-1
+elif ell == 5:
+    match_freq_guess = 6e-1
+elif ell == 6:
+    match_freq_guess = 7.5e-1
+elif ell == 7:
+    match_freq_guess = 8e-1
+elif ell == 8:
+    match_freq_guess = 9.5e-1
+elif ell == 9:
+    match_freq_guess = 1
 
 real_frequencies = good_omegas/(2*np.pi)
-match_freq = real_frequencies[real_frequencies > match_freq_guess][0]
+match_freq = real_frequencies[real_frequencies > match_freq_guess][-1]
 match_freq_sim = np.argmin(np.abs(freqs - match_freq))
 peak_found = False
 while not peak_found:

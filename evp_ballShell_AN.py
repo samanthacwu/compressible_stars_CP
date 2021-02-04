@@ -30,6 +30,7 @@ Options:
 
     --freq_power=<p>     Power exponent of wave frequency for Shiode comparison [default: -6.5]
 """
+import gc
 import os
 import time
 import sys
@@ -210,8 +211,10 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+    grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
     H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
     grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
@@ -219,8 +222,10 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
     ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
     inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
     H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
@@ -244,10 +249,14 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
                 grad_s0B['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape), axis=0), axis=0), axis=0)
                 grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
                 grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+                grad_TB['g']         = f['grad_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+                grad_inv_PeB['g']    = f['grad_inv_Pe_radB'][:, :,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
             if np.prod(grad_s0S['g'].shape) > 0:
                 grad_s0S['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape), axis=0), axis=0), axis=0)
                 grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
                 grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+                grad_TS['g']         = f['grad_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+                grad_inv_PeS['g']    = f['grad_inv_Pe_radS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
             inv_PeB['g']= f['inv_Pe_radB'][:,:,slicesB[-1]]
             ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
             ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
@@ -301,10 +310,6 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
             ln_ρ['g']        = np.log(ρ_func(basis_r))
             grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
             grad_ln_T['g']        = grad(ln_T).evaluate()['g']
-
-    inv_PeB['g'] += 1/Pe
-    inv_PeS['g'] += 1/Pe
-
 
     logger.info('buoyancy time is {}'.format(t_buoy))
     t_end = float(args['--buoy_end_time'])*t_buoy
@@ -387,10 +392,10 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
 
     ### Ball momentum
     problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-    problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt)  = 0"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt)  = 0"), condition = "nθ != 0")
     ### Shell momentum
     problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = 0"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = 0"), condition = "nθ != 0")
     ## ell == 0 momentum
     problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
     problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -398,9 +403,11 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
     ### Ball energy
-    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) + LiftTauB(tB) = 0 "))
+#    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) + LiftTauB(tB) = 0 "))
+    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = 0 "))
     ### Shell energy
-    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
+#    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
+    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
 
 
     #Velocity BCs ell != 0
@@ -510,29 +517,6 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def set_state(solver, namespace, i):
-    pB = namespace['pB']
-    uB = namespace['uB']
-    pS = namespace['pS']
-    uS = namespace['uS']
-    s1B = namespace['s1B']
-    s1S = namespace['s1S']
-
-    for f in [pB, uB, pS, uS, s1B, s1S]:
-        f['c'] = 0
-
-    NcB = pB['c'].shape[-1]
-    NcS = pS['c'].shape[-1]
-
-    eigenvector = solver.eigenvectors[:,i]
-    pB['c'][0,0,:] = eigenvector[:NcB]
-    uB['c'][:,0,0,:] = eigenvector[NcB*1:NcB*4].reshape((3, NcB))
-    pS['c'][0,0,:] = eigenvector[NcB*4:4*NcB+NcS]
-    uS['c'][:,0,0,:] = eigenvector[NcB*4+NcS*1:NcB*4+NcS*4].reshape((3, NcS))
-    s1B['c'][0,0,:] = eigenvector[4*(NcB+NcS):4*(NcB+NcS) + NcB]
-    s1S['c'][0,0,:] = eigenvector[4*(NcB+NcS) + NcB:5*(NcB+NcS)]
-
-
 def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-3):
     good_values1 = []
     good_values2 = []
@@ -588,9 +572,9 @@ def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2
                 if vector_diff < cutoff2:
                     good_values1.append(i)
                     good_values2.append(j)
-                    plt.plot(r1, u1[2,:].real, c='orange', lw=3)
-                    plt.plot(r2, u2[2,:].real, c='indigo')
-                    plt.show()
+#                    plt.plot(r1, u1[2,:].real, c='orange', lw=3)
+#                    plt.plot(r2, u2[2,:].real, c='indigo')
+#                    plt.show()
 
 
     solver1.eigenvalues = solver1.eigenvalues[good_values1]
@@ -609,116 +593,82 @@ logger.info('using tau = {} days'.format(tau))
 from scipy.interpolate import interp1d
 
 
-#s1_surf = s1S(r=r_outer)
-#KES = (ρS*dot(uS, np.conj(uS))/2)#(r=r_outer)
-#KEB = (ρB*dot(uB, np.conj(uB))/2)#(r=r_outer)
 logger.info('solving lores eigenvalue')
-ell = 1
-#solver1, namespace1 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
 solver1, namespace1 = build_solver(bB1, bS1, b_mid1, b_midS1, b_top1, mesa_file1)
-solver1 = solve_dense(solver1, ell)
-for subsystem in solver1.eigenvalue_subproblem.subsystems:
-    ss_m, ss_ell, r_couple = subsystem.group
-    print(ss_m, ss_ell, r_couple)
-    if ss_ell == ell and ss_m == 0:
-        subsystem1 = subsystem
-        break
-solver1.eigenvalues /= tau
-
 if NmaxB_hires is not None:
-    logger.info('solving hires eigenvalue')
     solver2, namespace2 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
-    solver2 = solve_dense(solver2, ell)
-    for subsystem in solver2.eigenvalue_subproblem.subsystems:
+for i in range(Lmax):
+    ell = i + 1
+    solver1 = solve_dense(solver1, ell)
+    for subsystem in solver1.eigenvalue_subproblem.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
+        print(ss_m, ss_ell, r_couple)
         if ss_ell == ell and ss_m == 0:
-            subsystem2 = subsystem
+            subsystem1 = subsystem
             break
-    solver2.eigenvalues /= tau
-    logger.info('cleaning bad eigenvalues out')
-    solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
-print(solver1.eigenvalues.real/(2*np.pi))
-print(solver2.eigenvalues.real/(2*np.pi))
+    solver1.eigenvalues /= tau
 
-with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-    f['good_evalues'] = solver1.eigenvalues
-    f['good_omegas']  = solver1.eigenvalues.real
-#    f['good_s1_amplitudes'] = good_s1_amplitudes
-#    f['good_integ_energies'] = good_integ_energies
+    if NmaxB_hires is not None:
+        logger.info('solving hires eigenvalue')
+        solver2 = solve_dense(solver2, ell)
+        for subsystem in solver2.eigenvalue_subproblem.subsystems:
+            ss_m, ss_ell, r_couple = subsystem.group
+            if ss_ell == ell and ss_m == 0:
+                subsystem2 = subsystem
+                break
+        solver2.eigenvalues /= tau
+        logger.info('cleaning bad eigenvalues out')
+        solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
+    print(solver1.eigenvalues.real/(2*np.pi))
+    print(solver2.eigenvalues.real/(2*np.pi))
 
+    bS = namespace1['bS']
+    bB = namespace1['bB']
+    ρS = namespace1['ρS']
+    ρB = namespace1['ρB']
+    uS = namespace1['uS']
+    uB = namespace1['uB']
+    s1S = namespace1['s1S']
+    s1B = namespace1['s1B']
+    for f in [ρS, ρB, uB, uS, s1S, s1B]:
+        f.require_scales((1,1,1))
 
+    ball_avg = BallVolumeAverager(s1B)
+    shell_avg = ShellVolumeAverager(s1S)
+    s1_surf = s1S(r=r_outer)
 
-#
-#def get_KES(ρS, uS):
-#    return ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)
-#
-#def get_KEB(ρB, uB):
-#    return ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)
-#
-#def get_KE():
-#    KEB_field['g'] = get_KEB()
-#    KES_field['g'] = get_KES()
-#    integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
-#    integrated_energy[i] = integ_energy.real
-#
-#
-#KEB_field      = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#KES_field      = field.Field(dist=d, bases=(bS,), dtype=dtype)
-#
-#ball_avg = BallVolumeAverager(s1B)
-#shell_avg = ShellVolumeAverager(s1S)
+    KEB  = field.Field(dist=d, bases=(bB,), dtype=dtype)
+    KES  = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
-#for subproblem in solver.subproblems:
-#    ell = subproblem.group[1]
-#    good_subsystems = []
-#    for subsystem in solver.subsystems:
-#        ss_m, ss_ell, r_couple = subsystem.group
-#        if ell == ss_ell and ss_m == 0:
-#            good_subsystems.append(subsystem)
-##    #TODO: Output to file.
-#    logger.info("solving ell = {}".format(ell))
-#    solver.solve_dense(subproblem)
-#    logger.info("finished solve")
-#    evalues = solver.eigenvalues #convert to frequency.
-#    i_sort = np.argsort(evalues)
-#    sorted_evalues = evalues[i_sort]
-#    good_evalues = sorted_evalues[np.isfinite(sorted_evalues)]
-#    good_omegas   = np.abs(good_evalues[good_evalues.real < 0].real)
-#    domegas = np.abs(np.gradient(good_omegas))
-#
-##    Nm = good_omegas/domegas
-##    Nm_func = interp1d(good_omegas, Nm)
-##    power_slope = lambda om: om**(float(args['--freq_power']))
-#
-#    integrated_energy = np.zeros_like(evalues, dtype=np.float64) 
-#    surface_s1_amplitude = np.zeros_like(evalues, dtype=np.float64)  
-#    for i, e in enumerate(evalues):
-#        subsys = good_subsystems[0]
-#        solver.set_state(i, subsys)
-#        #Calculate integrated kinetic energy
-#        KEB_field['g'] = get_KEB()
-#        KES_field['g'] = get_KES()
-#        integ_energy = ball_avg(KEB_field)[0]*ball_avg.volume + shell_avg(KES_field)[0]*shell_avg.volume
-#        integrated_energy[i] = integ_energy.real
-##        this_om = np.abs(e.real)
-##        decay   = np.abs(e.imag)
-##        shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
-##        power_boost = shiode_energy/integ_energy
-#        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)
-#        surface_s1_amplitude[i] = np.sqrt(s1_surf_value.real)
-#
-##        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight)*power_boost
-##        amplitudes[i] = np.sqrt(s1_surf_value)
-#    good_s1_amplitudes  = surface_s1_amplitude[i_sort][np.isfinite(sorted_evalues)]
-#    good_integ_energies = integrated_energy[i_sort][np.isfinite(sorted_evalues)]
-#
-#    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-#        f['raw_evalues'] = evalues/tau
-#        f['raw_s1_amplitudes'] = surface_s1_amplitude
-#        f['raw_integ_energies'] = integrated_energy
-#        f['i_sort']      = i_sort
-#        f['good_evalues'] = good_evalues/tau
-#        f['good_omegas']  = good_omegas/tau
-#        f['good_s1_amplitudes'] = good_s1_amplitudes
-#        f['good_integ_energies'] = good_integ_energies
-#
+    good_omegas = solver1.eigenvalues.real
+    domegas = np.gradient(good_omegas)
+    Nm = good_omegas/domegas
+    Nm_func = interp1d(good_omegas, Nm)
+    power_slope = lambda om: om**(float(args['--freq_power']))
+
+    integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
+    s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
+    velocity_eigenfunctions = []
+    entropy_eigenfunctions = []
+    for i, e in enumerate(solver1.eigenvalues):
+        solver1.set_state(i, subsystem1)
+        velocity_eig = np.concatenate((uB['g'], uS['g']), axis=-1)
+        entropy_eig = np.concatenate((s1B['g'], s1S['g']), axis=-1)
+        velocity_eigenfunctions.append(velocity_eig)
+        entropy_eigenfunctions.append(entropy_eig)
+        KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real
+        KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real
+        integ_energy = ball_avg(KEB)[0]
+        integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
+        integ_energies[i] = integ_energy.real
+        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight1)
+        s1_amplitudes[i] = np.sqrt(s1_surf_value.real)
+
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['good_evalues'] = solver1.eigenvalues
+        f['good_omegas']  = solver1.eigenvalues.real
+        f['s1_amplitudes']  = s1_amplitudes
+        f['integ_energies'] = integ_energies
+        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
+        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
+    gc.collect()
