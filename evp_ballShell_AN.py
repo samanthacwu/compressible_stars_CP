@@ -444,6 +444,7 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
         return N_list
 
     #Velocity only
+    NmaxB = bB.radial_basis.shape[-1] - 1
     for subproblem in solver.subproblems:
         ell = subproblem.group[1]
         L = subproblem.left_perm.T @ subproblem.L_min
@@ -641,7 +642,7 @@ def set_state(solver, namespace, i):
     s1S['c'][0,0,:] = eigenvector[4*(NcB+NcS) + NcB:5*(NcB+NcS)]
 
 
-def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-2):
+def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-3):
     good_values1 = []
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
@@ -690,15 +691,15 @@ def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2
                 u1 /= u1[2,:].max()
                 u2 /= u2[2,:].max()
 
-                plt.plot(r1, u1[2,:].real, c='orange', lw=3)
-                plt.plot(r2, u2[2,:].real, c='indigo')
-                plt.show()
-
                 vector_diff = np.max(np.abs(u1[2,:] - u2[2,:]))
                 print('vdiff', vector_diff)
                 if vector_diff < cutoff2:
                     good_values1.append(i)
                     good_values2.append(j)
+                    plt.plot(r1, u1[2,:].real, c='orange', lw=3)
+                    plt.plot(r2, u2[2,:].real, c='indigo')
+                    plt.show()
+
 
     solver1.eigenvalues = solver1.eigenvalues[good_values1]
     solver2.eigenvalues = solver2.eigenvalues[good_values2]
@@ -731,14 +732,6 @@ for subsystem in solver1.eigenvalue_subproblem.subsystems:
         subsystem1 = subsystem
         break
 solver1.eigenvalues /= tau
-
-import gc
-gc.collect()
-
-
-with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-    f['good_evalues'] = solver1.eigenvalues
-    f['good_omegas']  = solver1.eigenvalues.real
 
 if NmaxB_hires is not None:
     logger.info('solving hires eigenvalue')
