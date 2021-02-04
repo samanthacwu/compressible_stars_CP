@@ -157,6 +157,8 @@ ddt       = lambda A: operators.TimeDerivative(A)
 transpose = lambda A: operators.TransposeComponents(A)
 radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
+LiftTauB   = lambda A: operators.LiftTau(A, bB, -1)
+LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
 
 # Fields
 uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
@@ -389,12 +391,12 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB  = cross(uB, curl(uB))"), condition = "nθ != 0")
+#problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt)   = - dot(uB, grad(uB))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS = cross(uS, curl(uS))"), condition = "nθ != 0")
+#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS  + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2)   = - dot(uS, grad(uS))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -406,9 +408,9 @@ grads1B = grad(s1B)
 grads1S = grad(s1S)
 grads1B.store_last = True
 grads1S.store_last = True
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
+problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) + LiftTauB(tB) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
 ### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2)  = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
 
 
 #Velocity BCs ell != 0
@@ -435,115 +437,6 @@ solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
 logger.info("solver built")
 
-# Add taus
-alpha_BC_ball = 0
-
-def C_ball(N, ell, deg):
-    ab = (alpha_BC_ball,ell+deg+0.5)
-    cd = (2,            ell+deg+0.5)
-    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
-
-# ChebyshevV
-alpha_BC_shell = (2-1/2, 2-1/2)
-
-def C_shell(N):
-    ab = alpha_BC_shell
-    cd = (bS.radial_basis.alpha[0]+2,bS.radial_basis.alpha[1]+2)
-    return dedalus_sphere.jacobi.coefficient_connection(N,ab,cd)
-
-def BC_rows(N, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N + 1)
-    return N_list
-
-#Velocity only
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    L = subproblem.left_perm.T @ subproblem.L_min
-    shape = L.shape
-    NL = NmaxB - ell//2 + 1
-    NS = bS.shape[-1]
-
-
-    if dtype == np.complex128:
-        tau_columns = np.zeros((shape[0], 12))
-        N0, N1, N2, N3, N4 = BC_rows(NmaxB - ell//2, 5)
-        N4, N5, N6, N7, N8 = N3 + BC_rows(NS-1, 5)
-        if ell != 0:
-            #ball
-            tau_columns[:N0,   0] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N1:N2, 1] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N2:N3, 2] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N3:N4, 3] = (C_ball(NmaxB, ell,  0))[:,-1]
-            #shell
-            tau_columns[N4:N5, 4]  = (C_shell(NS))[:,-1]
-            tau_columns[N4:N5, 8]  = (C_shell(NS))[:,-2]
-            tau_columns[N6:N7, 5]  = (C_shell(NS))[:,-1]
-            tau_columns[N6:N7, 9]  = (C_shell(NS))[:,-2]
-            tau_columns[N7:N8, 6]  = (C_shell(NS))[:,-1]
-            tau_columns[N7:N8, 10]  = (C_shell(NS))[:,-2]
-            tau_columns[N8:N8+NS, 7]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 11]  = (C_shell(NS))[:,-2]
-            L[:,-12:] = tau_columns
-        else:
-            tau_columns[:N0,   0] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N4:N5, 4]  = (C_shell(NS))[:,-1]
-            tau_columns[N4:N5, 8]  = (C_shell(NS))[:,-2]
-            L[:,N8+NS+0] = tau_columns[:,0].reshape((shape[0],1))
-            L[:,N8+NS+4] = tau_columns[:,4].reshape((shape[0],1))
-            L[:,N8+NS+8] = tau_columns[:,8].reshape((shape[0],1))
-    elif dtype == np.float64:
-        tau_columns = np.zeros((shape[0], 24))
-        N0, N1, N2, N3 = BC_rows(NmaxB - ell//2, 4) *2
-        N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4) * 2
-        if ell != 0:
-            #velocity
-            #ball
-            tau_columns[N0:N0+NL, 0] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N1:N1+NL, 1] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N2:N2+NL, 2] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N0+NL:N0+2*NL, 3] = (C_ball(NmaxB, ell, -1))[:,-1]
-            tau_columns[N1+NL:N1+2*NL, 4] = (C_ball(NmaxB, ell, +1))[:,-1]
-            tau_columns[N2+NL:N2+2*NL, 5] = (C_ball(NmaxB, ell,  0))[:,-1]
-            #shell
-            tau_columns[N4:N4+NS, 6]   = (C_shell(NS))[:,-1]
-            tau_columns[N4:N4+NS, 7]   = (C_shell(NS))[:,-2]
-            tau_columns[N5:N5+NS, 10]  = (C_shell(NS))[:,-1]
-            tau_columns[N5:N5+NS, 11]  = (C_shell(NS))[:,-2]
-            tau_columns[N6:N6+NS, 14]  = (C_shell(NS))[:,-1]
-            tau_columns[N6:N6+NS, 15]  = (C_shell(NS))[:,-2]
-            tau_columns[N4+NS:N4+2*NS, 8]  = (C_shell(NS))[:,-1]
-            tau_columns[N4+NS:N4+2*NS, 9] = (C_shell(NS))[:,-2]
-            tau_columns[N5+NS:N5+2*NS, 12] = (C_shell(NS))[:,-1]
-            tau_columns[N5+NS:N5+2*NS, 13] = (C_shell(NS))[:,-2]
-            tau_columns[N6+NS:N6+2*NS, 16] = (C_shell(NS))[:,-1]
-            tau_columns[N6+NS:N6+2*NS, 17] = (C_shell(NS))[:,-2]
-
-            #entropy
-            N8 = N7+2*NL
-            tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
-            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
-            tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
-
-            L[:,-24:] = tau_columns
-        else:
-            N8 = N7+2*NL
-            tau_columns[N7:N7+NL, 18]      = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N7+NL:N7+2*NL, 19] = (C_ball(NmaxB, ell,  0))[:,-1]
-            tau_columns[N8:N8+NS, 20]  = (C_shell(NS))[:,-1]
-            tau_columns[N8:N8+NS, 21]  = (C_shell(NS))[:,-2]
-            tau_columns[N8+NS:N8+2*NS, 22] = (C_shell(NS))[:,-1]
-            tau_columns[N8+NS:N8+2*NS, 23] = (C_shell(NS))[:,-2]
-
-            L[:,-6:] = tau_columns[:,-6:].reshape((shape[0], 6))
-          
-    L.eliminate_zeros()
-    subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
-
 ## Check condition number and plot matrices
 #import matplotlib.pyplot as plt
 #plt.figure()
@@ -556,7 +449,6 @@ for subproblem in solver.subproblems:
 #    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
 #    plt.clf()
 #    print(subproblem.group, np.linalg.cond((M + L).A))
-
 
 ## Analysis Setup
 scalar_dt = 0.25*t_buoy
