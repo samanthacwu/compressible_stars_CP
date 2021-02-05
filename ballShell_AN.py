@@ -186,8 +186,10 @@ grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dt
 ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
 inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
 H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
 grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
@@ -195,8 +197,10 @@ grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dt
 ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
 inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
 H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
@@ -226,10 +230,14 @@ if args['--mesa_file'] is not None:
             grad_s0B['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0B'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape), axis=0), axis=0), axis=0)
             grad_ln_ρB['g']      = f['grad_ln_ρB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
             grad_ln_TB['g']      = f['grad_ln_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            grad_TB['g']         = f['grad_TB'][:,:,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
+            grad_inv_PeB['g']    = f['grad_inv_Pe_radB'][:, :,:,slicesB[-1]].reshape(grad_s0B['g'].shape)
         if np.prod(grad_s0S['g'].shape) > 0:
             grad_s0S['g']        = np.expand_dims(np.expand_dims(np.expand_dims(f['grad_s0S'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape), axis=0), axis=0), axis=0)
             grad_ln_ρS['g']      = f['grad_ln_ρS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
             grad_ln_TS['g']      = f['grad_ln_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            grad_TS['g']         = f['grad_TS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
+            grad_inv_PeS['g']    = f['grad_inv_Pe_radS'][:,:,:,slicesS[-1]].reshape(grad_s0S['g'].shape)
         inv_PeB['g']= f['inv_Pe_radB'][:,:,slicesB[-1]]
         ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
         ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
@@ -281,10 +289,6 @@ else:
         ln_ρ['g']        = np.log(ρ_func(basis_r))
         grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
         grad_ln_T['g']        = grad(ln_T).evaluate()['g']
-
-inv_PeB['g'] += 1/Pe
-inv_PeS['g'] += 1/Pe
-
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
@@ -408,9 +412,9 @@ grads1B = grad(s1B)
 grads1S = grad(s1S)
 grads1B.store_last = True
 grads1S.store_last = True
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad(inv_PeB)) + LiftTauB(tB) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
+problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
 ### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad(inv_PeS)) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2)  = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2)  = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
 
 
 #Velocity BCs ell != 0
