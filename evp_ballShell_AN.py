@@ -230,9 +230,7 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
     grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-    grad_s0B_cond      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-    grad_s0S_cond  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
 
 
 
@@ -357,17 +355,6 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     inv_TB = operators.Grid(inv_TB).evaluate()
     inv_TS = operators.Grid(inv_TS).evaluate()
 
-    if mesa_file is not None:
-        d_grads = rB**2*ρB['g']*TB['g']*H_effB['g']*np.gradient(rB.flatten())
-        grads = np.zeros((1,1,d_grads.shape[-1]))
-        for i in range(d_grads.shape[-1]-1):
-            grads[0,0,i+1] = grads[0,0,i] + d_grads[0,0,i]
-        grad_s0B_cond['g'][2,:,:,:] = - (1/(rB**2*ρB['g'][0,0,:]*TB['g'][0,0,:]*inv_PeB['g']))*grads
-    else:
-        grad_s0B_cond['g'][2,:,:,:] = - zero_to_one(rB, 0.2, width=0.1)*one_to_zero(rB, 0.75, width=0.1)/inv_PeB['g']
-#    plt.plot(rB.flatten(), grad_s0B_cond['g'][2,0,0,:])
-#    plt.show()
-
     omega = field.Field(name='omega', dist=d, dtype=dtype)
     ddt       = lambda A: -1j * omega * A
     grads1B = grad(s1B)
@@ -403,11 +390,11 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
     ### Ball energy
-#    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) + LiftTauB(tB) = 0 "))
-    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B + grad_s0B_cond) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = 0 "))
+#    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) + LiftTauB(tB) = 0 "))
+    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = 0 "))
     ### Shell energy
-#    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
-    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S + grad_s0S_cond) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
+#    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
+    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
 
 
     #Velocity BCs ell != 0
@@ -658,7 +645,6 @@ for i in range(Lmax):
         entropy_eigenfunctions.append(entropy_eig)
         KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real
         KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real
-        integ_energy = ball_avg(KEB)[0]
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
         integ_energies[i] = integ_energy.real
         s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight1)
