@@ -16,6 +16,8 @@ Options:
     --NB_hires=<Nmax>    The ball value of Nmax
     --NS_hires=<Nmax>    The shell value of Nmax
 
+    --ss_m=<m>           M value to use for subsystems / eigenvectors [default: 1]
+
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
     --safety=<s>         Timestep CFL safety factor [default: 0.4]
@@ -590,7 +592,7 @@ for i in range(Lmax):
     for subsystem in solver1.eigenvalue_subproblem.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
         print(ss_m, ss_ell, r_couple)
-        if ss_ell == ell and ss_m == 0:
+        if ss_ell == ell and ss_m == int(args['--ss_m']):
             subsystem1 = subsystem
             break
     solver1.eigenvalues /= tau
@@ -600,7 +602,7 @@ for i in range(Lmax):
         solver2 = solve_dense(solver2, ell)
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
-            if ss_ell == ell and ss_m == 0:
+            if ss_ell == ell and ss_m == int(args['--ss_m']):
                 subsystem2 = subsystem
                 break
         solver2.eigenvalues /= tau
@@ -637,12 +639,30 @@ for i in range(Lmax):
     s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
     velocity_eigenfunctions = []
     entropy_eigenfunctions = []
+    approx_velocity_eigenfunctions = []
+    approx_entropy_eigenfunctions = []
     for i, e in enumerate(solver1.eigenvalues):
         solver1.set_state(i, subsystem1)
-        velocity_eig = np.concatenate((uB['g'], uS['g']), axis=-1)
-        entropy_eig = np.concatenate((s1B['g'], s1S['g']), axis=-1)
+        uB_of_r = uB['g'][:,0,0,:]
+        uS_of_r = uS['g'][:,0,0,:]
+        s1B_of_r = s1B['g'][0,0,:]
+        s1S_of_r = s1S['g'][0,0,:]
+        velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
+        entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
+        approx_velocity_eigenfunctions.append(velocity_eig)
+        approx_entropy_eigenfunctions.append(entropy_eig)
+
+        uB_of_r  = np.sqrt(np.sum(np.sum(weight1*uB['g']*np.conj(uB['g']), axis=2), axis=1).real/volume1)
+        uS_of_r  = np.sqrt(np.sum(np.sum(weight1*uS['g']*np.conj(uS['g']), axis=2), axis=1).real/volume1)
+        s1B_of_r = np.sqrt(np.sum(np.sum(weight1*s1B['g']*np.conj(s1B['g']), axis=1), axis=0).real/volume1)
+        s1S_of_r = np.sqrt(np.sum(np.sum(weight1*s1S['g']*np.conj(s1S['g']), axis=1), axis=0).real/volume1)
+        velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
+        entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
         velocity_eigenfunctions.append(velocity_eig)
         entropy_eigenfunctions.append(entropy_eig)
+
+
+
         KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real
         KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
@@ -657,4 +677,10 @@ for i in range(Lmax):
         f['integ_energies'] = integ_energies
         f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
         f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
+        f['approx_velocity_eigenfunctions'] = np.array(approx_velocity_eigenfunctions)
+        f['approx_entropy_eigenfunctions'] = np.array(approx_entropy_eigenfunctions)
+        f['rB'] = namespace1['rB']
+        f['rS'] = namespace1['rS']
+        f['ρB'] = namespace1['ρB']['g']
+        f['ρS'] = namespace1['ρS']['g']
     gc.collect()

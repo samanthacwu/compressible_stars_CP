@@ -6,7 +6,7 @@ Usage:
     compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file_lores> <evp_data_file_hires> [options]
 
 Options:
-    --freq_power=<p>    Power law exponent for convective wave driving [default: -3.25]
+    --freq_power=<p>    Power law exponent for convective wave driving [default: -13/2]
 
 """
 from fractions import Fraction
@@ -61,20 +61,15 @@ plt.ylabel('decay time (day)')
 plt.title(r'$\ell = ${}'.format(ell))
 plt.savefig('scratch/ell{:03d}_decay_times.png'.format(ell), dpi=300)
 
-good_omegas = complex_eigenvalues.real
+omegas = complex_eigenvalues.real
 domegas = np.abs(np.gradient(good_omegas))
-Nm = good_omegas/domegas
-Nm_func = interp1d(good_omegas, Nm)
+Nm = omegas/domegas
 power_slope = lambda om: om**(float(Fraction(args['--freq_power'])))
 
-adjusted_energies = np.zeros_like(complex_eigenvalues, dtype=np.float64)
-for i, e in enumerate(complex_eigenvalues):
-    this_om = np.abs(e.real)
-    decay   = np.abs(e.imag)
-    shiode_energy = Nm_func(this_om)*power_slope(this_om)/decay
-    adjusted_energies[i] = s1_amplitudes[i]**2 * (shiode_energy / integ_energies[i])
+shiode_energies = Nm*power_slope(complex_eigenvalues.real)/complex_eigenvalues.imag
+adjusted_energies = s1_amplitudes**2 * (shiode_energies / integ_energies)
 
-match_freq_guess = 2.9e-1
+match_freq_guess = 2.5e-1
 if ell == 2:
     match_freq_guess = 4.1e-1
 elif ell == 3:
@@ -119,3 +114,15 @@ plt.ylabel('power')
 plt.title(r'$\ell = ${}'.format(ell))
 plt.ylim(1e-12, 1e0)
 plt.savefig('scratch/ell{:03d}_shiode_eqn_9.png'.format(ell), dpi=300)
+
+fig = plt.figure()
+plt.scatter(complex_eigenvalues.real/(2*np.pi), s1_amplitudes**2, c='blue', label='|s1|$^2$')#np.abs(eig_freqs[good_eig_freqs].real), E_of_om)
+plt.scatter(complex_eigenvalues.real/(2*np.pi), integ_energies, c='red', label='energy')#np.abs(eig_freqs[good_eig_freqs].real), E_of_om)
+plt.legend()
+plt.xscale('log')
+plt.yscale('log')
+plt.xlim(1e-1, 1e1)
+plt.xlabel('frequency (day$^{-1}$)')
+plt.ylabel('|s1|$^2$ / integ energy')
+plt.title(r'$\ell = ${}'.format(ell))
+plt.savefig('scratch/ell{:03d}_energy_s1_ratio.png'.format(ell), dpi=300)

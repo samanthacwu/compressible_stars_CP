@@ -383,4 +383,9 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['N2max'] = np.max((N2max_ball.value, N2max_shell.value))
     f['N2plateau'] = N2plateau
     f['cp_surf'] = cp_surf
+    f['r_mesa'] = r
+    f['N2_mesa'] = N2
+    f['S1_mesa'] = lamb_freq(1)
+    f['g_mesa'] = g 
+    f['cp_mesa'] = cp
 print(tau, tau/60/60/24)
