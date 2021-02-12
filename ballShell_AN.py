@@ -28,6 +28,7 @@ Options:
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
     --benchmark          If flagged, use simple benchmark initial conditions
+    --sponge             If flagged, add a "sponge" layer in the shell that damps out waves.
 
     --boost=<b>          A factor by which to boost grad_s0 [default: 1]
     --label=<label>      A label to add to the end of the output directory
@@ -86,6 +87,8 @@ NmaxS      = int(args['--NS'])
 L_dealias = N_dealias = dealias = 1
 
 out_dir = './' + sys.argv[0].split('.py')[0]
+if args['--sponge']:
+    out_dir += '_sponge'
 if args['--mesa_file'] is None:
     out_dir += '_polytrope'
 if args['--benchmark']:
@@ -158,13 +161,6 @@ LiftTauB   = lambda A: operators.LiftTau(A, bB, -1)
 LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
 
 # Fields
-#uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
-#pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#s1B   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#uS    = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
-#pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
-#s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
 tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
 tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
 tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
@@ -172,58 +168,33 @@ tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
 tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
 tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
-#ρB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#TB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#ρS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-#TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
-#nccs
+#nccs & fields
 scalar_variables = ['p', 's1']
 tensor_variables = ['u']
 tensor_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_T', 'grad_inv_Pe', 'grad_s0']
-scalar_nccs = ['ln_ρ', 'ln_T', 'inv_PeB']
-rhs_fields  = ['ρ', 'T', 'inv_T', 'H_eff', 'er']
+scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe']
+rhs_fields  = ['ρ', 'T', 'inv_T', 'H_eff']
+tensor_rhs_fields  = ['er']
 for label, b in zip(('B', 'S'), (bB, bS)):
     for field_name in scalar_variables + rhs_fields:
         locals()[field_name+label] = field.Field(dist=d, bases=(b,), dtype=dtype)
-    for field_name in tensor_variables:
+    for field_name in tensor_variables + tensor_rhs_fields:
         locals()[field_name+label] = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     for field_name in scalar_nccs:
         locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     for field_name in tensor_nccs:
         locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-#grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-#grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-#ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-#ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-#grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-#ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-#inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-#grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-#inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
-#H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-#grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-#ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-#ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-#grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-#ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-#inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-#grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-#inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
-#H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
-#
-#grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-#grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-    
+
+if args['--sponge']:
+    L_shell = r_outer - r_inner
+    spongeS = field.Field(dist=d, bases=(bS,), dtype=dtype)
+    spongeS['g'] = 0.5*(np.tanh((rS - r_inner - L_shell/2)/(0.05*L_shell)) + 1)
 
 # Get local slices
 slicesB     = GridSlicer(pB)
 slicesS     = GridSlicer(pS)
 
-#erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 erB['g'][2] = 1
-#erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 erS['g'][2] = 1
 
 grads0_boost = float(args['--boost'])#1/100
@@ -265,6 +236,11 @@ if args['--mesa_file'] is not None:
 
         max_dt = f['max_dt'][()] / np.sqrt(grads0_boost)
         t_buoy = 1
+
+        if args['--sponge']:
+            f_brunt = np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+            spongeS['g'] *= f_brunt
+
 else:
     logger.info("Using polytropic initial conditions")
     from scipy.interpolate import interp1d
@@ -382,13 +358,10 @@ else:
         s1B['g']
         s1B.require_scales(dealias)
 
-
-
 H_effB = operators.Grid(H_effB).evaluate()
 H_effS = operators.Grid(H_effS).evaluate()
 inv_TB = operators.Grid(inv_TB).evaluate()
 inv_TS = operators.Grid(inv_TS).evaluate()
-
 
 # Problem
 def eq_eval(eq_str):
@@ -401,7 +374,11 @@ problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="n
 problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
+if args['--sponge']:
+    spongeS = operators.Grid(spongeS).evaluate()
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS)) - spongeS*uS"), condition = "nθ != 0")
+else:
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -548,10 +525,19 @@ profiles.add_task((4*np.pi*r_valsB**2)*(0.5*ρB*urB*uB_squared),       name='KE_
 profiles.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*uS_squared),       name='KE_lumS',   layout='g', extra_op = profile_averagerS, extra_op_comm=True)
 analysis_tasks.append(profiles)
 
-surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
-surface_shell_slices.add_task(angComp(uS(r=r_outer), index=0), name='u_ang_surf', layout='g', extra_op=ORI(pS, angComp(uS(r=r_outer), index=0)))
-surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
-analysis_tasks.append(surface_shell_slices)
+if args['--sponge']:
+    surface_shell_slices = d3FileHandler(solver, '{:s}/wave_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
+    surface_shell_slices.add_task(radComp(uB(r=1.05)),  extra_op=ORI(pB, radComp(uB(r=1.05))), name='u(r=1.05)', layout='g')
+    surface_shell_slices.add_task(pomega_hat_B(r=1.05), extra_op=ORI(pB, pomega_hat_B(r=1.05)), name='pomega(r=1.05)',    layout='g')
+    for rval in [1.15, 1.30, 1.45, 1.60, 1.75]:
+        surface_shell_slices.add_task(radComp(uS(r=rval)),  extra_op=ORI(pS, radComp(uB(r=rval))), name='u(r={})'.format(rval), layout='g')
+        surface_shell_slices.add_task(pomega_hat_S(r=rval), extra_op=ORI(pS, pomega_hat_B(r=rval)), name='pomega(r={})'.format(rval),    layout='g')
+    analysis_tasks.append(surface_shell_slices)
+else:
+    surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
+    surface_shell_slices.add_task(angComp(uS(r=r_outer), index=0), name='u_ang_surf', layout='g', extra_op=ORI(pS, angComp(uS(r=r_outer), index=0)))
+    surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
+    analysis_tasks.append(surface_shell_slices)
 
 checkpoint = d3FileHandler(solver, '{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 checkpoint.add_task(s1B, name='s1B', scales=1, layout='c')
