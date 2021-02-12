@@ -23,6 +23,7 @@ Options:
     --RK222              Use RK222
     --SBDF4              Use SBDF4
     --safety=<s>         Timestep CFL safety factor [default: 0.4]
+    --CFL_max_r=<r>      zero out velocities above this radius value for CFL
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
@@ -186,11 +187,11 @@ for label, b in zip(('B', 'S'), (bB, bS)):
     for field_name in scalar_variables + rhs_fields:
         locals()[field_name+label] = field.Field(dist=d, bases=(b,), dtype=dtype)
     for field_name in tensor_variables:
-        locals()[field_name+label] = field.Field(dist=d, bases=(b,), dtype=dtype)
-    for field_name in tensor_nccs:
-        locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+        locals()[field_name+label] = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     for field_name in scalar_nccs:
         locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    for field_name in tensor_nccs:
+        locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 #grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 #grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
 #ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
@@ -564,9 +565,12 @@ imaginary_cadence = 100
 
 #CFL setup
 from dedalus.extras.flow_tools import CFL
-
+heaviside_cfl = field.Field(dist=d, bases=(bB,), dtype=dtype)
+heaviside_cfl['g'] = 1
+if args['--CFL_max_r'] is not None:
+    heaviside_cfl['g'][rB > float(args['--CFL_max_r'])] = 0
 my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
-my_cfl.add_velocity(uB)
+my_cfl.add_velocity(heaviside_cfl*uB)
 
 dt = max_dt
 
