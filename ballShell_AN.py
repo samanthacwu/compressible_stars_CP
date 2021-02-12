@@ -16,24 +16,20 @@ Options:
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
-    --safety=<s>         Timestep CFL safety factor [default: 0.4]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
-    --A0=<A>             Amplitude of initial noise [default: 1e-6]
-
-    --label=<label>      A label to add to the end of the output directory
 
     --SBDF2              Use SBDF2 (default)
     --RK222              Use RK222
     --SBDF4              Use SBDF4
+    --safety=<s>         Timestep CFL safety factor [default: 0.4]
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
+    --benchmark          If flagged, use simple benchmark initial conditions
 
-    --benchmark          If flagged, do a simple benchmark problem for comparison with the ball-shell
-
-    --boost=<b>          Inverse Mach number boost squared [default: 1]
-    --grad_s_rhs         Move grad_s0 term of energy eqn to RHS
+    --boost=<b>          A factor by which to boost grad_s0 [default: 1]
+    --label=<label>      A label to add to the end of the output directory
 """
 import os
 import time
@@ -161,12 +157,12 @@ LiftTauB   = lambda A: operators.LiftTau(A, bB, -1)
 LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
 
 # Fields
-uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
-pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
-s1B   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-uS    = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
-pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
-s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
+#uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+#pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#s1B   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#uS    = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+#pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
+#s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
 tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
@@ -175,50 +171,58 @@ tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
 tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
 tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
-ρB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-TB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
-ρS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
-TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
+#ρB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#TB   = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#ρS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
+#TS   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
 #nccs
-grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
-H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
-grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
-H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
-
-if args['--grad_s_rhs']:
-    grad_s0B      = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
-    grad_s0S      = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
-else:
-    grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-    grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+scalar_variables = ['p', 's1']
+tensor_variables = ['u']
+tensor_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_T', 'grad_inv_Pe', 'grad_s0']
+scalar_nccs = ['ln_ρ', 'ln_T', 'inv_PeB']
+rhs_fields  = ['ρ', 'T', 'inv_T', 'H_eff', 'er']
+for label, b in zip(('B', 'S'), (bB, bS)):
+    for field_name in scalar_variables + rhs_fields:
+        locals()[field_name+label] = field.Field(dist=d, bases=(b,), dtype=dtype)
+    for field_name in tensor_variables:
+        locals()[field_name+label] = field.Field(dist=d, bases=(b,), dtype=dtype)
+    for field_name in tensor_nccs:
+        locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+    for field_name in scalar_nccs:
+        locals()[field_name+label] = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+#grad_ln_ρB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+#grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+#ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+#ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+#grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+#ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+#inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
+#grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+#inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
+#H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
+#grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+#grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+#ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+#ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+#grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+#ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+#inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+#grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
+#inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
+#H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
+#
+#grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
+#grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
     
 
 # Get local slices
 slicesB     = GridSlicer(pB)
 slicesS     = GridSlicer(pS)
 
-erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+#erB  = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
 erB['g'][2] = 1
-erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+#erS  = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
 erS['g'][2] = 1
 
 grads0_boost = float(args['--boost'])#1/100
@@ -242,7 +246,6 @@ if args['--mesa_file'] is not None:
         ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
         ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
         H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
-        T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
         ρB['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρB'][:,:,slicesB[-1]]), axis=0), axis=0)
         TB['g']         = np.expand_dims(np.expand_dims(f['TB'][:,:,slicesB[-1]], axis=0), axis=0)
         inv_TB['g']     = 1/TB['g']
@@ -251,7 +254,6 @@ if args['--mesa_file'] is not None:
         ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
         ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
         H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
-        T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
         ρS['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρS'][:,:,slicesS[-1]]), axis=0), axis=0)
         TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
         inv_TS['g']     = 1/TS['g']
@@ -275,12 +277,12 @@ else:
     t_buoy      = 1
 
 
-    for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
-        T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
+    for basis_r, basis_fields in zip((rB, rS), ((TB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, grad_TB, H_effB, grad_s0B), (TS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, grad_TS, H_effS, grad_s0S))):
+        T, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, grad_T, H_eff, grad_s0 = basis_fields
 
         grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
         T['g']           = T_func(basis_r)
-        T_NCC['g']       = T_func(basis_r)
+        grad_T['g']      = grad(T).evaluate()['g']
         ρ['g']           = ρ_func(basis_r)
         ρ_NCC['g']       = ρ_func(basis_r)
         inv_T['g']       = T_func(basis_r)
@@ -395,12 +397,10 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uB) + grad(pB) - T_NCCB*grad(s1B) - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt)   = - dot(uB, grad(uB))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad(T_NCCB)*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
-#problem.add_equation(eq_eval("ddt(uS) + grad(pS) - T_NCCS*grad(s1S) - (1/Re)*momentum_viscous_termsS  + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2)   = - dot(uS, grad(uS))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad(T_NCCS)*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
