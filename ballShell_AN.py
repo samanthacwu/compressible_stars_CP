@@ -554,7 +554,8 @@ from dedalus.extras.flow_tools import CFL
 heaviside_cfl = field.Field(dist=d, bases=(bB,), dtype=dtype)
 heaviside_cfl['g'] = 1
 if args['--CFL_max_r'] is not None:
-    heaviside_cfl['g'][rB > float(args['--CFL_max_r'])] = 0
+    if np.sum(rB > float(args['--CFL_max_r'])) > 0:
+        heaviside_cfl['g'][:,:, rB.flatten() > float(args['--CFL_max_r'])] = 0
 my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*uB)
 

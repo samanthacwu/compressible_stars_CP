@@ -157,7 +157,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         for i, radius in enumerate(radii):
             ur = wf['u(r={})_cft'.format(radius)][()]
             p  = wf['pomega(r={})_cft'.format(radius)][()]
-            spectrum = (rho_func(radius)*(ur*np.conj(p)).real)**2
+            spectrum = radius**2*rho_func(radius)*(ur*np.conj(p)).real
             # Collapse negative frequencies
             for f in raw_freqs:
                 if f < 0:
@@ -165,13 +165,35 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
             # Sum over m's.
             spectrum = spectrum[raw_freqs >= 0,:]
             spectrum = np.sum(spectrum, axis=2)
-            spectrum = np.sqrt(spectrum)
             wf['wave_flux(r={})'.format(radius)] = spectrum
             if i == 0:
                 wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
                 wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
 
 fig = plt.figure()
+freqs_for_dfdell = [0.2, 0.5, 1]
+with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+    freqs = rf['real_freqs_inv_day'][()]
+    ells = rf['ells'][()].flatten()
+    for f in freqs_for_dfdell:
+        print('plotting f = {}'.format(f))
+        f_ind = np.argmin(np.abs(freqs - f))
+        for radius in radii:
+            wave_flux = rf['wave_flux(r={})'.format(radius)][f_ind, :]
+            plt.loglog(ells, ells*wave_flux, label='r={}'.format(radius))
+            if radius == np.min(np.array(radii)):
+                shift = (ells*wave_flux)[ells == 2]
+        plt.loglog(ells, shift*(ells/2)**4, c='k', label=r'$\ell^4$')
+        plt.legend(loc='best')
+        plt.title('f = {} 1/day'.format(f))
+        plt.xlabel(r'$\ell$')
+        plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
+        plt.ylim(1e-25, 1e-9)
+        plt.xlim(1, ells.max())
+        fig.savefig('{}/ell_spectrum_freq{}_invday.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
+        plt.clf()
+    
+ 
 for ell in range(11):
     if ell == 0: continue
     print('plotting ell = {}'.format(ell))
@@ -179,12 +201,16 @@ for ell in range(11):
         freqs = rf['real_freqs_inv_day'][()]
         for radius in radii:
             wave_flux = rf['wave_flux(r={})'.format(radius)][:,ell]
-            plt.loglog(freqs, wave_flux, label='r={}'.format(radius))
-    print(wave_flux)
+            plt.loglog(freqs, freqs*wave_flux, label='r={}'.format(radius))
+            if radius == np.min(np.array(radii)):
+                shift = (freqs*wave_flux)[freqs > 0.1][0]
+    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
+    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-2), c='grey', label=r'$f^{-2}$')
     plt.legend(loc='best')
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (1/day)')
-    plt.ylabel(r'$\frac{\partial^2 F}{\partial\ell\partial f}$')
+    plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
+    plt.ylim(1e-25, 1e-9)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
     
