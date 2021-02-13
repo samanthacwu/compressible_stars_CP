@@ -67,10 +67,10 @@ for f, ell in zip(ell_files, ell_values):
         integ_energies = f['integ_energies'][()]
         velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
         entropy_eigenfunctions  = f['entropy_eigenfunctions'][()]
+        wave_flux_eigenfunctions  = f['wave_flux_eigenfunctions'][()]
         rB  = f['rB'][()]
         rS  = f['rS'][()]
         r = np.concatenate((rB.flatten(), rS.flatten()))
-    print(velocity_eigenfunctions.shape)
 #
 #    plt.figure()
 ##    plt.scatter(evalues.real, s1_amplitudes, c='r')
@@ -96,11 +96,13 @@ for f, ell in zip(ell_files, ell_values):
         ax2.plot(r, velocity_eigenfunctions[i,1,:].imag/np.abs(velocity_eigenfunctions[i,2,:]).max())
         ax3.plot(r, velocity_eigenfunctions[i,2,:].imag/np.abs(velocity_eigenfunctions[i,2,:]).max())
         ax4.plot(r,    entropy_eigenfunctions[i,:].imag/np.abs(   entropy_eigenfunctions[i,:]).max())
-        ke = r**3/np.sqrt(N2_of_r(r)) * (ρ.flatten()*np.sum(velocity_eigenfunctions*np.conj(velocity_eigenfunctions), axis=1)[i,:])
-        pe = np.sqrt(2) * r**3/np.sqrt(N2_of_r(r)) * (ρ.flatten()*pre_PE_of_r(r)) * np.abs(entropy_eigenfunctions[i,:])**2
-        ax5.plot(r[N2_of_r(r) > 0], ke[N2_of_r(r) > 0], label='ke')
-        ax5.plot(r[N2_of_r(r) > 0], pe[N2_of_r(r) > 0], label='pe')
-        ax5.plot(r[N2_of_r(r) > 0], (ke+pe)[N2_of_r(r) > 0], label='sum')
+#        ke = r**3/np.sqrt(N2_of_r(r)) * (ρ.flatten()*np.sum(velocity_eigenfunctions*np.conj(velocity_eigenfunctions), axis=1)[i,:])
+#        pe = np.sqrt(2) * r**3/np.sqrt(N2_of_r(r)) * (ρ.flatten()*pre_PE_of_r(r)) * np.abs(entropy_eigenfunctions[i,:])**2
+#        ax5.plot(r[N2_of_r(r) > 0], ke[N2_of_r(r) > 0], label='ke')
+#        ax5.plot(r[N2_of_r(r) > 0], pe[N2_of_r(r) > 0], label='pe')
+#        ax5.plot(r[N2_of_r(r) > 0], (ke+pe)[N2_of_r(r) > 0], label='sum')
+        ax5.plot(r, wave_flux_eigenfunctions[i,:].real)
+        ax5.plot(r, wave_flux_eigenfunctions[i,:].imag)
         ax6.plot(r, np.sqrt(N2_of_r(r)), c='r', label='N')
         ax6.plot(r, S_of_r(r), c='k', label='S')
         ax6.axhline(evalues[i].real/(2*np.pi), c='orange', label='this mode')

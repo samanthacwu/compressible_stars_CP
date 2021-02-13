@@ -615,12 +615,16 @@ for i in range(Lmax):
     bB = namespace1['bB']
     ρS = namespace1['ρS']
     ρB = namespace1['ρB']
+    pS = namespace1['pS']
+    pB = namespace1['pB']
     uS = namespace1['uS']
     uB = namespace1['uB']
     s1S = namespace1['s1S']
     s1B = namespace1['s1B']
     for f in [ρS, ρB, uB, uS, s1S, s1B]:
         f.require_scales((1,1,1))
+    pomega_hat_B = pB - 0.5*dot(uB,uB)
+    pomega_hat_S = pS - 0.5*dot(uS,uS)
 
     ball_avg = BallVolumeAverager(s1B)
     shell_avg = ShellVolumeAverager(s1S)
@@ -641,8 +645,10 @@ for i in range(Lmax):
     entropy_eigenfunctions = []
     approx_velocity_eigenfunctions = []
     approx_entropy_eigenfunctions = []
+    wave_flux_eigenfunctions = []
     for i, e in enumerate(solver1.eigenvalues):
         solver1.set_state(i, subsystem1)
+        #Eigenfunctions at 0th m and ell index
         uB_of_r = uB['g'][:,0,0,:]
         uS_of_r = uS['g'][:,0,0,:]
         s1B_of_r = s1B['g'][0,0,:]
@@ -652,6 +658,7 @@ for i in range(Lmax):
         approx_velocity_eigenfunctions.append(velocity_eig)
         approx_entropy_eigenfunctions.append(entropy_eig)
 
+        #Eigenfunctions (average magnitude)
         uB_of_r  = np.sqrt(np.sum(np.sum(weight1*uB['g']*np.conj(uB['g']), axis=2), axis=1).real/volume1)
         uS_of_r  = np.sqrt(np.sum(np.sum(weight1*uS['g']*np.conj(uS['g']), axis=2), axis=1).real/volume1)
         s1B_of_r = np.sqrt(np.sum(np.sum(weight1*s1B['g']*np.conj(s1B['g']), axis=1), axis=0).real/volume1)
@@ -661,7 +668,16 @@ for i in range(Lmax):
         velocity_eigenfunctions.append(velocity_eig)
         entropy_eigenfunctions.append(entropy_eig)
 
-
+        #Wave flux
+        pomB = pomega_hat_B.evaluate()
+        pomS = pomega_hat_S.evaluate()
+        wave_fluxB = ρB['g']*uB['g'][2,:]*np.conj(pomB['g'])
+        wave_fluxS = ρS['g']*uS['g'][2,:]*np.conj(pomS['g'])
+#        wave_fluxB_of_r = np.sum(np.sum(weight1*wave_fluxB, axis=1), axis=0) 
+#        wave_fluxS_of_r = np.sum(np.sum(weight1*wave_fluxS, axis=1), axis=0) 
+        wave_fluxB_of_r = np.sqrt(np.sum(np.sum(weight1*np.abs(wave_fluxB)**2, axis=1), axis=0)) 
+        wave_fluxS_of_r = np.sqrt(np.sum(np.sum(weight1*np.abs(wave_fluxS)**2, axis=1), axis=0)) 
+        wave_flux_eigenfunctions.append(np.concatenate((wave_fluxB_of_r, wave_fluxS_of_r)))
 
         KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real
         KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real
@@ -675,6 +691,7 @@ for i in range(Lmax):
         f['good_omegas']  = solver1.eigenvalues.real
         f['s1_amplitudes']  = s1_amplitudes
         f['integ_energies'] = integ_energies
+        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
         f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
         f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
         f['approx_velocity_eigenfunctions'] = np.array(approx_velocity_eigenfunctions)
