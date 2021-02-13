@@ -23,7 +23,8 @@ Options:
     --writes_per_spectrum=<w>           Max number of writes per power spectrum
 
 """
-
+import re
+import gc
 import os
 import time
 import sys
@@ -68,60 +69,94 @@ if n_files is not None:
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_transform_{}'.format(data_dir)
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='even')
-fields = ['s1_surf',]
-bases  = []
 
-Lmax = int(root_dir.split('Re')[-1].split('_')[1].split('x')[0])
+bases = []
+if not plotter.idle:
+    with h5py.File(plotter.files[0], 'r') as f:
+        fields = list(f['tasks'].keys())
 
-# Parameters
-dtype = np.float64
+    Lmax = int(root_dir.split('Re')[-1].split('_')[1].split('x')[0])
 
-# Bases
-dealias = 1
-c = coords.S2Coordinates('φ', 'θ')
-d = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
-b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dtype)
-φ, θ = b.local_grids((dealias, dealias))
-φg, θg = b.global_grids((dealias, dealias))
+    # Parameters
+    dtype = np.float64
 
-ells = b.local_ell
-ms = b.local_m
-ell_values = np.unique(ells)
-m_values = np.unique(ms)
-ell_ms = np.zeros_like(ell_values)
-for i, ell in enumerate(ell_values):
-    ell_ms[i] = int(np.sum(ells == ell)/2)
+    res = re.compile('(.*)\(r=(.*)\)')
 
-field = field.Field(dist=d, bases=(b,), dtype=dtype)
+    # Bases
+    dealias = 1
+    c = coords.S2Coordinates('φ', 'θ')
+    d = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
+    global_b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dtype)
+    φ, θ = global_b.local_grids((dealias, dealias))
+    φg, θg = global_b.global_grids((dealias, dealias))
 
-out_bs = None
-out_tsk = OrderedDict()
-for f in fields: out_tsk[f] = []
-out_write  = []
-out_time   = []
-while plotter.files_remain(bases, fields):
-    file_name = plotter.files[plotter.current_filenum]
-    file_num  = int(file_name.split('_s')[-1].split('.h5')[0])
-    bs, tsk, write, time = plotter.read_next_file()
-    out_bs = bs
-    outputs = OrderedDict()
-    for f in fields:
-        out_field = np.zeros((time.shape[0], ell_values.shape[0], m_values.shape[0]), dtype=np.complex128)
-        for i in range(time.shape[0]):
-            field['g'] = tsk[f][i,:,:,0]
-            for j, ell in enumerate(ell_values):
-                for k, m in enumerate(m_values):
-                    bool_map = (ell == ells)*(m == ms)
-                    if np.sum(bool_map) > 0:
-                        values = field['c'][bool_map]
-                        out_field[i,j,k] = values[0] + 1j*values[1]
+    ells = global_b.local_ell
+    ms = global_b.local_m
+    ell_values = np.unique(ells)
+    m_values = np.unique(ms)
+    ell_ms = np.zeros_like(ell_values)
+    for i, ell in enumerate(ell_values):
+        ell_ms[i] = int(np.sum(ells == ell)/2)
 
-            out_field[i,:,0]  /= np.sqrt(2) #m == 0 normalization
-            out_field[i,:,1:] /= 2          #m != 0 normalization
-        outputs[f] = out_field
-    with h5py.File('{}/{}/{}_s{}.h5'.format(root_dir, out_dir, out_dir, file_num), 'w') as f:
-        f['ells'] = np.expand_dims(ell_values, axis=(0,2))
-        f['ms']   = np.expand_dims(m_values, axis=(0,1))
-        f['time'] = time
-        for fd in fields:
-            f[fd] = outputs[fd]
+    global_s_field = field.Field(dist=d, bases=(global_b,), dtype=dtype)
+    global_v_field = field.Field(dist=d, bases=(global_b,), tensorsig=(c,), dtype=dtype)
+
+    out_bs = None
+    out_tsk = OrderedDict()
+    for f in fields: out_tsk[f] = []
+    out_write  = []
+    out_time   = []
+    while plotter.files_remain(bases, fields):
+        file_name = plotter.files[plotter.current_filenum]
+        file_num  = int(file_name.split('_s')[-1].split('.h5')[0])
+        bs, tsk, write, time = plotter.read_next_file()
+        out_bs = bs
+        outputs = OrderedDict()
+        for f in fields:
+            if res.match(f):
+                radius = float(f.split('r=')[-1].split(')')[0])
+                b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=radius, dtype=dtype)
+                s_field = field.Field(dist=d, bases=(b,), dtype=dtype)
+                v_field = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+            else:
+                s_field = global_s_field
+                v_field = global_v_field
+                
+            task_data = tsk[f][()].squeeze()
+            shape = list(task_data.shape)
+            shape[-1] = m_values.shape[0]
+            shape[-2] = ell_values.shape[0]
+            out_field = np.zeros(shape, dtype=np.complex128)
+            logger.info('transforming {}'.format(f))
+            for i in range(shape[0]):
+                if len(shape) == 3:
+                    s_field['g'] = task_data[i,:]
+                else:
+                    v_field['g'] = task_data[i,:]
+                for j, ell in enumerate(ell_values):
+                    for k, m in enumerate(m_values):
+                        bool_map = (ell == ells)*(m == ms)
+                        if np.sum(bool_map) > 0:
+                            if len(shape) == 3:
+                                values = s_field['c'][bool_map]
+                                out_field[i,j,k] = values[0] + 1j*values[1]
+                            else:
+                                for v in range(shape[1]):
+                                    values = v_field['c'][v, bool_map]
+                                    out_field[i,v,j,k] = values[0] + 1j*values[1]
+
+                if len(shape) == 3:
+                    out_field[i,:,0]  /= np.sqrt(2) #m == 0 normalization
+                    out_field[i,:,1:] /= 2          #m != 0 normalization
+                else:
+                    out_field[i,:,:,0]  /= np.sqrt(2) #m == 0 normalization
+                    out_field[i,:,:,1:] /= 2          #m != 0 normalization
+            outputs[f] = out_field
+            gc.collect()
+        with h5py.File('{}/{}/{}_s{}.h5'.format(root_dir, out_dir, out_dir, file_num), 'w') as f:
+            f['ells'] = np.expand_dims(ell_values, axis=(0,2))
+            f['ms']   = np.expand_dims(m_values, axis=(0,1))
+            f['time'] = time
+            for fd in fields:
+                f[fd] = outputs[fd]
+

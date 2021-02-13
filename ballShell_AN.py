@@ -188,7 +188,7 @@ for label, b in zip(('B', 'S'), (bB, bS)):
 if args['--sponge']:
     L_shell = r_outer - r_inner
     spongeS = field.Field(dist=d, bases=(bS,), dtype=dtype)
-    spongeS['g'] = 0.5*(np.tanh((rS - r_inner - L_shell/2)/(0.05*L_shell)) + 1)
+    spongeS['g'] = 0.5*(np.tanh((rS - (r_inner + 2*L_shell/3))/(0.1*L_shell)) + 1)
 
 # Get local slices
 slicesB     = GridSlicer(pB)
@@ -238,7 +238,7 @@ if args['--mesa_file'] is not None:
         t_buoy = 1
 
         if args['--sponge']:
-            f_brunt = np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+            f_brunt = f['tau'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
             spongeS['g'] *= f_brunt
 
 else:
@@ -572,8 +572,8 @@ try:
     while solver.ok:
         solver.step(dt)
         dt = my_cfl.compute_dt()
-        int_frac = int(np.ceil(max_dt/dt))
-        dt = max_dt/int_frac
+        base2_frac = 2**(np.ceil(np.log2(max_dt/dt)))
+        dt = max_dt/base2_frac
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
