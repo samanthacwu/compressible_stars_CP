@@ -186,6 +186,14 @@ s_c = Ma2*(gamma0-1)*cp0
 Pe_rad = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
 
+sim_inv_Pe_rad = np.copy(inv_Pe_rad)
+sim_inv_Pe_rad -= 1/simulation_Re
+sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
+r_Pe_min = r[sim_inv_Pe_rad > 0].min()
+sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
+sim_inv_Pe_rad += 1/simulation_Re
+
+
 r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
 r_inner /= L
@@ -234,20 +242,30 @@ def make_NCC(basis, interp_args, Nmax=32, vector=False):
     return this_field, interp
 
 ### Radiative diffusivity
-NmaxB, NmaxS = 8, 40#np.min((true_NmaxS - 1, 126))
+NmaxB, NmaxS = 8, 32#np.min((true_NmaxS - 1, 126))
 gradPe_B_cutoff = 10
-gradPe_S_cutoff = NmaxS
-inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  (1/simulation_Re) + inv_Pe_rad[ball_bool]), Nmax=NmaxB)
-inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, (1/simulation_Re) + inv_Pe_rad[shell_bool]), Nmax=NmaxS)
+gradPe_S_cutoff = 60
+inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool]), Nmax=NmaxB)
+inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, sim_inv_Pe_rad[shell_bool]), Nmax=NmaxS)
+#plt.figure()
+#plt.plot(rS.flatten(), inv_Pe_rad_fieldS['g'][0,0,:])
+#plt.axhline(1/simulation_Re)
+#plt.yscale('log')
+#plt.show()
 grad_inv_Pe_B = grad(inv_Pe_rad_fieldB).evaluate()
 grad_inv_Pe_B['c'][:,:,:,gradPe_B_cutoff:] = 0
 grad_inv_Pe_S = grad(inv_Pe_rad_fieldS).evaluate()
+grad_inv_Pe_S['c'][:,:,:,NmaxS:] = 0
+grad_inv_Pe_S['g'][2,:] *= zero_to_one(rS, (r_Pe_min/L).value - 0.25  , width=0.25)
 grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 #grad_inv_Pe_rad_fieldB, grad_inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  np.gradient(inv_Pe_rad, r/L)[ball_bool]), Nmax=NmaxB)
 #grad_inv_Pe_rad_fieldS, grad_inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, np.gradient(inv_Pe_rad, r/L)[shell_bool]), Nmax=NmaxS)
+grad_inv_Pe_rad = np.gradient(inv_Pe_rad, r)
 if plot:
-    plot_ncc_figure(rB.flatten(), inv_Pe_rad_interpB.flatten(), inv_Pe_rad_fieldB['g'].flatten(), NmaxB, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir, log=True)
-    plot_ncc_figure(rS.flatten(), inv_Pe_rad_interpS.flatten(), inv_Pe_rad_fieldS['g'].flatten(), NmaxS, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir, log=True)
+    plot_ncc_figure(rB.flatten(), np.interp(rB.flatten(), r_ball, inv_Pe_rad[ball_bool]), inv_Pe_rad_fieldB['g'].flatten(), NmaxB, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir, log=True)
+    plot_ncc_figure(rS.flatten(), np.interp(rS.flatten(), r_shell,inv_Pe_rad[shell_bool]), inv_Pe_rad_fieldS['g'].flatten(), NmaxS, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir, log=True)
+    plot_ncc_figure(rB.flatten(), np.interp(rB.flatten(), r_ball, np.gradient(inv_Pe_rad[ball_bool], r_ball)), grad_inv_Pe_B['g'][2].flatten(), NmaxB, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_radB", out_dir=out_dir, log=True)
+    plot_ncc_figure(rS.flatten(), np.interp(rS.flatten(), r_shell,np.gradient(inv_Pe_rad[shell_bool], r_shell)), grad_inv_Pe_S['g'][2].flatten(), NmaxS, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_radS", out_dir=out_dir, log=True)
 
 
 
