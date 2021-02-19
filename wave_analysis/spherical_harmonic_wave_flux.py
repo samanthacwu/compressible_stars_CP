@@ -33,11 +33,7 @@ import h5py
 import numpy as np
 from docopt import docopt
 from configparser import ConfigParser
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
-from dedalus.tools import logging
-from dedalus.tools.parsing import split_equation
 from scipy import sparse
-from mpi4py import MPI
 from scipy.interpolate import interp1d
 
 from plotpal.file_reader import SingleFiletypePlotter as SFP
@@ -169,6 +165,12 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
             if i == 0:
                 wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
                 wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
+    with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'w') as of:
+        of['wave_flux'] = wf['wave_flux(r={})'.format(radii[1])][()]
+        of['real_freqs'] = wf['real_freqs'][()]
+        of['real_freqs_inv_day'] = wf['real_freqs_inv_day'][()]
+        of['ells'] = wf['ells'][()]
+        
 
 fig = plt.figure()
 freqs_for_dfdell = [0.2, 0.5, 1]
