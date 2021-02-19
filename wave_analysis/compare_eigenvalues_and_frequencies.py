@@ -3,7 +3,7 @@ Compare EVP output frequencies to a wave spectrum.
 
 Usage:
     compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file> [options]
-    compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file_lores> <evp_data_file_hires> [options]
+    compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file> <wave_flux_file> [options]
 
 Options:
     --freq_power=<p>    Power law exponent for convective wave driving [default: -13/2]
@@ -20,15 +20,13 @@ args = docopt(__doc__)
 
 sh_spectrum_file = args['<sh_spectrum_file>']
 evp_data_file = args['<evp_data_file>']
-evp_data_file_lores = args['<evp_data_file_lores>']
-evp_data_file_hires = args['<evp_data_file_hires>']
+wave_flux_file = args['<wave_flux_file>']
 
-if evp_data_file_hires is None:
-    ell = int(evp_data_file.split('ell')[-1].split('_')[0])
-    with h5py.File(evp_data_file, 'r') as ef:
-        complex_eigenvalues = ef['good_evalues'][()]
-        s1_amplitudes = ef['s1_amplitudes'][()]
-        integ_energies = ef['integ_energies'][()]
+ell = int(evp_data_file.split('ell')[-1].split('_')[0])
+with h5py.File(evp_data_file, 'r') as ef:
+    complex_eigenvalues = ef['good_evalues'][()]
+    s1_amplitudes = ef['s1_amplitudes'][()]
+    integ_energies = ef['integ_energies'][()]
 
 with h5py.File(sh_spectrum_file, 'r') as sf:
     power_per_ell = sf['power_per_ell'][()]
@@ -62,48 +60,61 @@ plt.title(r'$\ell = ${}'.format(ell))
 plt.savefig('scratch/ell{:03d}_decay_times.png'.format(ell), dpi=300)
 
 omegas = complex_eigenvalues.real
-domegas = np.abs(np.gradient(good_omegas))
+real_frequencies = omegas/(2*np.pi)
+domegas = np.abs(np.gradient(omegas))
 Nm = omegas/domegas
-power_slope = lambda om: om**(float(Fraction(args['--freq_power'])))
 
-shiode_energies = Nm*power_slope(complex_eigenvalues.real)/complex_eigenvalues.imag
-adjusted_energies = s1_amplitudes**2 * (shiode_energies / integ_energies)
+if wave_flux_file is None:
+    power_slope = lambda om: om**(float(Fraction(args['--freq_power'])))
+    shiode_energies = Nm*power_slope(complex_eigenvalues.real)/complex_eigenvalues.imag
+    adjusted_energies = s1_amplitudes**2 * (shiode_energies / integ_energies)
 
-match_freq_guess = 2.5e-1
-if ell == 2:
-    match_freq_guess = 4.1e-1
-elif ell == 3:
-    match_freq_guess = 5e-1
-elif ell == 4:
-    match_freq_guess = 6.4e-1
-elif ell == 5:
-    match_freq_guess = 6e-1
-elif ell == 6:
-    match_freq_guess = 7.5e-1
-elif ell == 7:
-    match_freq_guess = 8e-1
-elif ell == 8:
-    match_freq_guess = 9.5e-1
-elif ell == 9:
-    match_freq_guess = 1
+    match_freq_guess = 2.5e-1
+    if ell == 2:
+        match_freq_guess = 4.1e-1
+    elif ell == 3:
+        match_freq_guess = 5e-1
+    elif ell == 4:
+        match_freq_guess = 6.4e-1
+    elif ell == 5:
+        match_freq_guess = 6e-1
+    elif ell == 6:
+        match_freq_guess = 7.5e-1
+    elif ell == 7:
+        match_freq_guess = 8e-1
+    elif ell == 8:
+        match_freq_guess = 9.5e-1
+    elif ell == 9:
+        match_freq_guess = 1
 
-real_frequencies = good_omegas/(2*np.pi)
-match_freq = real_frequencies[real_frequencies > match_freq_guess][-1]
-match_freq_sim = np.argmin(np.abs(freqs - match_freq))
-peak_found = False
-while not peak_found:
-    if   power[match_freq_sim-10:match_freq_sim].max()    < power[match_freq_sim]\
-     and power[match_freq_sim+1:match_freq_sim+11].max()  < power[match_freq_sim]:
-        peak_found = True
-    else:
-        match_freq_sim -= 1
-    print(freqs[match_freq_sim], match_freq)
-print(real_frequencies)
+    match_freq = real_frequencies[real_frequencies > match_freq_guess][-1]
+    match_freq_sim = np.argmin(np.abs(freqs - match_freq))
+    peak_found = False
+    while not peak_found:
+        if   power[match_freq_sim-10:match_freq_sim].max()    < power[match_freq_sim]\
+         and power[match_freq_sim+1:match_freq_sim+11].max()  < power[match_freq_sim]:
+            peak_found = True
+        else:
+            match_freq_sim -= 1
+        print(freqs[match_freq_sim], match_freq)
+    print(real_frequencies)
 
-adjusted_energies *= power[match_freq_sim]/adjusted_energies[real_frequencies == match_freq][0]
-#print(real_power[real_frequencies >= match_freq], real_frequencies, match_freq)
+    adjusted_energies *= power[match_freq_sim]/adjusted_energies[real_frequencies == match_freq][0]
+    #print(real_power[real_frequencies >= match_freq], real_frequencies, match_freq)
 
+else:
+    with h5py.File(wave_flux_file, 'r') as f:
+        ells = np.expand_dims(f['ells'][()].flatten(), axis=0)
+        freqs_inv_day = np.expand_dims(f['real_freqs_inv_day'][()], axis=1)
+        freqs_sim = np.expand_dims(f['real_freqs'][()], axis=1)
+        d2F_dell_df = f['wave_flux'][()]
+        d2F_dlnell_dlnf = ells*freqs_sim*d2F_dell_df
+        sim_omegas = 2*np.pi*freqs_inv_day
+        this_ell_flux = d2F_dlnell_dlnf[:, ells.flatten() == ell]
+        wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
 
+    shiode_energies = Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(complex_eigenvalues.imag)
+    adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
 fig = plt.figure()
 plt.loglog(freqs, power, c='k')
