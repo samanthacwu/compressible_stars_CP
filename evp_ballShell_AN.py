@@ -572,6 +572,32 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
     solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
     return solver1, solver2
 
+r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
+dr1 = np.gradient(r1)
+def IP(velocity1, velocity2):
+    int_field = np.sum(velocity1*np.conj(velocity2), axis=0)
+    return np.sum(int_field*r1**2*dr1)/np.sum(r1**2*dr1)
+
+
+def calculate_duals(velocity_list):
+
+    velocity_list = np.array(velocity_list)
+    
+    n_modes = velocity_list.shape[0]
+    IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+    for i in range(n_modes):
+        if i % 10: logger.info("duals {}/{}".format(i, n_modes))
+        for j in range(n_modes):
+            IP_matrix[i,j] = IP(velocity_list[i], velocity_list[j])
+    
+    IP_inv = np.linalg.inv(IP_matrix)
+
+    vel_dual = np.zeros_like(velocity_list)
+    for i in range(3):
+        vel_dual[:,i,:] = np.einsum('ij,ik->kj', velocity_list[:,i,:], np.conj(IP_inv))
+
+    return vel_dual
+
 if mesa_file1 is not None:
     with h5py.File(mesa_file1, 'r') as f:
         tau = f['tau'][()]/(60*60*24)
@@ -592,7 +618,7 @@ for i in range(Lmax):
     subsystems1 = []
     for subsystem in solver1.eigenvalue_subproblem.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
-        if ss_ell == ell:
+        if ss_ell == ell and ss_m == 1:
             subsystems1.append(subsystem)
 
     if NmaxB_hires is not None:
@@ -601,7 +627,7 @@ for i in range(Lmax):
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
-            if ss_ell == ell:
+            if ss_ell == ell and ss_m == 1:
                 subsystems2.append(subsystem)
                 break
         logger.info('cleaning bad eigenvalues out')
@@ -649,16 +675,27 @@ for i in range(Lmax):
             solver1.set_state(i, subsystem)
 
         #Eigenfunctions at 0th m and ell index
-        uB_of_r = uB['g'][:,0,0,:]
-        uS_of_r = uS['g'][:,0,0,:]
-        s1B_of_r = s1B['g'][0,0,:]
-        s1S_of_r = s1S['g'][0,0,:]
-        s1B_of_r = s1B['g'][0,0,:]
-        s1S_of_r = s1S['g'][0,0,:]
+        phi_theta_ind = np.unravel_index(np.abs(uS['g'].argmax()), uS['g'].shape)
+        uB_of_r = uB['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
+        uS_of_r = uS['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
+        s1B_of_r = s1B['g'][phi_theta_ind[1],phi_theta_ind[2],:]
+        s1S_of_r = s1S['g'][phi_theta_ind[1],phi_theta_ind[2],:]
+#        uB_of_r = uB.data[:,(shell_m1 ==1)*(shell_ell1 == ell),:][:,0,:]
+#        uS_of_r = uS.data[:,(shell_m1 ==1)*(shell_ell1 == ell),:][:,0,:]
+#        s1B_of_r = s1B.data[(shell_m1 == 1)*(shell_ell1 == ell)][0,:]
+#        s1S_of_r = s1S.data[(shell_m1 == 1)*(shell_ell1 == ell)][0,:]
         velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
         entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
-        approx_velocity_eigenfunctions.append(velocity_eig)
-        approx_entropy_eigenfunctions.append(entropy_eig)
+        shift = np.abs(velocity_eig[2,:]).max()
+        approx_velocity_eigenfunctions.append(velocity_eig/shift)
+        approx_entropy_eigenfunctions.append(entropy_eig/shift)
+
+        uB['g'] /= shift
+        uS['g'] /= shift
+        s1B['g'] /= shift
+        s1S['g'] /= shift
+        pS['g'] /= shift
+        pB['g'] /= shift
 
         #Eigenfunctions (average magnitude)
         uB_of_r  = np.sqrt(np.sum(np.sum(weight1*uB['g']*np.conj(uB['g']), axis=2), axis=1).real/volume1)
@@ -702,4 +739,24 @@ for i in range(Lmax):
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
+
+    velocity_duals = calculate_duals(approx_velocity_eigenfunctions)
+    print(velocity_duals)
+    with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['good_evalues'] = solver1.eigenvalues/tau
+        f['good_omegas']  = solver1.eigenvalues.real/tau
+        f['s1_amplitudes']  = s1_amplitudes
+        f['integ_energies'] = integ_energies
+        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
+        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
+        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
+        f['approx_velocity_eigenfunctions'] = np.array(approx_velocity_eigenfunctions)
+        f['approx_entropy_eigenfunctions'] = np.array(approx_entropy_eigenfunctions)
+        f['velocity_duals'] = velocity_duals
+        f['rB'] = namespace1['rB']
+        f['rS'] = namespace1['rS']
+        f['ρB'] = namespace1['ρB']['g']
+        f['ρS'] = namespace1['ρS']['g']
+
+
     gc.collect()
