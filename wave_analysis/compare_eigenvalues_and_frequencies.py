@@ -29,7 +29,10 @@ with h5py.File(evp_data_file, 'r') as ef:
     integ_energies = ef['integ_energies'][()]
 
 with h5py.File(sh_spectrum_file, 'r') as sf:
-    power_per_ell = sf['power_per_ell'][()]
+    try:
+        power_per_ell = sf['power_per_ell'][()]
+    except:
+        power_per_ell = sf['s1_power_per_ell'][()]
     ells = sf['ells'][()]
     freqs = sf['freqs_inv_day'][()]
     power = power_per_ell[:,ells.flatten() == ell]
@@ -103,17 +106,20 @@ if wave_flux_file is None:
     #print(real_power[real_frequencies >= match_freq], real_frequencies, match_freq)
 
 else:
+    radius = 1.15
     with h5py.File(wave_flux_file, 'r') as f:
         ells = np.expand_dims(f['ells'][()].flatten(), axis=0)
         freqs_inv_day = np.expand_dims(f['real_freqs_inv_day'][()], axis=1)
         freqs_sim = np.expand_dims(f['real_freqs'][()], axis=1)
-        d2F_dell_df = f['wave_flux'][()]
+        d2F_dell_df = f['wave_flux'][()]/radius**2 #wave flux calculation is currently r^2 * rho(r) * hat(ur) * conj(hat(p))
         d2F_dlnell_dlnf = ells*freqs_sim*d2F_dell_df
         sim_omegas = 2*np.pi*freqs_inv_day
         this_ell_flux = d2F_dlnell_dlnf[:, ells.flatten() == ell]
         wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
+        tau = freqs_sim.max()/freqs_inv_day.max()
 
-    shiode_energies = Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(complex_eigenvalues.imag)
+    fudge_factor = 1/np.pi
+    shiode_energies = fudge_factor * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
 fig = plt.figure()
@@ -123,7 +129,7 @@ plt.xlim(1e-1, 1e1)
 plt.xlabel('frequency (day$^{-1}$)')
 plt.ylabel('power')
 plt.title(r'$\ell = ${}'.format(ell))
-plt.ylim(1e-12, 1e0)
+plt.ylim(1e-14, 1e0)
 plt.savefig('scratch/ell{:03d}_shiode_eqn_9.png'.format(ell), dpi=300)
 
 fig = plt.figure()
