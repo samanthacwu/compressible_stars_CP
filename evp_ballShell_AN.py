@@ -16,8 +16,6 @@ Options:
     --NB_hires=<Nmax>    The ball value of Nmax
     --NS_hires=<Nmax>    The shell value of Nmax
 
-    --ss_m=<m>           M value to use for subsystems / eigenvectors [default: 1]
-
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
     --safety=<s>         Timestep CFL safety factor [default: 0.4]
@@ -506,7 +504,7 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-3):
+def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-3):
     good_values1 = []
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
@@ -533,8 +531,10 @@ def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2
                 print(v1/(2*np.pi), v2/(2*np.pi))
                 
 #                print((np.abs(v1 - v2)/np.abs(v1)).min())
-                solver1.set_state(i, subsystem1)
-                solver2.set_state(j, subsystem2)
+                for subsystem in subsystems1:
+                    solver1.set_state(i, subsystem)
+                for subsystem in subsystems2:
+                    solver2.set_state(j, subsystem)
                 uB1 = namespace1['uB']
                 uS1 = namespace1['uS']
                 uB2 = namespace2['uB']
@@ -589,27 +589,25 @@ if NmaxB_hires is not None:
 for i in range(Lmax):
     ell = i + 1
     solver1 = solve_dense(solver1, ell)
+    subsystems1 = []
     for subsystem in solver1.eigenvalue_subproblem.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
-        print(ss_m, ss_ell, r_couple)
-        if ss_ell == ell and ss_m == int(args['--ss_m']):
-            subsystem1 = subsystem
-            break
-    solver1.eigenvalues /= tau
+        if ss_ell == ell:
+            subsystems1.append(subsystem)
 
     if NmaxB_hires is not None:
         logger.info('solving hires eigenvalue')
         solver2 = solve_dense(solver2, ell)
+        subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
-            if ss_ell == ell and ss_m == int(args['--ss_m']):
-                subsystem2 = subsystem
+            if ss_ell == ell:
+                subsystems2.append(subsystem)
                 break
-        solver2.eigenvalues /= tau
         logger.info('cleaning bad eigenvalues out')
-        solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
-    print(solver1.eigenvalues.real/(2*np.pi))
-    print(solver2.eigenvalues.real/(2*np.pi))
+        solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
+    print(solver1.eigenvalues.real/tau/(2*np.pi))
+    print(solver2.eigenvalues.real/tau/(2*np.pi))
 
     bS = namespace1['bS']
     bB = namespace1['bB']
@@ -633,12 +631,6 @@ for i in range(Lmax):
     KEB  = field.Field(dist=d, bases=(bB,), dtype=dtype)
     KES  = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
-    good_omegas = solver1.eigenvalues.real
-    domegas = np.gradient(good_omegas)
-    Nm = good_omegas/domegas
-    Nm_func = interp1d(good_omegas, Nm)
-    power_slope = lambda om: om**(float(args['--freq_power']))
-
     integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
     s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
     velocity_eigenfunctions = []
@@ -647,10 +639,20 @@ for i in range(Lmax):
     approx_entropy_eigenfunctions = []
     wave_flux_eigenfunctions = []
     for i, e in enumerate(solver1.eigenvalues):
-        solver1.set_state(i, subsystem1)
+        uB['g'] = 0
+        uS['g'] = 0
+        s1B['g'] = 0
+        s1S['g'] = 0
+        pB['g'] = 0
+        pS['g'] = 0
+        for subsystem in subsystems1:
+            solver1.set_state(i, subsystem)
+
         #Eigenfunctions at 0th m and ell index
         uB_of_r = uB['g'][:,0,0,:]
         uS_of_r = uS['g'][:,0,0,:]
+        s1B_of_r = s1B['g'][0,0,:]
+        s1S_of_r = s1S['g'][0,0,:]
         s1B_of_r = s1B['g'][0,0,:]
         s1S_of_r = s1S['g'][0,0,:]
         velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
@@ -687,8 +689,8 @@ for i in range(Lmax):
         s1_amplitudes[i] = np.sqrt(s1_surf_value.real)
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-        f['good_evalues'] = solver1.eigenvalues
-        f['good_omegas']  = solver1.eigenvalues.real
+        f['good_evalues'] = solver1.eigenvalues/tau
+        f['good_omegas']  = solver1.eigenvalues.real/tau
         f['s1_amplitudes']  = s1_amplitudes
         f['integ_energies'] = integ_energies
         f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
