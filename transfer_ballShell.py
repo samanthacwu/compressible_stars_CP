@@ -85,7 +85,7 @@ for ell in ell_list:
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
         velocity_duals = f['velocity_duals'][()]
         values = f['good_evalues'][()]
-        velocity_eigenfunctions = f['approx_velocity_eigenfunctions'][()]
+        velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
         rB = f['rB'][()].flatten()
         rS = f['rS'][()].flatten()
         r = np.concatenate((rB, rS))

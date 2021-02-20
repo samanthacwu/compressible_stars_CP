@@ -60,6 +60,9 @@ logger = logging.getLogger(__name__)
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 
+#TODO: Use locals() to make this script (esp build_solver) cleaner
+#TODO: throughout file, remove distinction of local_grids and global_grids -- it's all local.
+
 
 from scipy.special import erf
 def one_to_zero(x, x0, width=0.1):
@@ -130,7 +133,7 @@ c    = coords.SphericalCoordinates('φ', 'θ', 'r')
 d    = distributor.Distributor((c,), mesh=None)
 bB1   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
 bS1   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
-b_mid1 = bB1.S2_basis(radius=r_inner)
+b_midB1 = bB1.S2_basis(radius=r_inner)
 b_midS1 = bS1.S2_basis(radius=r_inner)
 b_top1 = bS1.S2_basis(radius=r_outer)
 φB1,  θB1,  rB1  = bB1.local_grids((dealias, dealias, dealias))
@@ -148,7 +151,7 @@ volume1 = np.sum(weight1)
 if NmaxB_hires is not None:
     bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
     bS2   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS_hires+1), radii=(r_inner, r_outer), dtype=dtype)
-    b_mid2 = bB2.S2_basis(radius=r_inner)
+    b_midB2 = bB2.S2_basis(radius=r_inner)
     b_midS2 = bS2.S2_basis(radius=r_inner)
     b_top2 = bS2.S2_basis(radius=r_outer)
     φB2,  θB2,  rB2  = bB2.local_grids((dealias, dealias, dealias))
@@ -175,7 +178,19 @@ transpose = lambda A: operators.TransposeComponents(A)
 radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
-def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
+def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
+    """
+    Builds a BallShell solver by creating fields and adding equations.
+
+    Arguments:
+    ----------
+        bB, bS : Bases objects
+            The Ball (B) and Shell (S) bases
+        b_midB, b_midS, b_top: S2 Bases objects
+            S2 bases at the middle interface (for B and S) and at the top (for S)
+        mesa_file : string
+            string containing path to the MESA-based NCC file.
+    """
     
     LiftTauB   = lambda A: operators.LiftTau(A, bB, -1)
     LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
@@ -192,10 +207,10 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     pS    = field.Field(dist=d, bases=(bS,), dtype=dtype)
     s1S   = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
-    tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
-    tBt    = field.Field(dist=d, bases=(b_mid,), dtype=dtype,   tensorsig=(c,))
+    tB     = field.Field(dist=d, bases=(b_midB,), dtype=dtype)
+    tBt    = field.Field(dist=d, bases=(b_midB,), dtype=dtype,   tensorsig=(c,))
     tSt_top = field.Field(dist=d, bases=(b_top,), dtype=dtype,  tensorsig=(c,))
-    tSt_bot = field.Field(dist=d, bases=(b_mid,), dtype=dtype, tensorsig=(c,))
+    tSt_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype, tensorsig=(c,))
     tS_bot = field.Field(dist=d, bases=(b_midS,), dtype=dtype)
     tS_top = field.Field(dist=d, bases=(b_top,), dtype=dtype)
 
@@ -421,42 +436,16 @@ def build_solver(bB, bS, b_mid, b_midS, b_top, mesa_file):
     solver = solvers.EigenvalueSolver(problem)
     logger.info("solver built")
 
-    # Check condition number and plot matrices
-#    import matplotlib.pyplot as plt
-#    plt.figure()
-#    for subproblem in solver.subproblems:
-#        ell = subproblem.group[1]
-#        M = subproblem.left_perm.T @ subproblem.M_min
-#        L = subproblem.left_perm.T @ subproblem.L_min
-##        M = subproblem.M_min
-##        L = subproblem.L_min
-#        fig = plt.figure()
-#        ax1 = fig.add_subplot(2,2,1)
-#        ax2 = fig.add_subplot(2,2,2)
-#        ax3 = fig.add_subplot(2,2,3)
-#        ax4 = fig.add_subplot(2,2,4)
-#        print(M)
-#        ax1.imshow(np.log10(np.abs(M.A.real)))
-#        ax1.set_title('(left_perm.T @ M_min).A real', size=10)
-##        plt.colorbar()
-#        ax2.imshow(np.log10(np.abs(M.A.imag)))
-#        ax2.set_title('(left_perm.T @ M_min).A imag', size=10)
-##        plt.colorbar()
-#        ax3.imshow(np.log10(np.abs(L.A.real)))
-#        ax3.set_title('(left_perm.T @ L_min).A real', size=10)
-##        plt.colorbar()
-#        ax4.imshow(np.log10(np.abs(L.A.imag)))
-#        ax4.set_title('(left_perm.T @ L_min).A imag', size=10)
-##        plt.colorbar()
-#        plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
-#        plt.clf()
     for subproblem in solver.subproblems:
         M = subproblem.left_perm.T @ subproblem.M_min
         L = subproblem.left_perm.T @ subproblem.L_min
-#        print(subproblem.group, np.linalg.cond((M + L).A), np.linalg.cond(M.A), np.linalg.cond(L.A) )
     return solver, locals()
 
 def solve_dense(solver, ell):
+    """
+    Do a dense eigenvalue solve at a specified ell.
+    Sort the eigenvalues and eigenvectors according to damping rate.
+    """
     for subproblem in solver.subproblems:
         this_ell = subproblem.group[1]
         if this_ell != ell:
@@ -464,38 +453,22 @@ def solve_dense(solver, ell):
         #TODO: Output to file.
         logger.info("solving ell = {}".format(ell))
         solver.solve_dense(subproblem)
-#        eig_output = eig(subproblem.L_min.A, b=-subproblem.M_min.A)
-#        # Unpack output
-#        if len(eig_output) == 2:
-#            solver.eigenvalues, solver.eigenvectors = eig_output
-#        elif len(eig_output) == 3:
-#            solver.eigenvalues, solver.left_eigenvectors, solver.eigenvectors = eig_output
-##        solver.eigenvectors = subproblem.pre_right @ solver.eigenvectors
-#        solver.eigenvalue_subproblem = subproblem
-
-        logger.info("finished solve")
 
         values = solver.eigenvalues
         vectors = solver.eigenvectors
-
-        print(vectors.shape)
 
         #filter out nans
         cond1 = np.isfinite(values)
         values = values[cond1]
         vectors = vectors[:, cond1]
 
-        print(vectors.shape)
-
         #Only take positive frequencies
         cond2 = values.real > 0
         values = values[cond2]
         vectors = vectors[:, cond2]
 
-        print(vectors.shape)
-
         #Sort by decay timescales
-        order = np.argsort(1/values.real)#-values.imag)
+        order = np.argsort(-values.imag)
         values = values[order]
         vectors = vectors[:, order]
 
@@ -505,6 +478,10 @@ def solve_dense(solver, ell):
         return solver
 
 def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-3):
+    """
+    Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
+    Only keep the solutions that match to within the specified cutoff between the two cases.
+    """
     good_values1 = []
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
@@ -561,8 +538,6 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                 if vector_diff < cutoff2:
                     good_values1.append(i)
                     good_values2.append(j)
-#                    plt.plot(r1, u1[2,:].real, c='orange', lw=3)
-#                    plt.plot(r2, u2[2,:].real, c='indigo')
 #                    plt.show()
 
 
@@ -575,14 +550,15 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
 r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
 dr1 = np.gradient(r1)
 def IP(velocity1, velocity2):
+    """ Integrate the bra-ket of two eigenfunctions of velocity. """
     int_field = np.sum(velocity1*np.conj(velocity2), axis=0)
     return np.sum(int_field*r1**2*dr1)/np.sum(r1**2*dr1)
 
-
 def calculate_duals(velocity_list):
-
+    """
+    Calculate the dual basis of the velocity eigenvectors.
+    """
     velocity_list = np.array(velocity_list)
-    
     n_modes = velocity_list.shape[0]
     IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
     for i in range(n_modes):
@@ -608,21 +584,24 @@ logger.info('using tau = {} days'.format(tau))
 from scipy.interpolate import interp1d
 
 
-logger.info('solving lores eigenvalue')
-solver1, namespace1 = build_solver(bB1, bS1, b_mid1, b_midS1, b_top1, mesa_file1)
+solver1, namespace1 = build_solver(bB1, bS1, b_midB1, b_midS1, b_top1, mesa_file1)
 if NmaxB_hires is not None:
-    solver2, namespace2 = build_solver(bB2, bS2, b_mid2, b_midS2, b_top2, mesa_file_hires)
+    solver2, namespace2 = build_solver(bB2, bS2, b_midB2, b_midS2, b_top2, mesa_file_hires)
 for i in range(Lmax):
     ell = i + 1
+    logger.info("solving at ell = {}".format(ell))
+    logger.info('solving lores eigenvalue with NmaxB {}'.format(NmaxB))
     solver1 = solve_dense(solver1, ell)
     subsystems1 = []
-    for subsystem in solver1.eigenvalue_subproblem.subsystems:
+    for subsystem in solver1.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
         if ss_ell == ell and ss_m == 1:
             subsystems1.append(subsystem)
+        if ss_ell == 0 and ss_m == 0:
+            subsystem1_0 = subsystem
 
     if NmaxB_hires is not None:
-        logger.info('solving hires eigenvalue')
+        logger.info('solving hires eigenvalue with NmaxB {}'.format(NmaxB_hires))
         solver2 = solve_dense(solver2, ell)
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
@@ -630,7 +609,7 @@ for i in range(Lmax):
             if ss_ell == ell and ss_m == 1:
                 subsystems2.append(subsystem)
                 break
-        logger.info('cleaning bad eigenvalues out')
+        logger.info('cleaning bad eigenvalues')
         solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
     print(solver1.eigenvalues.real/tau/(2*np.pi))
     print(solver2.eigenvalues.real/tau/(2*np.pi))
@@ -661,47 +640,25 @@ for i in range(Lmax):
     s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
     velocity_eigenfunctions = []
     entropy_eigenfunctions = []
-    approx_velocity_eigenfunctions = []
-    approx_entropy_eigenfunctions = []
     wave_flux_eigenfunctions = []
+
     for i, e in enumerate(solver1.eigenvalues):
-        uB['g'] = 0
-        uS['g'] = 0
-        s1B['g'] = 0
-        s1S['g'] = 0
-        pB['g'] = 0
-        pS['g'] = 0
-        for subsystem in subsystems1:
-            solver1.set_state(i, subsystem)
+        solver1.set_state(i, subsystems1[0])
 
         #Eigenfunctions at 0th m and ell index
+        #Check to make sure radial variation is exactly what we'd expect -- it is, so we can get the eigenfunctions out straightforwardly and then scale.
+        print('ball u',  bool(np.min(np.array(uB['g'][:,:int(Lmax*2),:,:] == -uB['g'][:,int(Lmax*2):,:,:], dtype=int))))
+        print('shell u', bool(np.min(np.array(uS['g'][:,:int(Lmax*2),:,:] == -uS['g'][:,int(Lmax*2):,:,:], dtype=int))))
+        print('ball s1',  bool(np.min(np.array(s1B['g'][:int(Lmax*2),:,:] == -s1B['g'][int(Lmax*2):,:,:], dtype=int))))
+        print('shell s1', bool(np.min(np.array(s1S['g'][:int(Lmax*2),:,:] == -s1S['g'][int(Lmax*2):,:,:], dtype=int))))
+        shift = np.max((np.abs(uB['g'][2,:]).max(), np.abs(uS['g'][2,:]).max()))
+        for f in [uB, uS, s1B, s1S, pB, pS]:
+            f['g'] /= shift
         phi_theta_ind = np.unravel_index(np.abs(uS['g'].argmax()), uS['g'].shape)
         uB_of_r = uB['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
         uS_of_r = uS['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
         s1B_of_r = s1B['g'][phi_theta_ind[1],phi_theta_ind[2],:]
         s1S_of_r = s1S['g'][phi_theta_ind[1],phi_theta_ind[2],:]
-#        uB_of_r = uB.data[:,(shell_m1 ==1)*(shell_ell1 == ell),:][:,0,:]
-#        uS_of_r = uS.data[:,(shell_m1 ==1)*(shell_ell1 == ell),:][:,0,:]
-#        s1B_of_r = s1B.data[(shell_m1 == 1)*(shell_ell1 == ell)][0,:]
-#        s1S_of_r = s1S.data[(shell_m1 == 1)*(shell_ell1 == ell)][0,:]
-        velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
-        entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
-        shift = np.abs(velocity_eig[2,:]).max()
-        approx_velocity_eigenfunctions.append(velocity_eig/shift)
-        approx_entropy_eigenfunctions.append(entropy_eig/shift)
-
-        uB['g'] /= shift
-        uS['g'] /= shift
-        s1B['g'] /= shift
-        s1S['g'] /= shift
-        pS['g'] /= shift
-        pB['g'] /= shift
-
-        #Eigenfunctions (average magnitude)
-        uB_of_r  = np.sqrt(np.sum(np.sum(weight1*uB['g']*np.conj(uB['g']), axis=2), axis=1).real/volume1)
-        uS_of_r  = np.sqrt(np.sum(np.sum(weight1*uS['g']*np.conj(uS['g']), axis=2), axis=1).real/volume1)
-        s1B_of_r = np.sqrt(np.sum(np.sum(weight1*s1B['g']*np.conj(s1B['g']), axis=1), axis=0).real/volume1)
-        s1S_of_r = np.sqrt(np.sum(np.sum(weight1*s1S['g']*np.conj(s1S['g']), axis=1), axis=0).real/volume1)
         velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
         entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
         velocity_eigenfunctions.append(velocity_eig)
@@ -712,14 +669,13 @@ for i in range(Lmax):
         pomS = pomega_hat_S.evaluate()
         wave_fluxB = ρB['g']*uB['g'][2,:]*np.conj(pomB['g'])
         wave_fluxS = ρS['g']*uS['g'][2,:]*np.conj(pomS['g'])
-#        wave_fluxB_of_r = np.sum(np.sum(weight1*wave_fluxB, axis=1), axis=0) 
-#        wave_fluxS_of_r = np.sum(np.sum(weight1*wave_fluxS, axis=1), axis=0) 
-        wave_fluxB_of_r = np.sqrt(np.sum(np.sum(weight1*np.abs(wave_fluxB)**2, axis=1), axis=0)) 
-        wave_fluxS_of_r = np.sqrt(np.sum(np.sum(weight1*np.abs(wave_fluxS)**2, axis=1), axis=0)) 
-        wave_flux_eigenfunctions.append(np.concatenate((wave_fluxB_of_r, wave_fluxS_of_r)))
+        wave_fluxB_of_r = wave_fluxB[phi_theta_ind[1],phi_theta_ind[2],:]
+        wave_fluxS_of_r = wave_fluxS[phi_theta_ind[1],phi_theta_ind[2],:]
+        wave_flux_eig = np.concatenate((wave_fluxB_of_r, wave_fluxS_of_r), axis=-1)
+        wave_flux_eigenfunctions.append(wave_flux_eig)
 
-        KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real
-        KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real
+        KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real/2
+        KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real/2
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
         integ_energies[i] = integ_energy.real
         s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight1)
@@ -733,15 +689,12 @@ for i in range(Lmax):
         f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
         f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
         f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
-        f['approx_velocity_eigenfunctions'] = np.array(approx_velocity_eigenfunctions)
-        f['approx_entropy_eigenfunctions'] = np.array(approx_entropy_eigenfunctions)
         f['rB'] = namespace1['rB']
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
 
-    velocity_duals = calculate_duals(approx_velocity_eigenfunctions)
-    print(velocity_duals)
+    velocity_duals = calculate_duals(velocity_eigenfunctions)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
         f['good_evalues'] = solver1.eigenvalues/tau
         f['good_omegas']  = solver1.eigenvalues.real/tau
@@ -750,8 +703,6 @@ for i in range(Lmax):
         f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
         f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
         f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
-        f['approx_velocity_eigenfunctions'] = np.array(approx_velocity_eigenfunctions)
-        f['approx_entropy_eigenfunctions'] = np.array(approx_entropy_eigenfunctions)
         f['velocity_duals'] = velocity_duals
         f['rB'] = namespace1['rB']
         f['rS'] = namespace1['rS']
