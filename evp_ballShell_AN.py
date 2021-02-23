@@ -467,8 +467,10 @@ def solve_dense(solver, ell):
         values = values[cond2]
         vectors = vectors[:, cond2]
 
-        #Sort by decay timescales
-        order = np.argsort(-values.imag)
+#        #Sort by decay timescales
+#        order = np.argsort(-values.imag)
+        #Sort by real frequency magnitude
+        order = np.argsort(1/values.real)
         values = values[order]
         vectors = vectors[:, order]
 
@@ -645,39 +647,42 @@ for i in range(Lmax):
     for i, e in enumerate(solver1.eigenvalues):
         solver1.set_state(i, subsystems1[0])
 
-        #Eigenfunctions at 0th m and ell index
-        #Check to make sure radial variation is exactly what we'd expect -- it is, so we can get the eigenfunctions out straightforwardly and then scale.
-        print('ball u',  bool(np.min(np.array(uB['g'][:,:int(Lmax*2),:,:] == -uB['g'][:,int(Lmax*2):,:,:], dtype=int))))
-        print('shell u', bool(np.min(np.array(uS['g'][:,:int(Lmax*2),:,:] == -uS['g'][:,int(Lmax*2):,:,:], dtype=int))))
-        print('ball s1',  bool(np.min(np.array(s1B['g'][:int(Lmax*2),:,:] == -s1B['g'][int(Lmax*2):,:,:], dtype=int))))
-        print('shell s1', bool(np.min(np.array(s1S['g'][:int(Lmax*2),:,:] == -s1S['g'][int(Lmax*2):,:,:], dtype=int))))
-        shift = np.max((np.abs(uB['g'][2,:]).max(), np.abs(uS['g'][2,:]).max()))
-        for f in [uB, uS, s1B, s1S, pB, pS]:
-            f['g'] /= shift
-        phi_theta_ind = np.unravel_index(np.abs(uS['g'].argmax()), uS['g'].shape)
-        uB_of_r = uB['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
-        uS_of_r = uS['g'][:,phi_theta_ind[1],phi_theta_ind[2],:]
-        s1B_of_r = s1B['g'][phi_theta_ind[1],phi_theta_ind[2],:]
-        s1S_of_r = s1S['g'][phi_theta_ind[1],phi_theta_ind[2],:]
-        velocity_eig = np.concatenate((uB_of_r, uS_of_r), axis=-1)
-        entropy_eig = np.concatenate((s1B_of_r, s1S_of_r), axis=-1)
+        #Get eigenvectors
+        pomB = pomega_hat_B.evaluate()
+        pomS = pomega_hat_S.evaluate()
+        for f in [uB, uS, s1B, s1S, pomB, pomS]:
+            f['c']
+            f.towards_grid_space()
+        good = (shell_ell1 == ell)*(shell_m1 == 1)
+        uB_data = uB.data[:,good,:].squeeze()
+        uS_data = uS.data[:,good,:].squeeze()
+        s1B_data = s1B.data[good,:].squeeze()
+        s1S_data = s1S.data[good,:].squeeze()
+        pomB_data = s1B.data[good,:].squeeze()
+        pomS_data = s1S.data[good,:].squeeze()
+        print(uB_data.shape, uS_data.shape)
+
+        #normalize & store eigenvectors
+        shift = np.max((np.abs(uB_data[2,:]).max(), np.abs(uS_data[2,:]).max()))
+        for data in [uB_data, uS_data, s1B_data, s1S_data, pomB_data, pomS_data]:
+            data /= shift
+
+        velocity_eig = np.concatenate((uB_data, uS_data), axis=-1)
+        entropy_eig = np.concatenate((s1B_data, s1S_data), axis=-1)
         velocity_eigenfunctions.append(velocity_eig)
         entropy_eigenfunctions.append(entropy_eig)
 
         #Wave flux
-        pomB = pomega_hat_B.evaluate()
-        pomS = pomega_hat_S.evaluate()
-        wave_fluxB = ρB['g']*uB['g'][2,:]*np.conj(pomB['g'])
-        wave_fluxS = ρS['g']*uS['g'][2,:]*np.conj(pomS['g'])
-        wave_fluxB_of_r = wave_fluxB[phi_theta_ind[1],phi_theta_ind[2],:]
-        wave_fluxS_of_r = wave_fluxS[phi_theta_ind[1],phi_theta_ind[2],:]
-        wave_flux_eig = np.concatenate((wave_fluxB_of_r, wave_fluxS_of_r), axis=-1)
+        wave_fluxB = (ρB['g'][0,0,:]*uB_data[2,:]*np.conj(pomB_data)).squeeze()
+        wave_fluxS = (ρS['g'][0,0,:]*uS_data[2,:]*np.conj(pomS_data)).squeeze()
+        wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
         wave_flux_eigenfunctions.append(wave_flux_eig)
 
-        KES['g'] = (ρS['g']*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real/2
-        KEB['g'] = (ρB['g']*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real/2
+        KES['g'] = (ρS['g'][0,0,:]*np.sum(uS_data*np.conj(uS_data), axis=0)).real/2
+        KEB['g'] = (ρB['g'][0,0,:]*np.sum(uB_data*np.conj(uB_data), axis=0)).real/2
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
         integ_energies[i] = integ_energy.real
+        s1S['g'] = s1S_data
         s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight1)
         s1_amplitudes[i] = np.sqrt(s1_surf_value.real)
 
