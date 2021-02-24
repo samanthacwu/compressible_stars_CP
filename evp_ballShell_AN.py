@@ -601,7 +601,7 @@ for i in range(Lmax):
     subsystems1 = []
     for subsystem in solver1.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
-        if ss_ell == ell:# and ss_m == 1:
+        if ss_ell == ell and ss_m == 1:
             subsystems1.append(subsystem)
         if ss_ell == 0 and ss_m == 0:
             subsystem1_0 = subsystem
@@ -612,7 +612,7 @@ for i in range(Lmax):
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
-            if ss_ell == ell:# and ss_m == 1:
+            if ss_ell == ell and ss_m == 1:
                 subsystems2.append(subsystem)
                 break
         logger.info('cleaning bad eigenvalues')
@@ -659,32 +659,39 @@ for i in range(Lmax):
         for f in [uB, uS, s1B, s1S, pomB, pomS]:
             f['c']
             f.towards_grid_space()
-        uB_data = uB.data[:,good,:].squeeze()
-        uS_data = uS.data[:,good,:].squeeze()
-        s1B_data = s1B.data[good,:].squeeze()
-        s1S_data = s1S.data[good,:].squeeze()
-        pomB_data = s1B.data[good,:].squeeze()
-        pomS_data = s1S.data[good,:].squeeze()
+        ef_uB_pm = uB.data[:,good,:].squeeze()
+        ef_uS_pm = uS.data[:,good,:].squeeze()
+        ef_s1B = s1B.data[good,:].squeeze()
+        ef_s1S = s1S.data[good,:].squeeze()
+        ef_pomB = s1B.data[good,:].squeeze()
+        ef_pomS = s1S.data[good,:].squeeze()
 
         #normalize & store eigenvectors
-        shift = np.max((np.abs(uB_data[2,:]).max(), np.abs(uS_data[2,:]).max()))
-        for data in [uB_data, uS_data, s1B_data, s1S_data, pomB_data, pomS_data]:
+        shift = np.max((np.abs(ef_uB_pm[2,:]).max(), np.abs(ef_uS_pm[2,:]).max()))
+        for data in [ef_uB_pm, ef_uS_pm, ef_s1B, ef_s1S, ef_pomB, ef_pomS]:
             data /= shift
 
-        velocity_eig = np.concatenate((uB_data, uS_data), axis=-1)
-        entropy_eig = np.concatenate((s1B_data, s1S_data), axis=-1)
-        velocity_eigenfunctions.append(velocity_eig)
-        entropy_eigenfunctions.append(entropy_eig)
+        ef_uB = np.zeros_like(ef_uB_pm)
+        ef_uS = np.zeros_like(ef_uS_pm)
+        for u, u_pm in zip((ef_uB, ef_uS), (ef_uB_pm, ef_uS_pm)):
+            u[0,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
+            u[1,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+            u[2,:] = u_pm[2,:]
+
+        full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
+        full_ef_s1 = np.concatenate((ef_s1B, ef_s1S), axis=-1)
+        velocity_eigenfunctions.append(full_ef_u)
+        entropy_eigenfunctions.append(full_ef_s1)
 
         #Wave flux
-        wave_fluxB = (ρB['g'][0,0,:]*uB_data[2,:]*np.conj(pomB_data)).squeeze()
-        wave_fluxS = (ρS['g'][0,0,:]*uS_data[2,:]*np.conj(pomS_data)).squeeze()
+        wave_fluxB = (ρB['g'][0,0,:]*ef_uB[2,:]*np.conj(ef_pomB)).squeeze()
+        wave_fluxS = (ρS['g'][0,0,:]*ef_uS[2,:]*np.conj(ef_pomS)).squeeze()
         wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
         wave_flux_eigenfunctions.append(wave_flux_eig)
 
         #Kinetic energy
-        KES['g'] = (ρS['g'][0,0,:]*np.sum(uS_data*np.conj(uS_data), axis=0)).real/2
-        KEB['g'] = (ρB['g'][0,0,:]*np.sum(uB_data*np.conj(uB_data), axis=0)).real/2
+        KES['g'] = (ρS['g'][0,0,:]*np.sum(ef_uS*np.conj(ef_uS), axis=0)).real/2
+        KEB['g'] = (ρB['g'][0,0,:]*np.sum(ef_uB*np.conj(ef_uB), axis=0)).real/2
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
         integ_energies[i] = integ_energy.real / 2 #factor of 2 accounts for spherical harmonic integration
 #        KES['g'] = (ρS['g'][0,0,:]*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real/2/shift**2
@@ -696,7 +703,7 @@ for i in range(Lmax):
 #        old_s1_amplitudes = s1_surf_value.real
         s1S['g'] = 0
         s1S['c']
-        s1S['g'] = s1S_data
+        s1S['g'] = ef_s1S
         s1_surf_vals = s1_surf.evaluate()['g'] / np.sqrt(2) #sqrt(2) accounts for spherical harmonic integration
         s1_amplitudes[i] = np.abs(s1_surf_vals.max())
 #        print(subsystem.group, s1_amplitudes[i], old_s1_amplitudes, integ_energies[i], old_integ_energy, s1_amplitudes[i]/old_s1_amplitudes, integ_energies[i]/old_integ_energy)
@@ -714,7 +721,6 @@ for i in range(Lmax):
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
 
-    #TODO: Convert velocity eigenfunctions to u_phi and u_theta
     velocity_duals = calculate_duals(velocity_eigenfunctions)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
         f['good_evalues'] = solver1.eigenvalues/tau
