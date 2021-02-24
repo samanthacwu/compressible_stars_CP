@@ -145,6 +145,8 @@ shell_m1 = bS1.local_m
 
 weight_φ1 = np.gradient(φSg1.flatten()).reshape(φSg1.shape)
 weight_θ1 = bS1.global_colatitude_weights(dealias)
+weight_rB1 = bB1.radial_basis.local_weights(dealias)
+weight_rS1 = bS1.radial_basis.local_weights(dealias)*rS1**2
 weight1 = weight_θ1 * weight_φ1
 volume1 = np.sum(weight1)
 
@@ -163,6 +165,8 @@ if NmaxB_hires is not None:
 
     weight_φ2 = np.gradient(φSg2.flatten()).reshape(φSg2.shape)
     weight_θ2 = bS2.global_colatitude_weights(dealias)
+    weight_rB2 = bB2.radial_basis.local_weights(dealias)
+    weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
     weight2 = weight_θ2 * weight_φ2
     volume2 = np.sum(weight2)
 
@@ -550,11 +554,11 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
     return solver1, solver2
 
 r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
-dr1 = np.gradient(r1)
+radial_weights_1 = np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()), axis=-1)
 def IP(velocity1, velocity2):
     """ Integrate the bra-ket of two eigenfunctions of velocity. """
     int_field = np.sum(velocity1*np.conj(velocity2), axis=0)
-    return np.sum(int_field*r1**2*dr1)/np.sum(r1**2*dr1)
+    return np.sum(int_field*radial_weights_1)/np.sum(radial_weights_1)
 
 def calculate_duals(velocity_list):
     """
@@ -597,7 +601,7 @@ for i in range(Lmax):
     subsystems1 = []
     for subsystem in solver1.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
-        if ss_ell == ell and ss_m == 1:
+        if ss_ell == ell:# and ss_m == 1:
             subsystems1.append(subsystem)
         if ss_ell == 0 and ss_m == 0:
             subsystem1_0 = subsystem
@@ -608,7 +612,7 @@ for i in range(Lmax):
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell:# and ss_m == 1:
                 subsystems2.append(subsystem)
                 break
         logger.info('cleaning bad eigenvalues')
@@ -645,7 +649,9 @@ for i in range(Lmax):
     wave_flux_eigenfunctions = []
 
     for i, e in enumerate(solver1.eigenvalues):
-        solver1.set_state(i, subsystems1[0])
+        subsystem = subsystems1[0]
+        good = (shell_ell1 == ell)*(shell_m1 == subsystem.group[0])
+        solver1.set_state(i, subsystem)
 
         #Get eigenvectors
         pomB = pomega_hat_B.evaluate()
@@ -653,14 +659,12 @@ for i in range(Lmax):
         for f in [uB, uS, s1B, s1S, pomB, pomS]:
             f['c']
             f.towards_grid_space()
-        good = (shell_ell1 == ell)*(shell_m1 == 1)
         uB_data = uB.data[:,good,:].squeeze()
         uS_data = uS.data[:,good,:].squeeze()
         s1B_data = s1B.data[good,:].squeeze()
         s1S_data = s1S.data[good,:].squeeze()
         pomB_data = s1B.data[good,:].squeeze()
         pomS_data = s1S.data[good,:].squeeze()
-        print(uB_data.shape, uS_data.shape)
 
         #normalize & store eigenvectors
         shift = np.max((np.abs(uB_data[2,:]).max(), np.abs(uS_data[2,:]).max()))
@@ -678,13 +682,24 @@ for i in range(Lmax):
         wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
         wave_flux_eigenfunctions.append(wave_flux_eig)
 
+        #Kinetic energy
         KES['g'] = (ρS['g'][0,0,:]*np.sum(uS_data*np.conj(uS_data), axis=0)).real/2
         KEB['g'] = (ρB['g'][0,0,:]*np.sum(uB_data*np.conj(uB_data), axis=0)).real/2
         integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
-        integ_energies[i] = integ_energy.real
+        integ_energies[i] = integ_energy.real / 2 #factor of 2 accounts for spherical harmonic integration
+#        KES['g'] = (ρS['g'][0,0,:]*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real/2/shift**2
+#        KEB['g'] = (ρB['g'][0,0,:]*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real/2/shift**2
+#        old_integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
+
+        #Surface entropy perturbations
+#        s1_surf_value = np.sqrt(np.sum(np.abs(s1_surf.evaluate()['g']/shift)**2*weight1)/np.sum(weight1))
+#        old_s1_amplitudes = s1_surf_value.real
+        s1S['g'] = 0
+        s1S['c']
         s1S['g'] = s1S_data
-        s1_surf_value = np.sum(np.abs(s1_surf.evaluate()['g'])**2*weight1)
-        s1_amplitudes[i] = np.sqrt(s1_surf_value.real)
+        s1_surf_vals = s1_surf.evaluate()['g'] / np.sqrt(2) #sqrt(2) accounts for spherical harmonic integration
+        s1_amplitudes[i] = np.abs(s1_surf_vals.max())
+#        print(subsystem.group, s1_amplitudes[i], old_s1_amplitudes, integ_energies[i], old_integ_energy, s1_amplitudes[i]/old_s1_amplitudes, integ_energies[i]/old_integ_energy)
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
         f['good_evalues'] = solver1.eigenvalues/tau
@@ -699,6 +714,7 @@ for i in range(Lmax):
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
 
+    #TODO: Convert velocity eigenfunctions to u_phi and u_theta
     velocity_duals = calculate_duals(velocity_eigenfunctions)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
         f['good_evalues'] = solver1.eigenvalues/tau
