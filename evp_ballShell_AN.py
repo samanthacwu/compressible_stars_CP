@@ -648,8 +648,9 @@ for i in range(Lmax):
     entropy_eigenfunctions = []
     wave_flux_eigenfunctions = []
 
+    subsystem = subsystems1[0]
+    print('using subsystem ', subsystem.group, ' for eigenvectors')
     for i, e in enumerate(solver1.eigenvalues):
-        subsystem = subsystems1[0]
         good = (shell_ell1 == ell)*(shell_m1 == subsystem.group[0])
         solver1.set_state(i, subsystem)
 
@@ -674,8 +675,8 @@ for i in range(Lmax):
         ef_uB = np.zeros_like(ef_uB_pm)
         ef_uS = np.zeros_like(ef_uS_pm)
         for u, u_pm in zip((ef_uB, ef_uS), (ef_uB_pm, ef_uS_pm)):
-            u[0,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
-            u[1,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+            u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+            u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
             u[2,:] = u_pm[2,:]
 
         full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
