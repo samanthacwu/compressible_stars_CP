@@ -52,7 +52,7 @@ def refine_peaks(om, T, *args):
         if (T[i]>T[i-1]) and (T[i]>T[i+1]):
             delta_m = np.abs(T[i]-T[i-1])/T[i]
             delta_p = np.abs(T[i]-T[i+1])/T[i]
-            if delta_m > 0.05 or delta_p > 0.05:
+            if delta_m > 0.01 or delta_p > 0.01:
                 i_peaks.append(i)
 
     print("number of peaks: %i" %(len(i_peaks)))
@@ -86,36 +86,36 @@ for ell in ell_list:
         velocity_duals = f['velocity_duals'][()]
         values = f['good_evalues'][()]
         velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
+        s1_amplitudes = f['s1_amplitudes'][()]
         rB = f['rB'][()].flatten()
         rS = f['rS'][()].flatten()
         r = np.concatenate((rB, rS))
- 
-#    values = data['values']
-#    u_dual = data['u_dual']
-#    u = data['u']
-#    z = data['z']
 
+    values = values[:15]
+    s1_amplitudes = s1_amplitudes[:15]
+    velocity_eigenfunctions = velocity_eigenfunctions[:15]
+    velocity_duals = velocity_duals[:15]
+ 
     om0 = values.real[-2]
-    print(om0)
     om1 = values.real[0]*2
     om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-    r0 = 1
-    r1 = 1 + 0.02*r.max()
+    r0 = 1.05
+    r1 = r0 + 0.02*r.max()
     r_range = np.linspace(r0, r1, num=100, endpoint=True)
     uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
-    u_surf = velocity_eigenfunctions[:,0,-1]
 
-    T = transfer_function(om, values, uphi_dual_interp, u_surf, r_range)
+    T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range)
 
     peaks = 1
     while peaks > 0:
-        om, T, peaks = refine_peaks(om, T, uphi_dual_interp, u_surf, r_range)
+        om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = om
         f['transfer'] = T
 
     plt.loglog(om, T)
+#    plt.loglog(om, T*om**(-13/2))
     plt.show()
 

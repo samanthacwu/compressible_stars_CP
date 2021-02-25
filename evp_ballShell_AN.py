@@ -299,34 +299,7 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             max_dt = f['max_dt'][()] / np.sqrt(grads0_boost)
             t_buoy = 1
     else:
-        logger.info("Using polytropic initial conditions")
-        from scipy.interpolate import interp1d
-        with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
-            T_func = interp1d(f['r'][()], f['T'][()])
-            ρ_func = interp1d(f['r'][()], f['ρ'][()])
-            grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-#            H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
-            H_eff_func = lambda r: one_to_zero(r, 0.75, width=0.1)
-        max_grad_s0 = grad_s0_func(r_outer)
-        max_dt = 2/np.sqrt(max_grad_s0)
-        t_buoy      = 1
-
-
-
-        for basis_r, basis_fields in zip((rB, rS), ((TB, T_NCCB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, H_effB, grad_s0B), (TS, T_NCCS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, H_effS, grad_s0S))):
-            T, T_NCC, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, H_eff, grad_s0 = basis_fields
-
-            grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
-            T['g']           = T_func(basis_r)
-            T_NCC['g']       = T_func(basis_r)
-            ρ['g']           = ρ_func(basis_r)
-            ρ_NCC['g']       = ρ_func(basis_r)
-            inv_T['g']       = T_func(basis_r)
-            H_eff['g']       = H_eff_func(basis_r)
-            ln_T['g']        = np.log(T_func(basis_r))
-            ln_ρ['g']        = np.log(ρ_func(basis_r))
-            grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
-            grad_ln_T['g']        = grad(ln_T).evaluate()['g']
+        raise NotImplementedError()
 
     logger.info('buoyancy time is {}'.format(t_buoy))
     t_end = float(args['--buoy_end_time'])*t_buoy
@@ -483,7 +456,7 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-3):
+def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-4):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
     Only keep the solutions that match to within the specified cutoff between the two cases.
