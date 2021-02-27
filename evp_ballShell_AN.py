@@ -61,7 +61,6 @@ from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 
 #TODO: Use locals() to make this script (esp build_solver) cleaner
-#TODO: throughout file, remove distinction of local_grids and global_grids -- it's all local.
 
 
 from scipy.special import erf
@@ -71,116 +70,6 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
 
-
-args   = docopt(__doc__)
-if args['<config>'] is not None: 
-    config_file = Path(args['<config>'])
-    config = ConfigParser()
-    config.read(str(config_file))
-    for n, v in config.items('parameters'):
-        for k in args.keys():
-            if k.split('--')[-1].lower() == n:
-                if v == 'true': v = True
-                args[k] = v
-
-# Parameters
-Lmax      = int(args['--L'])
-NmaxB      = int(args['--NB'])
-NmaxS      = int(args['--NS'])
-mesa_file1  = args['--mesa_file']
-L_dealias = N_dealias = dealias = 1
-
-if args['--NB_hires'] is not None and args['--NS_hires'] is not None:
-    NmaxB_hires = int(args['--NB_hires'])
-    NmaxS_hires = int(args['--NS_hires'])
-    mesa_file_hires = args['--mesa_file_hires']
-else:
-    NmaxB_hires = None
-    NmaxS_hires = None
-    mesa_file_hires = None
-
-
-out_dir = './' + sys.argv[0].split('.py')[0]
-if args['--mesa_file'] is None:
-    out_dir += '_polytrope'
-out_dir += '_Re{}_{}x{}_{}x{}'.format(args['--Re'], args['--L'], args['--NB'], args['--L'], args['--NS'])
-if args['--label'] is not None:
-    out_dir += '_{:s}'.format(args['--label'])
-logger.info('saving data to {:s}'.format(out_dir))
-if MPI.COMM_WORLD.rank == 0:
-    if not os.path.exists('{:s}/'.format(out_dir)):
-        os.makedirs('{:s}/'.format(out_dir))
-
-
-dtype = np.complex128
-
-Re  = float(args['--Re'])
-Pr  = 1
-Pe  = Pr*Re
-
-
-if mesa_file1 is not None:
-    with h5py.File(mesa_file1, 'r') as f:
-        r_inner = f['r_inner'][()]
-        r_outer = f['r_outer'][()]
-else:
-    r_inner = 1.1
-    r_outer = 1.5
-logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
-
-# Bases
-c    = coords.SphericalCoordinates('φ', 'θ', 'r')
-d    = distributor.Distributor((c,), mesh=None)
-bB1   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS1   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
-b_midB1 = bB1.S2_basis(radius=r_inner)
-b_midS1 = bS1.S2_basis(radius=r_inner)
-b_top1 = bS1.S2_basis(radius=r_outer)
-φB1,  θB1,  rB1  = bB1.local_grids((dealias, dealias, dealias))
-φBg1, θBg1, rBg1 = bB1.global_grids((dealias, dealias, dealias))
-φS1,  θS1,  rS1  = bS1.local_grids((dealias, dealias, dealias))
-φSg1, θSg1, rSg1 = bS1.global_grids((dealias, dealias, dealias))
-shell_ell1 = bS1.local_ell
-shell_m1 = bS1.local_m
-
-weight_φ1 = np.gradient(φSg1.flatten()).reshape(φSg1.shape)
-weight_θ1 = bS1.global_colatitude_weights(dealias)
-weight_rB1 = bB1.radial_basis.local_weights(dealias)
-weight_rS1 = bS1.radial_basis.local_weights(dealias)*rS1**2
-weight1 = weight_θ1 * weight_φ1
-volume1 = np.sum(weight1)
-
-if NmaxB_hires is not None:
-    bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
-    bS2   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS_hires+1), radii=(r_inner, r_outer), dtype=dtype)
-    b_midB2 = bB2.S2_basis(radius=r_inner)
-    b_midS2 = bS2.S2_basis(radius=r_inner)
-    b_top2 = bS2.S2_basis(radius=r_outer)
-    φB2,  θB2,  rB2  = bB2.local_grids((dealias, dealias, dealias))
-    φBg2, θBg2, rBg2 = bB2.global_grids((dealias, dealias, dealias))
-    φS2,  θS2,  rS2  = bS2.local_grids((dealias, dealias, dealias))
-    φSg2, θSg2, rSg2 = bS2.global_grids((dealias, dealias, dealias))
-    shell_ell2 = bS2.local_ell
-    shell_m2 = bS2.local_m
-
-    weight_φ2 = np.gradient(φSg2.flatten()).reshape(φSg2.shape)
-    weight_θ2 = bS2.global_colatitude_weights(dealias)
-    weight_rB2 = bB2.radial_basis.local_weights(dealias)
-    weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
-    weight2 = weight_θ2 * weight_φ2
-    volume2 = np.sum(weight2)
-
-#Operators
-div       = lambda A: operators.Divergence(A, index=0)
-lap       = lambda A: operators.Laplacian(A, c)
-grad      = lambda A: operators.Gradient(A, c)
-dot       = lambda A, B: arithmetic.DotProduct(A, B)
-curl      = lambda A: operators.Curl(A)
-cross     = lambda A, B: arithmetic.CrossProduct(A, B)
-trace     = lambda A: operators.Trace(A)
-transpose = lambda A: operators.TransposeComponents(A)
-radComp   = lambda A: operators.RadialComponent(A)
-angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
 def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     """
@@ -200,9 +89,7 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
 
     φB,  θB,  rB  = bB.local_grids((dealias, dealias, dealias))
-    φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
     φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
-    φSg, θSg, rSg = bS.global_grids((dealias, dealias, dealias))
     # Fields
     uB    = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
     pB    = field.Field(dist=d, bases=(bB,), dtype=dtype)
@@ -229,24 +116,16 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     grad_ln_TB    = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     ln_ρB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     ln_TB         = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
-    T_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     grad_TB        = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-    ρ_NCCB        = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     inv_PeB   = field.Field(dist=d, bases=(bB.radial_basis,), dtype=dtype)
     grad_inv_PeB  = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
-    inv_TB        = field.Field(dist=d, bases=(bB,), dtype=dtype) #only on RHS, multiplies other terms
-    H_effB        = field.Field(dist=d, bases=(bB,), dtype=dtype)
     grad_ln_ρS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
     grad_ln_TS    = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
     ln_ρS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     ln_TS         = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
-    T_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     grad_TS       = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-    ρ_NCCS        = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     inv_PeS   = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
     grad_inv_PeS  = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
-    inv_TS        = field.Field(dist=d, bases=(bS,), dtype=dtype) #only on RHS, multiplies other terms
-    H_effS        = field.Field(dist=d, bases=(bS,), dtype=dtype)
 
     grad_s0B      = field.Field(dist=d, bases=(bB.radial_basis,), tensorsig=(c,), dtype=dtype)
     grad_s0S      = field.Field(dist=d, bases=(bS.radial_basis,), tensorsig=(c,), dtype=dtype)
@@ -277,20 +156,14 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             inv_PeB['g']= f['inv_Pe_radB'][:,:,slicesB[-1]]
             ln_ρB['g']      = f['ln_ρB'][:,:,slicesB[-1]]
             ln_TB['g']      = f['ln_TB'][:,:,slicesB[-1]]
-            H_effB['g']     = f['H_effB'][:,:,slicesB[-1]]
-            T_NCCB['g']     = f['TB'][:,:,slicesB[-1]]
             ρB['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρB'][:,:,slicesB[-1]]), axis=0), axis=0)
             TB['g']         = np.expand_dims(np.expand_dims(f['TB'][:,:,slicesB[-1]], axis=0), axis=0)
-            inv_TB['g']     = 1/TB['g']
 
             inv_PeS['g']= f['inv_Pe_radS'][:,:,slicesS[-1]]
             ln_ρS['g']      = f['ln_ρS'][:,:,slicesS[-1]]
             ln_TS['g']      = f['ln_TS'][:,:,slicesS[-1]]
-            H_effS['g']     = f['H_effS'][:,:,slicesS[-1]]
-            T_NCCS['g']     = f['TS'][:,:,slicesS[-1]]
             ρS['g']         = np.expand_dims(np.expand_dims(np.exp(f['ln_ρS'][:,:,slicesS[-1]]), axis=0), axis=0)
             TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
-            inv_TS['g']     = 1/TS['g']
 
 
             grad_s0B['g'] *= grads0_boost
@@ -333,7 +206,6 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
 
     VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
 
-
     #Impenetrable, stress-free boundary conditions
     u_r_bcB_mid    = pB(r=r_inner)
     u_r_bcS_mid    = pS(r=r_inner)
@@ -341,11 +213,6 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
     uS_r_bc        = radComp(uS(r=r_outer))
     u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
-
-    H_effB = operators.Grid(H_effB).evaluate()
-    H_effS = operators.Grid(H_effS).evaluate()
-    inv_TB = operators.Grid(inv_TB).evaluate()
-    inv_TS = operators.Grid(inv_TS).evaluate()
 
     omega = field.Field(name='omega', dist=d, dtype=dtype)
     ddt       = lambda A: -1j * omega * A
@@ -382,17 +249,14 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
     ### Ball energy
-#    problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) + LiftTauB(tB) = 0 "))
     problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = 0 "))
     ### Shell energy
-#    problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
     problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2) = 0 "))
 
 
     #Velocity BCs ell != 0
     problem.add_equation(eq_eval("uB(r=r_inner) - uS(r=r_inner)    = 0"),            condition="nθ != 0")
     problem.add_equation(eq_eval("u_r_bcB_mid - u_r_bcS_mid    = 0"),            condition="nθ != 0")
-    #problem.add_equation(eq_eval("radComp(grad(uB)(r=r_inner) - grad(uS)(r=r_inner)) = 0"), condition="nθ != 0")
     problem.add_equation(eq_eval("u_perp_bcB_mid - u_perp_bcS_mid = 0"), condition="nθ != 0")
     problem.add_equation(eq_eval("uS_r_bc    = 0"),                      condition="nθ != 0")
     problem.add_equation(eq_eval("u_perp_bcS_top    = 0"),               condition="nθ != 0")
@@ -525,6 +389,112 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
     solver1.eigenvectors = solver1.eigenvectors[:, good_values1]
     solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
     return solver1, solver2
+
+args   = docopt(__doc__)
+if args['<config>'] is not None: 
+    config_file = Path(args['<config>'])
+    config = ConfigParser()
+    config.read(str(config_file))
+    for n, v in config.items('parameters'):
+        for k in args.keys():
+            if k.split('--')[-1].lower() == n:
+                if v == 'true': v = True
+                args[k] = v
+
+# Parameters
+Lmax      = int(args['--L'])
+NmaxB      = int(args['--NB'])
+NmaxS      = int(args['--NS'])
+mesa_file1  = args['--mesa_file']
+L_dealias = N_dealias = dealias = 1
+
+if args['--NB_hires'] is not None and args['--NS_hires'] is not None:
+    NmaxB_hires = int(args['--NB_hires'])
+    NmaxS_hires = int(args['--NS_hires'])
+    mesa_file_hires = args['--mesa_file_hires']
+else:
+    NmaxB_hires = None
+    NmaxS_hires = None
+    mesa_file_hires = None
+
+
+out_dir = './' + sys.argv[0].split('.py')[0]
+if args['--mesa_file'] is None:
+    out_dir += '_polytrope'
+out_dir += '_Re{}_{}x{}_{}x{}'.format(args['--Re'], args['--L'], args['--NB'], args['--L'], args['--NS'])
+if args['--label'] is not None:
+    out_dir += '_{:s}'.format(args['--label'])
+logger.info('saving data to {:s}'.format(out_dir))
+if MPI.COMM_WORLD.rank == 0:
+    if not os.path.exists('{:s}/'.format(out_dir)):
+        os.makedirs('{:s}/'.format(out_dir))
+
+
+dtype = np.complex128
+
+Re  = float(args['--Re'])
+Pr  = 1
+Pe  = Pr*Re
+
+
+if mesa_file1 is not None:
+    with h5py.File(mesa_file1, 'r') as f:
+        r_inner = f['r_inner'][()]
+        r_outer = f['r_outer'][()]
+else:
+    r_inner = 1.1
+    r_outer = 1.5
+logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
+
+# Bases
+c    = coords.SphericalCoordinates('φ', 'θ', 'r')
+d    = distributor.Distributor((c,), mesh=None)
+bB1   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
+bS1   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
+b_midB1 = bB1.S2_basis(radius=r_inner)
+b_midS1 = bS1.S2_basis(radius=r_inner)
+b_top1 = bS1.S2_basis(radius=r_outer)
+φB1,  θB1,  rB1  = bB1.local_grids((dealias, dealias, dealias))
+φS1,  θS1,  rS1  = bS1.local_grids((dealias, dealias, dealias))
+shell_ell1 = bS1.local_ell
+shell_m1 = bS1.local_m
+
+weight_φ1 = np.gradient(φS1.flatten()).reshape(φS1.shape)
+weight_θ1 = bS1.local_colatitude_weights(dealias)
+weight_rB1 = bB1.radial_basis.local_weights(dealias)
+weight_rS1 = bS1.radial_basis.local_weights(dealias)*rS1**2
+weight1 = weight_θ1 * weight_φ1
+volume1 = np.sum(weight1)
+
+if NmaxB_hires is not None:
+    bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
+    bS2   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS_hires+1), radii=(r_inner, r_outer), dtype=dtype)
+    b_midB2 = bB2.S2_basis(radius=r_inner)
+    b_midS2 = bS2.S2_basis(radius=r_inner)
+    b_top2 = bS2.S2_basis(radius=r_outer)
+    φB2,  θB2,  rB2  = bB2.local_grids((dealias, dealias, dealias))
+    φS2,  θS2,  rS2  = bS2.local_grids((dealias, dealias, dealias))
+    shell_ell2 = bS2.local_ell
+    shell_m2 = bS2.local_m
+
+    weight_φ2 = np.gradient(φS2.flatten()).reshape(φS2.shape)
+    weight_θ2 = bS2.local_colatitude_weights(dealias)
+    weight_rB2 = bB2.radial_basis.local_weights(dealias)
+    weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
+    weight2 = weight_θ2 * weight_φ2
+    volume2 = np.sum(weight2)
+
+#Operators
+div       = lambda A: operators.Divergence(A, index=0)
+lap       = lambda A: operators.Laplacian(A, c)
+grad      = lambda A: operators.Gradient(A, c)
+dot       = lambda A, B: arithmetic.DotProduct(A, B)
+curl      = lambda A: operators.Curl(A)
+cross     = lambda A, B: arithmetic.CrossProduct(A, B)
+trace     = lambda A: operators.Trace(A)
+transpose = lambda A: operators.TransposeComponents(A)
+radComp   = lambda A: operators.RadialComponent(A)
+angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
 r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
 radial_weights_1 = np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()), axis=-1)
