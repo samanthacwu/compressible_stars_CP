@@ -100,7 +100,7 @@ for ell in ell_list:
     om1 = values.real[0]*2
     om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-    r0 = 1.05
+    r0 = 1.1
     r1 = r0 + 0.02*r.max()
     r_range = np.linspace(r0, r1, num=100, endpoint=True)
     uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
@@ -115,7 +115,7 @@ for ell in ell_list:
         f['om'] = om
         f['transfer'] = T
 
-    plt.loglog(om, T)
-#    plt.loglog(om, T*om**(-13/2))
+#    plt.loglog(om, T)
+    plt.loglog(om, T**2*om**(-13/2))
     plt.show()
 

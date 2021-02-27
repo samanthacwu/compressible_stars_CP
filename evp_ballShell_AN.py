@@ -174,6 +174,11 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
     else:
         raise NotImplementedError()
 
+
+
+#    grad_s0B['g'][2] = 0#1e5*zero_to_one(rB, 0.9, width=0.05)
+#    grad_s0S['g'][2] = grad_s0S['g'][2]*zero_to_one(rS, 1.3, width=0.05)
+
     logger.info('buoyancy time is {}'.format(t_buoy))
     t_end = float(args['--buoy_end_time'])*t_buoy
 
@@ -320,7 +325,7 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-4):
+def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=3e-4):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
     Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -329,19 +334,31 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
 
+    ρB2 = namespace2['ρB']
+    ρS2 = namespace2['ρS']
     bB1 = namespace1['bB']
     bS1 = namespace1['bS']
     bB2 = namespace2['bB']
     bS2 = namespace2['bS']
+    uB1 = namespace1['uB']
+    uS1 = namespace1['uS']
+    uB2 = namespace2['uB']
+    uS2 = namespace2['uS']
 #    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, 1))
     φB1,  θB1,  rB1  = bB1.local_grids((1, 1, (NmaxB_hires+1)/(NmaxB+1)))
     φB2,  θB2,  rB2  = bB2.local_grids((1, 1, 1))
     φS1_0,  θS1_0,  rS1_0  = bS1.local_grids((1, 1, 1))
     φS1,  θS1,  rS1  = bS1.local_grids((1, 1, (NmaxS_hires+1)/(NmaxS+1)))
     φS2,  θS2,  rS2  = bS2.local_grids((1, 1, 1))
+    weight_rB2 = bB2.radial_basis.local_weights(dealias)
+    weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
 
+    radial_weights_2 = np.concatenate((weight_rB2.flatten(), weight_rS2.flatten()), axis=-1)
+    ρ2 = np.concatenate((ρB2['g'][0,0,:].flatten(), ρS2['g'][0,0,:].flatten()))
     r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
     r2 = np.concatenate((rB2.flatten(), rS2.flatten()))
+    good1 = (shell_ell1 == subsystems1[0].group[1])*(shell_m1 == subsystems1[0].group[0])
+    good2 = (shell_ell2 == subsystems2[0].group[1])*(shell_m2 == subsystems2[0].group[0])
 
     for i, v1 in enumerate(solver1.eigenvalues):
         for j, v2 in enumerate(solver2.eigenvalues):
@@ -351,34 +368,49 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                 print(v1/(2*np.pi), v2/(2*np.pi))
                 
 #                print((np.abs(v1 - v2)/np.abs(v1)).min())
-                for subsystem in subsystems1:
-                    solver1.set_state(i, subsystem)
-                for subsystem in subsystems2:
-                    solver2.set_state(j, subsystem)
-                uB1 = namespace1['uB']
-                uS1 = namespace1['uS']
-                uB2 = namespace2['uB']
-                uS2 = namespace2['uS']
+                solver1.set_state(i, subsystems1[0])
+                solver2.set_state(j, subsystems2[0])
+                uB1.require_scales((1, 1, (NmaxB_hires+1)/(NmaxB+1)))
+                uS1.require_scales((1, 1, (NmaxS_hires+1)/(NmaxS+1)))
 
-                if uB2['g'].shape[-1]/uB1['g'].shape[-1] != 1:
-                    uB1.require_scales((1, 1, uB2['g'].shape[-1]/uB1['g'].shape[-1]))
-                if uS2['g'].shape[-1]/uS1['g'].shape[-1] != 1:
-                    uS1.require_scales((1, 1, uS2['g'].shape[-1]/uS1['g'].shape[-1]))
-                u1 = np.concatenate((uB1['g'], uS1['g']), axis=-1)
-                u2 = np.concatenate((uB2['g'], uS2['g']), axis=-1)
-                phi_theta_ind = np.unravel_index(np.abs(uB1['g'].argmax()), uB1['g'].shape)
-                u1 = u1[:,phi_theta_ind[1], phi_theta_ind[2], :]
-                phi_theta_ind = np.unravel_index(np.abs(uB2['g'].argmax()), uB2['g'].shape)
-                u2 = u2[:,phi_theta_ind[1], phi_theta_ind[2], :]
+                #Get eigenvectors
+                for f in [uB1, uS1, uB2, uS2]:
+                    f['c']
+                    f.towards_grid_space()
+                ef_uB1_pm = uB1.data[:,good1,:].squeeze()
+                ef_uS1_pm = uS1.data[:,good1,:].squeeze()
+                ef_uB2_pm = uB2.data[:,good2,:].squeeze()
+                ef_uS2_pm = uS2.data[:,good2,:].squeeze()
 
-                u1 = np.abs(u1).real
-                u2 = np.abs(u2).real
-                u1 /= u1[2,:].max()
-                u2 /= u2[2,:].max()
+                ef_u1_pm = np.concatenate((ef_uB1_pm, ef_uS1_pm), axis=-1)
+                ef_u2_pm = np.concatenate((ef_uB2_pm, ef_uS2_pm), axis=-1)
 
-                vector_diff = np.max(np.abs(u1[2,:] - u2[2,:]))
-                print('vdiff', vector_diff)
-                if vector_diff < cutoff2:
+                ix1 = np.argmax(np.abs(ef_u1_pm[2,:]))
+                ef_u1_pm /= ef_u1_pm[2,ix1]
+                ix1 = np.argmax(np.abs(ef_u2_pm[2,:]))
+                ef_u2_pm /= ef_u2_pm[2,ix1]
+
+                ef_u1 = np.zeros_like(ef_u1_pm)
+                ef_u2 = np.zeros_like(ef_u2_pm)
+                for u, u_pm in zip((ef_u1, ef_u2), (ef_u1_pm, ef_u2_pm)):
+                    u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+                    u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
+                    u[2,:] = u_pm[2,:]
+
+                #Temporary workaround -- if mode KE is inside of the convection zone then it's a bad mode.
+                mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
+                cz_KE = np.sum((mode_KE*radial_weights_2)[r2 <= 1])
+                tot_KE = np.sum((mode_KE*radial_weights_2))
+#                plt.plot(r1, ef_u1[0,:].real, c='k')
+#                plt.plot(r2, ef_u2[0,:].real, c='k', ls='--')
+#                plt.plot(r1, ef_u1[0,:].imag, c='r')
+#                plt.plot(r2, ef_u2[0,:].imag, c='r', ls='--')
+#                plt.show()
+
+                cz_KE_frac = cz_KE/tot_KE
+                vector_diff = np.max(np.abs(ef_u1 - ef_u2))
+                print('vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
+                if vector_diff < cutoff2 and cz_KE_frac < 0.9:
                     good_values1.append(i)
                     good_values2.append(j)
 #                    plt.show()
@@ -511,10 +543,11 @@ def calculate_duals(velocity_list):
     n_modes = velocity_list.shape[0]
     IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
     for i in range(n_modes):
-        if i % 10: logger.info("duals {}/{}".format(i, n_modes))
+        if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
         for j in range(n_modes):
             IP_matrix[i,j] = IP(velocity_list[i], velocity_list[j])
     
+    print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
     IP_inv = np.linalg.inv(IP_matrix)
 
     vel_dual = np.zeros_like(velocity_list)

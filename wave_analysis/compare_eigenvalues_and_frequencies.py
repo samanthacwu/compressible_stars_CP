@@ -6,7 +6,8 @@ Usage:
     compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file> <wave_flux_file> [options]
 
 Options:
-    --freq_power=<p>    Power law exponent for convective wave driving [default: -13/2]
+    --freq_power=<p>     Power law exponent for convective wave driving [default: -13/2]
+    --transfer_file=<f>  File to get the transfer function from
 
 """
 from fractions import Fraction
@@ -21,6 +22,7 @@ args = docopt(__doc__)
 sh_spectrum_file = args['<sh_spectrum_file>']
 evp_data_file = args['<evp_data_file>']
 wave_flux_file = args['<wave_flux_file>']
+transfer_file = args['--transfer_file']
 
 ell = int(evp_data_file.split('ell')[-1].split('_')[0])
 with h5py.File(evp_data_file, 'r') as ef:
@@ -36,6 +38,14 @@ with h5py.File(sh_spectrum_file, 'r') as sf:
     ells = sf['ells'][()]
     freqs = sf['freqs_inv_day'][()]
     power = power_per_ell[:,ells.flatten() == ell]
+
+if transfer_file is not None:
+    with h5py.File(transfer_file, 'r') as f:
+        transfer = f['transfer'][()]
+        transfer_om = f['om'][()]
+else:
+    transfer = transfer_om = None
+        
 
 fig = plt.figure()
 for f in complex_eigenvalues:
@@ -72,7 +82,7 @@ if wave_flux_file is None:
     shiode_energies = Nm*power_slope(complex_eigenvalues.real)/complex_eigenvalues.imag
     adjusted_energies = s1_amplitudes**2 * (shiode_energies / integ_energies)
 
-    match_freq_guess = 2.5e-1
+    match_freq_guess = 4.5e-1
     if ell == 2:
         match_freq_guess = 4.1e-1
     elif ell == 3:
@@ -105,6 +115,14 @@ if wave_flux_file is None:
     adjusted_energies *= power[match_freq_sim]/adjusted_energies[real_frequencies == match_freq][0]
     #print(real_power[real_frequencies >= match_freq], real_frequencies, match_freq)
 
+    transfer_power = transfer**2*power_slope(transfer_om)
+    transfer_power_func = interp1d(transfer_om/(2*np.pi), transfer_power)
+    sim_power_func = interp1d(freqs, power.squeeze())
+    transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
+
+
+
+
 else:
     radius = 1.15
     with h5py.File(wave_flux_file, 'r') as f:
@@ -118,19 +136,22 @@ else:
         wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
         tau = freqs_sim.max()/freqs_inv_day.max()
 
-    fudge_factor = 1/np.pi
+    fudge_factor = 10
     shiode_energies = fudge_factor * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
 fig = plt.figure()
-plt.loglog(freqs, power, c='k')
-plt.scatter(real_frequencies, adjusted_energies, c='blue')#np.abs(eig_freqs[good_eig_freqs].real), E_of_om)
+plt.loglog(freqs, power, c='k', label='IVP')
+plt.scatter(real_frequencies, adjusted_energies, c='blue', label='shiode')
+if transfer_file is not None:
+    plt.loglog(transfer_om/(2*np.pi), transfer_power, c='orange', alpha=0.8, label='transfer')
 plt.xlim(1e-1, 1e1)
 plt.xlabel('frequency (day$^{-1}$)')
 plt.ylabel('power')
 plt.title(r'$\ell = ${}'.format(ell))
 plt.ylim(1e-14, 1e0)
-plt.savefig('scratch/ell{:03d}_shiode_eqn_9.png'.format(ell), dpi=300)
+plt.legend()
+plt.savefig('scratch/ell{:03d}_data_theory_comparison.png'.format(ell), dpi=300)
 
 fig = plt.figure()
 plt.scatter(complex_eigenvalues.real/(2*np.pi), s1_amplitudes**2, c='blue', label='|s1|$^2$')#np.abs(eig_freqs[good_eig_freqs].real), E_of_om)
