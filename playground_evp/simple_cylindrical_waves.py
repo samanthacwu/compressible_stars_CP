@@ -10,14 +10,12 @@ logger = logging.getLogger(__name__)
 Nr = 64
 L = 1
 
-k_n = 10
-aspect = 4
-kx = k_n*2*np.pi/(aspect*L)
+phi_n = 1
 nu = 1e-2
 Pr = 1
 kappa = Pr*nu
 g = 1
-S = 1
+S = 0
 N = np.sqrt(g*S)
 def EVP(this_nr):
     print('solving evp with nr = {}'.format(this_nr))
@@ -27,26 +25,26 @@ def EVP(this_nr):
     # Problem
     problem = de.EVP(domain, variables=['p', 'up', 'ur', 'T', 'up_r', 'ur_r', 'T_r'],eigenvalue='om')
 
-    problem.parameters['kx'] = kx
+    problem.parameters['phi_n'] = phi_n
     problem.parameters['nu'] = nu
     problem.parameters['kappa'] = kappa
     problem.parameters['S']  = S
     problem.parameters['g'] = g
     problem.substitutions['dt(A)'] = '-1j*om*A'
-    problem.substitutions['dx(A)'] = '1j*kx*A'
+    problem.substitutions['dp(A)'] = '1j*phi_n*A'
 
-    problem.add_equation("r*(dx(up) + ur_r + ur/r) = 0")
-    problem.add_equation("r**2*(dt(up) + dx(p)    - nu*(dx(dx(up))/r**2 + (1/r)*(r*dr(up_r) + up_r) + (2/r**2)*dx(ur) - up/r**2)) = 0")
-    problem.add_equation("r**2*(dt(ur) + dr(p)/r  - nu*(dx(dx(ur))/r**2 + (1/r)*(r*dr(ur_r) + ur_r) - (2/r**2)*dx(up) - ur/r**2) - g*T) = 0")
-    problem.add_equation("r**2*(dt(T) + ur*S -   kappa*(dx(dx(T))/r**2 +  (1/r)*(r*dr(T_r)  + T_r))) = 0")
-    problem.add_equation("up_r - dr(up) = 0")
-    problem.add_equation("ur_r - dr(ur) = 0")
-    problem.add_equation("T_r - dr(T) = 0")
-    problem.add_bc("left(up_r) = 0")
+    problem.add_equation("r*(dp(up) + ur_r + ur/r) = 0")
+    problem.add_equation("r**2*(dt(up) + dp(p)    - nu*(dp(dp(up))/r**2 + (1/r)*(r*dr(up_r) + up_r) + (2/r**2)*dp(ur) - up/r**2)) = 0")
+    problem.add_equation("r**2*(dt(ur) + dr(p)/r  - nu*(dp(dp(ur))/r**2 + (1/r)*(r*dr(ur_r) + ur_r) - (2/r**2)*dp(up) - ur/r**2) - g*T) = 0")
+    problem.add_equation("r**2*(dt(T) + ur*S -   kappa*(dp(dp(T))/r**2 +  (1/r)*(r*dr(T_r)  + T_r))) = 0")
+    problem.add_equation("up_r - dr(up) = 0", tau=False)
+    problem.add_equation("ur_r - dr(ur) = 0", tau=False)
+    problem.add_equation("T_r - dr(T) = 0", tau=False)
+#    problem.add_bc("left(up_r) = 0")
     problem.add_bc("right(up_r) = 0")
-    problem.add_bc("left(ur) = 0")
+#    problem.add_bc("left(ur) = 0")
     problem.add_bc("right(ur) = 0")
-    problem.add_bc("left(T) = 0")
+#    problem.add_bc("left(T) = 0")
     problem.add_bc("right(T) = 0")
 
     # Solver
@@ -112,10 +110,10 @@ for i, ev1 in enumerate(solver1.eigenvalues):
                 good1.append(i)
                 good2.append(j)
                 break
-#solver1.eigenvalues = solver1.eigenvalues[good1]
-#solver1.eigenvectors = solver1.eigenvectors[:,good1]
-#solver2.eigenvalues = solver2.eigenvalues[good2]
-#solver2.eigenvectors = solver2.eigenvectors[:,good2]
+solver1.eigenvalues = solver1.eigenvalues[good1]
+solver1.eigenvectors = solver1.eigenvectors[:,good1]
+solver2.eigenvalues = solver2.eigenvalues[good2]
+solver2.eigenvectors = solver2.eigenvectors[:,good2]
 #
 ## Plot error vs exact eigenvalues
 #mode_number = 1 + np.arange(len(solver1.eigenvalues))
@@ -126,7 +124,7 @@ for i, ev1 in enumerate(solver1.eigenvalues):
 #eval_relative_error = (solver1.eigenvalues.imag - exact_eigenvalues.imag) / exact_eigenvalues.imag
 #
 #print('analytic', exact_eigenvalues)
-#print('solved', solver1.eigenvalues)
+print('solved', solver1.eigenvalues)
 #print('ratio_imag', solver1.eigenvalues.imag/exact_eigenvalues.imag)
 #print('ratio_real', solver1.eigenvalues.real/exact_eigenvalues.real)
 ##print('lambda/nu > kx**2', -solver1.eigenvalues.imag/nu > kx**2, -solver1.eigenvalues.imag, kx**2)
