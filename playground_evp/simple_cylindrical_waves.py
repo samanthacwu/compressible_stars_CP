@@ -5,47 +5,43 @@ import logging
 import time
 logger = logging.getLogger(__name__)
 
+from scipy.special import jv, jn_zeros, yv
+
+from scipy.special import erf
+def one_to_zero(x, x0, width=0.1):
+    return (1 - erf( (x - x0)/width))/2
+
+def zero_to_one(*args, **kwargs):
+    return -(one_to_zero(*args, **kwargs) - 1)
 
 # Domain
 Nr = 64
-L = 1
+R = 1
 
 phi_n = 1
-nu = 1e-2
-Pr = 1
-kappa = Pr*nu
 g = 1
-S = 0
+S = 100
 N = np.sqrt(g*S)
 def EVP(this_nr):
     print('solving evp with nr = {}'.format(this_nr))
-    r_basis = de.Chebyshev('r', this_nr, interval=(0, L))
+    r_basis = de.Chebyshev('r', this_nr, interval=(0, R))
     domain = de.Domain([r_basis], np.complex128)
 
     # Problem
-    problem = de.EVP(domain, variables=['p', 'up', 'ur', 'T', 'up_r', 'ur_r', 'T_r'],eigenvalue='om')
+    problem = de.EVP(domain, variables=['p', 'up', 'ur', 'T'],eigenvalue='om')
 
     problem.parameters['phi_n'] = phi_n
-    problem.parameters['nu'] = nu
-    problem.parameters['kappa'] = kappa
     problem.parameters['S']  = S
     problem.parameters['g'] = g
     problem.substitutions['dt(A)'] = '-1j*om*A'
     problem.substitutions['dp(A)'] = '1j*phi_n*A'
 
-    problem.add_equation("r*(dp(up) + ur_r + ur/r) = 0")
-    problem.add_equation("r**2*(dt(up) + dp(p)    - nu*(dp(dp(up))/r**2 + (1/r)*(r*dr(up_r) + up_r) + (2/r**2)*dp(ur) - up/r**2)) = 0")
-    problem.add_equation("r**2*(dt(ur) + dr(p)/r  - nu*(dp(dp(ur))/r**2 + (1/r)*(r*dr(ur_r) + ur_r) - (2/r**2)*dp(up) - ur/r**2) - g*T) = 0")
-    problem.add_equation("r**2*(dt(T) + ur*S -   kappa*(dp(dp(T))/r**2 +  (1/r)*(r*dr(T_r)  + T_r))) = 0")
-    problem.add_equation("up_r - dr(up) = 0", tau=False)
-    problem.add_equation("ur_r - dr(ur) = 0", tau=False)
-    problem.add_equation("T_r - dr(T) = 0", tau=False)
-#    problem.add_bc("left(up_r) = 0")
-    problem.add_bc("right(up_r) = 0")
+    problem.add_equation("r*( dp(up) + dr(r*ur) ) = 0", tau=False)
+    problem.add_equation("r*(dt(up)  + dp(p)/r)     = 0")
+    problem.add_equation("    dt(ur) + dr(p)  - g*T*r**2 = 0")
+    problem.add_equation("    dt(T) + ur*S = 0")
 #    problem.add_bc("left(ur) = 0")
     problem.add_bc("right(ur) = 0")
-#    problem.add_bc("left(T) = 0")
-    problem.add_bc("right(T) = 0")
 
     # Solver
     solver = problem.build_solver()
@@ -57,7 +53,7 @@ def EVP(this_nr):
     solver.eigenvectors = solver.eigenvectors[:, finite]
 
     # Sort eigenmodes by eigenvalue
-    order = np.argsort(-solver.eigenvalues.imag)
+    order = np.argsort(-solver.eigenvalues.real)
     solver.eigenvalues = solver.eigenvalues[order]
     solver.eigenvectors = solver.eigenvectors[:, order]
 
@@ -72,11 +68,14 @@ def EVP(this_nr):
 solver1 = EVP(Nr)
 solver2 = EVP(int(1.5*Nr))
 
+print(solver1.eigenvalues)
+print(solver2.eigenvalues)
+
 cot = lambda x: np.cos(x)/np.sin(x)
 
 good1 = []
 good2 = []
-cutoff = 1e-8
+cutoff = 1e-4
 cutoff2 = np.sqrt(cutoff)
 for i, ev1 in enumerate(solver1.eigenvalues):
     for j, ev2 in enumerate(solver2.eigenvalues):
@@ -102,11 +101,16 @@ for i, ev1 in enumerate(solver1.eigenvalues):
             vector_diff = np.max(np.abs(w1['g'] - w2['g']))
             print(vector_diff)
             if vector_diff < cutoff2:
-                print(w1['g'][ix]/w2['g'][ix])
-                r = solver1.domain.grid(0, scales=3/2)
-                plt.plot(r, w1['g'].real)
-                plt.plot(r, w2['g'].real)
-                plt.show()
+#                print(w1['g'][ix]/w2['g'][ix])
+#                r = solver1.domain.grid(0, scales=3/2)
+#                plt.plot(r, w1['g'].real)
+##                plt.plot(r, w2['g'].real)
+#                analytic = (1/r)*jv(phi_n, phi_n*np.sqrt(g*S)*r/ev1.real)
+#                analytic /= analytic[np.argmax(np.abs(analytic))]
+#                plt.plot(r, analytic, label='analytic', ls='--')
+#                plt.legend()
+#                plt.title(ev1)
+#                plt.show()
                 good1.append(i)
                 good2.append(j)
                 break
@@ -114,25 +118,13 @@ solver1.eigenvalues = solver1.eigenvalues[good1]
 solver1.eigenvectors = solver1.eigenvectors[:,good1]
 solver2.eigenvalues = solver2.eigenvalues[good2]
 solver2.eigenvectors = solver2.eigenvectors[:,good2]
-#
-## Plot error vs exact eigenvalues
-#mode_number = 1 + np.arange(len(solver1.eigenvalues))
-#print(mode_number)
-#krs = (np.pi*mode_number)/L
-#ks = np.sqrt(kx**2 + krs**2)
-#exact_eigenvalues = -(kx/ks)*N - 1j * nu * ks**2
-#eval_relative_error = (solver1.eigenvalues.imag - exact_eigenvalues.imag) / exact_eigenvalues.imag
-#
-#print('analytic', exact_eigenvalues)
-print('solved', solver1.eigenvalues)
-#print('ratio_imag', solver1.eigenvalues.imag/exact_eigenvalues.imag)
-#print('ratio_real', solver1.eigenvalues.real/exact_eigenvalues.real)
-##print('lambda/nu > kx**2', -solver1.eigenvalues.imag/nu > kx**2, -solver1.eigenvalues.imag, kx**2)
-#
-#plt.figure()
-#plt.semilogy(mode_number, np.abs(eval_relative_error), lw=0, marker='o')
-#plt.xlabel("Mode number")
-#plt.ylabel(r"$|\lambda - \lambda_{exact}|/\lambda_{exact}$")
-#plt.title(r"Eigenvalue relative error ($N_r=%i$)" % Nr)
-#plt.savefig('eval_error.png')
-##plt.show()
+
+# Plot error vs exact eigenvalues
+roots = jn_zeros(phi_n, len(solver1.eigenvalues))
+analytic_lam = phi_n*np.sqrt(g*S)*R/roots
+
+print('solved', solver1.eigenvalues.real)
+print('roots', analytic_lam)
+print('diff', 1 - solver1.eigenvalues.real/analytic_lam)
+
+
