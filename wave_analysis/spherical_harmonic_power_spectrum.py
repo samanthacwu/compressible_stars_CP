@@ -5,7 +5,7 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    plot_mollweide_snapshots.py <root_dir> [options]
+    spherical_harmonic_power_spectrum.py <root_dir> [options]
 
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: SH_transform_surface_shell_slices]
@@ -20,6 +20,7 @@ Options:
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
     --plot_only
+    --field=<f>                         If specified, only transform this field
 """
 import gc
 import os
@@ -65,7 +66,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/MESA_Models_Dedalus_Full_Sphere_6_ballShell/ballShell_nccs_B63_S63.h5'
+star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B63_S63_Re1e4.h5'
 with h5py.File(star_file, 'r') as f:
     tau = f['tau'][()]/(60*60*24)
     r_outer = f['r_outer'][()]
@@ -75,12 +76,20 @@ with h5py.File(star_file, 'r') as f:
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
-out_dir = 'SH_power_spectra'.format(data_dir)
+if 'SH_transform' in data_dir:
+    out_dir = data_dir.replace('SH_transform', 'SH_power')
+else:
+    out_dir = 'SH_power_spectra'
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
-if not args['--plot_only']:
-    plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
-    fields = ['s1_surf',]#, 'u_theta_surf',]
+plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
+if args['--field'] is None:
+    with h5py.File(plotter.files[0], 'r') as f:
+        fields = list(f['tasks'].keys())
+else:
+    fields = [args['--field'],]
 
+
+if not args['--plot_only']:
     times = []
     print('getting times...')
     while plotter.files_remain([], fields):
@@ -92,90 +101,101 @@ if not args['--plot_only']:
                 ms = f['ms'][()]
             times.append(f['time'][()])
         plotter.current_filenum += 1
-
     times = np.concatenate(times)
-    data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
 
-    print('filling datacube...')
-    writes = 0
-    while plotter.files_remain([], fields):
-        print('reading file {}...'.format(plotter.current_filenum+1))
-        file_name = plotter.files[plotter.current_filenum]
-        with h5py.File('{}'.format(file_name), 'r') as f:
-            this_file_writes = len(f['time'][()])
-            data_cube[writes:writes+this_file_writes,:] = f['s1_surf'][:,:,:]
-            writes += this_file_writes
-        plotter.current_filenum += 1
+    with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as out_f:
+        out_f['ells']  = ells
+        for f in fields:
+            print('filling datacube...')
+            writes = 0
+            while plotter.files_remain([], fields):
+                first = plotter.current_filenum == 0
+                print('reading file {}...'.format(plotter.current_filenum+1))
+                file_name = plotter.files[plotter.current_filenum]
+                with h5py.File('{}'.format(file_name), 'r') as in_f:
+                    task = in_f['tasks/'+f][()]
+                    shape = list(task.shape)
+                    if first:
+                        data_cube = np.zeros([times.shape[0],]+shape[1:], dtype=np.complex128)
+                    this_file_writes = len(in_f['time'][()])
+                    data_cube[writes:writes+this_file_writes,:] = in_f['tasks/'+f][:,:,:]
+                    writes += this_file_writes
+                plotter.current_filenum += 1
 
-    print('taking transform')
-    transform = np.zeros(data_cube.shape, dtype=np.complex128)
-    for ell in range(data_cube.shape[1]):
-        print('taking transforms {}/{}'.format(ell+1, data_cube.shape[1]))
-        for m in range(data_cube.shape[2]):
-            if m > ell: continue
-            freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
-    del data_cube
-    gc.collect()
-    freqs, full_power = normalize_cfft_power(freqs, transform)
-    del transform
-    gc.collect()
+            if ells.shape[1] == data_cube.shape[1]:
+                vector = False
+            else:
+                vector = True
 
-    power_per_ell = np.sum(full_power, axis=2) #sum over m's
-    del full_power
-    gc.collect()
+            print('taking transform')
+            transform = np.zeros(data_cube.shape, dtype=np.complex128)
+            for ell in ells.flatten():
+                print('taking transforms {}/{}'.format(ell+1, ells.flatten().shape[0]))
+                for m in ms.flatten():
+                    if m > ell: continue
+                    if not vector:
+                        freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
+                    else:
+                        freqs, transform[:,:,ell,m] = clean_cfft(times, data_cube[:,:,ell,m])
+            del data_cube
+            gc.collect()
+            freqs0 = freqs
+            freqs, full_power = normalize_cfft_power(freqs0, transform)
+            del transform
+            gc.collect()
 
-    with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as f:
-        f['power_per_ell'] = power_per_ell
-        f['ells']  = ells
-        f['freqs'] = freqs 
-        f['freqs_inv_day'] = freqs/tau
-else:  
-    with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as f:
-        power_per_ell = f['power_per_ell'][()]
-        ells = f['ells'][()]
-        freqs = f['freqs'][()]
+            power_per_ell = np.sum(full_power, axis=2) #sum over m's
+            del full_power
+            gc.collect()
 
-freqs /= tau
+            out_f['tasks/' + f + '_power_per_ell'] = power_per_ell
+            if f == fields[0]:
+                out_f['freqs'] = freqs 
+                out_f['freqs_inv_day'] = freqs/tau
+
+powers_per_ell = OrderedDict()
+with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
+    for f in fields:
+        powers_per_ell[f] = out_f['tasks/'+f+'_power_per_ell'][()]
+    ells = out_f['ells'][()]
+    freqs = out_f['freqs_inv_day'][()]
+
+
 good = freqs >= 0
 min_freq = 1e-1
 max_freq = freqs.max()
-sum_power = np.sum(power_per_ell, axis=1)
-sum_power2 = np.zeros(power_per_ell.shape[0])
-#sum_power2 = np.sum(power_per_ell, axis=1)
-for i, ell in enumerate(ells.flatten()):
-    if ell <= 10:
-        sum_power2 += power_per_ell[:,i].real
+for k, powspec in powers_per_ell.items():
+    good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
+    print(good_axis, powspec.shape, len(ells.flatten()))
+    sum_power = np.sum(powspec, axis=good_axis).squeeze()
         
-ymin = sum_power[(freqs > 5e-2)*(freqs < max_freq)][-1].min()/2
-ymax = sum_power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
-print(ymin, ymax)
+    ymin = sum_power[(freqs > 5e-2)*(freqs < max_freq)][-1].min()/2
+    ymax = sum_power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
 
-plt.plot(freqs[good], sum_power2[good], c = 'green', ls='--', label=r'$\ell <= 10$')
-plt.plot(freqs[good], sum_power[good], c = 'k', label=r'all $\ell$ values')
-plt.yscale('log')
-plt.xscale('log')
-plt.ylabel(r'Power (simulation s1 units squared)')
-plt.xlabel(r'Frequency (day$^{-1}$)')
-plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
-plt.xlim(min_freq, max_freq)
-plt.ylim(ymin, ymax)
-plt.legend(loc='best')
-plt.savefig('{}/summed_power.png'.format(full_out_dir), dpi=600)
+    plt.figure()
+    if len(sum_power.shape) > 1:
+        for i in range(sum_power.shape[1]):
+            plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
+    else:
+        plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.ylabel(r'Power ({})'.format(k))
+    plt.xlabel(r'Frequency (day$^{-1}$)')
+    plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
+    plt.xlim(min_freq, max_freq)
+    plt.ylim(ymin, ymax)
+    plt.legend(loc='best')
+    k_out = k.replace('(', '_').replace(')', '_').replace('=', '')
 
-fig = plt.figure()
-ax1 = fig.add_subplot(1,1,1)
-for i, ell in enumerate(ells.flatten()):
-    if ell == 0:
-        continue
-    plt.plot(freqs[good], power_per_ell[good,i].real/ell, c='k')
-    ax1.set_yscale('log')
-    ax1.set_xscale('log')
-    ax1.text(0.05, 0.95, r'$\ell = {{{}}}$'.format(ell), transform=ax1.transAxes)
-    ax1.set_ylabel(r'Power$/\ell$ (simulation s1 units squared)')
-    ax1.set_xlabel(r'Frequency (day$^{-1}$)')
-    ax1.set_xlim(min_freq, max_freq)
-    ax1.set_ylim(ymin, ymax)
-    fig.savefig('{}/power_ell{}.png'.format(full_out_dir, ell), dpi=600)
-    ax1.cla()
-    if ell > 10:
-        break
+    plt.savefig('{}/{}_summed_power.png'.format(full_out_dir, k_out), dpi=600)
+
+    if k == 'uB(r=0.5)':
+        plt.figure()
+        KE = np.sum(sum_power, axis=1)
+        plt.loglog(freqs, freqs*KE)
+        plt.ylabel(r'f * (KE Power) (cz)')
+        plt.xlabel(r'Frequency (day$^{-1}$)')
+        plt.savefig('{}/fke_spec.png'.format(full_out_dir), dpi=600)
+        
+
