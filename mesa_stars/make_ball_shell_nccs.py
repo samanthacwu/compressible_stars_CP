@@ -208,11 +208,11 @@ inv_Pe_rad = 1/Pe_rad
 print("L CZ:", L_CZ)
 
 sim_inv_Pe_rad = np.copy(inv_Pe_rad)
-sim_inv_Pe_rad -= 1/simulation_Re
-sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
-r_Pe_min = r[sim_inv_Pe_rad > 0].min()
-sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
-sim_inv_Pe_rad += 1/simulation_Re
+#sim_inv_Pe_rad -= 1/simulation_Re
+#sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
+#r_Pe_min = r[sim_inv_Pe_rad > 0].min()
+#sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
+#sim_inv_Pe_rad += 1/simulation_Re
 
 
 r_ball = r[ball_bool]/L
@@ -281,21 +281,24 @@ def match_boundary(fB, fS, adjust_ball=False):
 
 ### Radiative diffusivity
 NmaxB, NmaxS = 8, 90#np.min((true_NmaxS - 1, 126))
+transition = (r/L)[sim_inv_Pe_rad > 1/simulation_Re][0].value
 gradPe_B_cutoff = 10
 gradPe_S_cutoff = 93
-inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool]), Nmax=NmaxB)
+inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool] ), Nmax=NmaxB)
 inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, sim_inv_Pe_rad[shell_bool]), Nmax=NmaxS)
+inv_Pe_rad_fieldB['g'] += 1/simulation_Re
+inv_Pe_rad_fieldS['g'] = (1/simulation_Re) + zero_to_one(rS, transition-0.05, width=0.05) * (inv_Pe_rad_fieldS['g'] - 1/simulation_Re)
 
 #match_boundary(inv_Pe_rad_fieldB, inv_Pe_rad_fieldS)
 
 
 grad_inv_Pe_B = grad(inv_Pe_rad_fieldB).evaluate()
 grad_inv_Pe_B['c'][:,:,:,gradPe_B_cutoff:] = 0
-
+grad_inv_Pe_B['g'] = 0
+#
 grad_inv_Pe_S = grad(inv_Pe_rad_fieldS).evaluate()
-grad_inv_Pe_S['c'][:,:,:,int(NmaxS/2):] = 0
-transition = (r/L)[sim_inv_Pe_rad > sim_inv_Pe_rad.min()][0].value
-grad_inv_Pe_S['g'][2] *= zero_to_one(rS, transition, width=0.05)
+grad_inv_Pe_S['c'][:,:,:,int(NmaxS*1/3):] = 0
+grad_inv_Pe_S['g'][2] *= zero_to_one(rS, transition-0.05, width=0.05)
 grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 
 #match_boundary(grad_inv_Pe_B, grad_inv_Pe_S)
@@ -308,9 +311,8 @@ if plot:
     plot_ncc_figure(r[sim_bool]/L, np.gradient(sim_inv_Pe_rad, r/L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), grad_inv_Pe_S['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value, ylim=(1e-4/simulation_Re, 1))
 
 
-
 ### Log Density 
-NmaxB, NmaxS = 8, 32
+NmaxB, NmaxS = 32, 32
 ln_rho_fieldB, ln_rho_interpB = make_NCC(bB, (rB, r_ball, np.log(rho/rho0)[ball_bool]), Nmax=NmaxB)
 grad_ln_rho_fieldB, grad_ln_rho_interpB = make_NCC(bB, (rB, r_ball, dlogrhodr[ball_bool]*L), Nmax=NmaxB, vector=True)
 ln_rho_fieldS, ln_rho_interpS = make_NCC(bS, (rS, r_shell, np.log(rho/rho0)[shell_bool]), Nmax=NmaxS)

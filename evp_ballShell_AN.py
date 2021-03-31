@@ -166,6 +166,12 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
 
 
+#            grad_inv_PeB['g'] = 0
+#            grad_inv_PeS['g'] = 0
+#            inv_PeB['g'] = 1/Pe
+#            inv_PeS['g'] = 1/Pe
+
+
             grad_s0B['g'] *= grads0_boost
             grad_s0S['g'] *= grads0_boost
 
@@ -173,11 +179,6 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             t_buoy = 1
     else:
         raise NotImplementedError()
-
-
-
-#    grad_s0B['g'][2] = 0#1e5*zero_to_one(rB, 0.9, width=0.05)
-#    grad_s0S['g'][2] = grad_s0S['g'][2]*zero_to_one(rS, 1.3, width=0.05)
 
     logger.info('buoyancy time is {}'.format(t_buoy))
     t_end = float(args['--buoy_end_time'])*t_buoy
@@ -221,6 +222,7 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
 
     omega = field.Field(name='omega', dist=d, dtype=dtype)
     ddt       = lambda A: -1j * omega * A
+
     grads1B = grad(s1B)
     grads1S = grad(s1S)
     grads1B.store_last = True
@@ -300,7 +302,8 @@ def solve_dense(solver, ell):
         logger.info("solving ell = {}".format(ell))
         solver.solve_dense(subproblem)
 
-        values = solver.eigenvalues
+        values = solver.eigenvalues 
+#        values *= -1j
         vectors = solver.eigenvectors
 
         #filter out nans
@@ -397,7 +400,7 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                     u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
                     u[2,:] = u_pm[2,:]
 
-                #Temporary workaround -- if mode KE is inside of the convection zone then it's a bad mode.
+                #If mode KE is inside of the convection zone then it's a bad mode.
                 mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
                 cz_KE = np.sum((mode_KE*radial_weights_2)[r2 <= 1])
                 tot_KE = np.sum((mode_KE*radial_weights_2))
@@ -410,10 +413,9 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                 cz_KE_frac = cz_KE/tot_KE
                 vector_diff = np.max(np.abs(ef_u1 - ef_u2))
                 print('vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
-                if vector_diff < cutoff2 and cz_KE_frac < 0.9:
+                if vector_diff < cutoff2 and cz_KE_frac < 0.5:
                     good_values1.append(i)
                     good_values2.append(j)
-#                    plt.show()
 
 
     solver1.eigenvalues = solver1.eigenvalues[good_values1]
@@ -571,9 +573,9 @@ if NmaxB_hires is not None:
     solver2, namespace2 = build_solver(bB2, bS2, b_midB2, b_midS2, b_top2, mesa_file_hires)
 for i in range(Lmax):
     ell = i + 1
-    logger.info("solving at ell = {}".format(ell))
     logger.info('solving lores eigenvalue with NmaxB {}'.format(NmaxB))
     solver1 = solve_dense(solver1, ell)
+#    print(solver1.eigenvalues)
     subsystems1 = []
     for subsystem in solver1.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
@@ -585,6 +587,7 @@ for i in range(Lmax):
     if NmaxB_hires is not None:
         logger.info('solving hires eigenvalue with NmaxB {}'.format(NmaxB_hires))
         solver2 = solve_dense(solver2, ell)
+#        print(solver2.eigenvalues)
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
