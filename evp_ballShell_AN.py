@@ -50,6 +50,7 @@ import dedalus_sphere
 from mpi4py import MPI
 import matplotlib.pyplot as plt
 from scipy.linalg import eig
+from scipy.interpolate import interp1d
 
 from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer
 from d3_outputs.writing      import d3FileHandler
@@ -328,7 +329,7 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=3e-4):
+def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-2):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
     Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -560,7 +561,11 @@ def calculate_duals(velocity_list):
 
 if mesa_file1 is not None:
     with h5py.File(mesa_file1, 'r') as f:
-        tau = f['tau'][()]/(60*60*24)
+        tau_s = f['tau'][()]
+        tau = tau_s/(60*60*24)
+        N2_mesa = f['N2_mesa'][()]
+        r_mesa = f['r_mesa'][()]
+        L_mesa = f['L'][()]
 else:
     tau = 1
 logger.info('using tau = {} days'.format(tau))
@@ -598,6 +603,26 @@ for i in range(Lmax):
         solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
     print(solver1.eigenvalues.real/tau/(2*np.pi))
     print(solver2.eigenvalues.real/tau/(2*np.pi))
+
+    depths = []
+    for om in solver1.eigenvalues.real:
+        Lambda = np.sqrt(ell*(ell+1))
+        kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_s))
+        v_group = (om/tau_s) / kr_cm
+        inv_Pe = np.ones_like(r_mesa) / Pe
+        inv_Pe[r_mesa/L_mesa > 1.1] = interp1d(namespace1['rS'].flatten(), namespace1['inv_PeS']['g'][0,0,:], bounds_error=False, fill_value='extrapolate')(r_mesa[r_mesa/L_mesa > 1.1]/L_mesa)
+        k_rad = (L_mesa**2 / tau_s) * inv_Pe
+        gamma_rad = k_rad * kr_cm**2
+        depth_integrand = np.gradient(r_mesa) * gamma_rad/v_group
+
+        opt_depth = 0
+        for i, rv in enumerate(r_mesa):
+            if rv/L_mesa > 1.0 and rv/L_mesa < r_outer:
+                opt_depth += depth_integrand[i]
+        depths.append(opt_depth)
+    print(depths)
+
+        
 
     bS = namespace1['bS']
     bB = namespace1['bB']
@@ -700,6 +725,7 @@ for i in range(Lmax):
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
 
     velocity_duals = calculate_duals(velocity_eigenfunctions)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
@@ -715,6 +741,7 @@ for i in range(Lmax):
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
 
 
     gc.collect()

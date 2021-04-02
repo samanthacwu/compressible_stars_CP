@@ -193,8 +193,8 @@ if args['--sponge']:
     spongeS['g'] = 0.5*(np.tanh((rS - (r_inner + 2*L_shell/3))/(0.1*L_shell)) + 1)
 
 # Get local slices
-slicesB     = GridSlicer(pB)
-slicesS     = GridSlicer(pS)
+slicesB     = GridSlicer(pB, dealias=(1,1,1))
+slicesS     = GridSlicer(pS, dealias=(1,1,1))
 
 erB['g'][2] = 1
 erS['g'][2] = 1
@@ -351,7 +351,7 @@ else:
         s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(φS)+np.sin(φS))*np.sin(θS)**3
     else:
         # Initial conditions
-        A0   = float(1e-6)
+        A0   = float(1e-3)
         seed = 42 + d.comm_cart.rank
         rand = np.random.RandomState(seed=seed)
         filter_scale = 0.25

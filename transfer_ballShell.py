@@ -82,40 +82,66 @@ dir = args['<root_dir>']
 for ell in ell_list:
     print("ell = %i" % ell)
 
-    with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
-        velocity_duals = f['velocity_duals'][()]
-        values = f['good_evalues'][()]
-        velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
-        s1_amplitudes = f['s1_amplitudes'][()]
-        rB = f['rB'][()].flatten()
-        rS = f['rS'][()].flatten()
-        r = np.concatenate((rB, rS))
+    transfers = []
+    oms = []
+    for j, d_filter in enumerate([10, 1, 0.1]):
+        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
+            velocity_duals = f['velocity_duals'][()]
+            values = f['good_evalues'][()]
+            velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
+            s1_amplitudes = f['s1_amplitudes'][()]
+            depths = f['depths'][()]
+            rB = f['rB'][()].flatten()
+            rS = f['rS'][()].flatten()
+            r = np.concatenate((rB, rS))
 
-    values = values[:15]
-    s1_amplitudes = s1_amplitudes[:15]
-    velocity_eigenfunctions = velocity_eigenfunctions[:15]
-    velocity_duals = velocity_duals[:15]
- 
-    om0 = values.real[-2]
-    om1 = values.real[0]*2
-    om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
+        good = depths < d_filter
 
-    r0 = 1.1
-    r1 = r0 + 0.02*r.max()
-    r_range = np.linspace(r0, r1, num=100, endpoint=True)
-    uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
+        values = values[good]
+        s1_amplitudes = s1_amplitudes[good]
+        velocity_eigenfunctions = velocity_eigenfunctions[good]
+        velocity_duals = velocity_duals[good]
+     
+        om0 = values.real[-2]
+        om1 = values.real[0]*2
+        om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-    T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range)
+        r0 = 1.05
+        r1 = r0 + 0.2*r.max()
+        r_range = np.linspace(r0, r1, num=100, endpoint=True)
+        uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
 
-    peaks = 1
-    while peaks > 0:
-        om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
+        T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range)
+
+        peaks = 1
+        while peaks > 0:
+            om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
+
+
+    #    plt.loglog(om, T)
+        plt.loglog(om/(2*np.pi), np.abs(T)**2*om**(-13/2), lw=3-j, label='depth filter = {}'.format(d_filter))
+        oms.append(om)
+        transfers.append(T)
+
+    good_om = np.sort(np.concatenate(oms))
+    good_T = np.zeros_like(good_om)
+
+    from scipy.interpolate import interp1d
+    interps = []
+    for om, T in zip(oms, transfers):
+        interps.append(interp1d(om, T, bounds_error=False, fill_value=np.inf))
+
+    for i, omega in enumerate(good_om):
+        vals = []
+        for f in interps:
+            vals.append(f(omega))
+        good_T[i] = np.min(vals)
+    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
-        f['om'] = om
-        f['transfer'] = T
-
-#    plt.loglog(om, T)
-    plt.loglog(om, T**2*om**(-13/2))
+        f['om'] = good_om
+        f['transfer'] = good_T
+    plt.xlabel('frequency 1/day')
+    plt.legend()
     plt.show()
 
