@@ -187,9 +187,9 @@ for label, b in zip(('B', 'S'), (bB, bS)):
 
 if args['--sponge']:
     L_shell = r_outer - r_inner
-    spongeS = field.Field(dist=d, bases=(bS,), dtype=dtype)
-    spongeS['g'] = 0.5*(np.tanh((rS - (r_inner + 2*L_shell/3))/(0.1*L_shell)) + 1)
-
+    spongeS = field.Field(dist=d, bases=(bS.radial_basis,), dtype=dtype)
+    spongeS.require_scales(dealias_tuple)
+    spongeS['g'] = zero_to_one(rS, r_inner + 2*L_shell/3, 0.1*L_shell)
 # Get local slices
 slicesB     = GridSlicer(pB)
 slicesS     = GridSlicer(pS)
@@ -240,6 +240,8 @@ if args['--mesa_file'] is not None:
         if args['--sponge']:
             f_brunt = f['tau'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
             spongeS['g'] *= f_brunt
+#            logger.info('sponge layer max_dt {:.3e} vs max_dt {:.3e}'.format(0.25/f_brunt, max_dt))
+#            max_dt = np.min((max_dt, 0.25/f_brunt))
 
 else:
     logger.info("Using polytropic initial conditions")
@@ -375,8 +377,7 @@ problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
 if args['--sponge']:
-    spongeS = operators.Grid(spongeS).evaluate()
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS)) - spongeS*uS"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + spongeS*uS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 else:
     problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
