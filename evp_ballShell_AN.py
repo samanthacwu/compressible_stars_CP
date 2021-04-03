@@ -50,6 +50,7 @@ import dedalus_sphere
 from mpi4py import MPI
 import matplotlib.pyplot as plt
 from scipy.linalg import eig
+from scipy.interpolate import interp1d
 
 from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer
 from d3_outputs.writing      import d3FileHandler
@@ -166,6 +167,12 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             TS['g']         = np.expand_dims(np.expand_dims(f['TS'][:,:,slicesS[-1]], axis=0), axis=0)
 
 
+#            grad_inv_PeB['g'] = 0
+#            grad_inv_PeS['g'] = 0
+#            inv_PeB['g'] = 1/Pe
+#            inv_PeS['g'] = 1/Pe
+
+
             grad_s0B['g'] *= grads0_boost
             grad_s0S['g'] *= grads0_boost
 
@@ -173,11 +180,6 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
             t_buoy = 1
     else:
         raise NotImplementedError()
-
-
-
-#    grad_s0B['g'][2] = 0#1e5*zero_to_one(rB, 0.9, width=0.05)
-#    grad_s0S['g'][2] = grad_s0S['g'][2]*zero_to_one(rS, 1.3, width=0.05)
 
     logger.info('buoyancy time is {}'.format(t_buoy))
     t_end = float(args['--buoy_end_time'])*t_buoy
@@ -221,6 +223,7 @@ def build_solver(bB, bS, b_midB, b_midS, b_top, mesa_file):
 
     omega = field.Field(name='omega', dist=d, dtype=dtype)
     ddt       = lambda A: -1j * omega * A
+
     grads1B = grad(s1B)
     grads1S = grad(s1S)
     grads1B.store_last = True
@@ -300,7 +303,8 @@ def solve_dense(solver, ell):
         logger.info("solving ell = {}".format(ell))
         solver.solve_dense(subproblem)
 
-        values = solver.eigenvalues
+        values = solver.eigenvalues 
+#        values *= -1j
         vectors = solver.eigenvectors
 
         #filter out nans
@@ -325,7 +329,7 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
-def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=3e-4):
+def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-2):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
     Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -397,7 +401,7 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                     u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
                     u[2,:] = u_pm[2,:]
 
-                #Temporary workaround -- if mode KE is inside of the convection zone then it's a bad mode.
+                #If mode KE is inside of the convection zone then it's a bad mode.
                 mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
                 cz_KE = np.sum((mode_KE*radial_weights_2)[r2 <= 1])
                 tot_KE = np.sum((mode_KE*radial_weights_2))
@@ -410,10 +414,9 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
                 cz_KE_frac = cz_KE/tot_KE
                 vector_diff = np.max(np.abs(ef_u1 - ef_u2))
                 print('vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
-                if vector_diff < cutoff2 and cz_KE_frac < 0.9:
+                if vector_diff < cutoff2 and cz_KE_frac < 0.5:
                     good_values1.append(i)
                     good_values2.append(j)
-#                    plt.show()
 
 
     solver1.eigenvalues = solver1.eigenvalues[good_values1]
@@ -558,7 +561,11 @@ def calculate_duals(velocity_list):
 
 if mesa_file1 is not None:
     with h5py.File(mesa_file1, 'r') as f:
-        tau = f['tau'][()]/(60*60*24)
+        tau_s = f['tau'][()]
+        tau = tau_s/(60*60*24)
+        N2_mesa = f['N2_mesa'][()]
+        r_mesa = f['r_mesa'][()]
+        L_mesa = f['L'][()]
 else:
     tau = 1
 logger.info('using tau = {} days'.format(tau))
@@ -571,9 +578,9 @@ if NmaxB_hires is not None:
     solver2, namespace2 = build_solver(bB2, bS2, b_midB2, b_midS2, b_top2, mesa_file_hires)
 for i in range(Lmax):
     ell = i + 1
-    logger.info("solving at ell = {}".format(ell))
     logger.info('solving lores eigenvalue with NmaxB {}'.format(NmaxB))
     solver1 = solve_dense(solver1, ell)
+#    print(solver1.eigenvalues)
     subsystems1 = []
     for subsystem in solver1.subsystems:
         ss_m, ss_ell, r_couple = subsystem.group
@@ -585,6 +592,7 @@ for i in range(Lmax):
     if NmaxB_hires is not None:
         logger.info('solving hires eigenvalue with NmaxB {}'.format(NmaxB_hires))
         solver2 = solve_dense(solver2, ell)
+#        print(solver2.eigenvalues)
         subsystems2 = []
         for subsystem in solver2.eigenvalue_subproblem.subsystems:
             ss_m, ss_ell, r_couple = subsystem.group
@@ -595,6 +603,26 @@ for i in range(Lmax):
         solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
     print(solver1.eigenvalues.real/tau/(2*np.pi))
     print(solver2.eigenvalues.real/tau/(2*np.pi))
+
+    depths = []
+    for om in solver1.eigenvalues.real:
+        Lambda = np.sqrt(ell*(ell+1))
+        kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_s))
+        v_group = (om/tau_s) / kr_cm
+        inv_Pe = np.ones_like(r_mesa) / Pe
+        inv_Pe[r_mesa/L_mesa > 1.1] = interp1d(namespace1['rS'].flatten(), namespace1['inv_PeS']['g'][0,0,:], bounds_error=False, fill_value='extrapolate')(r_mesa[r_mesa/L_mesa > 1.1]/L_mesa)
+        k_rad = (L_mesa**2 / tau_s) * inv_Pe
+        gamma_rad = k_rad * kr_cm**2
+        depth_integrand = np.gradient(r_mesa) * gamma_rad/v_group
+
+        opt_depth = 0
+        for i, rv in enumerate(r_mesa):
+            if rv/L_mesa > 1.0 and rv/L_mesa < r_outer:
+                opt_depth += depth_integrand[i]
+        depths.append(opt_depth)
+    print(depths)
+
+        
 
     bS = namespace1['bS']
     bB = namespace1['bB']
@@ -697,6 +725,7 @@ for i in range(Lmax):
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
 
     velocity_duals = calculate_duals(velocity_eigenfunctions)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
@@ -712,6 +741,7 @@ for i in range(Lmax):
         f['rS'] = namespace1['rS']
         f['ρB'] = namespace1['ρB']['g']
         f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
 
 
     gc.collect()

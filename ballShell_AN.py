@@ -84,7 +84,7 @@ if args['<config>'] is not None:
 Lmax      = int(args['--L'])
 NmaxB      = int(args['--NB'])
 NmaxS      = int(args['--NS'])
-L_dealias = N_dealias = dealias = 1
+L_dealias = N_dealias = dealias = 1.5
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--sponge']:
@@ -131,19 +131,21 @@ else:
     r_outer = 1.5
 logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 
+dealias_tuple = (L_dealias, L_dealias, N_dealias)
+
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
 c_S2 = c.S2coordsys 
 d    = distributor.Distributor((c,), mesh=mesh)
-bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
+bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype, dealias=dealias_tuple)
+bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype, dealias=dealias_tuple)
 b_mid = bB.S2_basis(radius=r_inner)
 b_midS = bS.S2_basis(radius=r_inner)
 b_top = bS.S2_basis(radius=r_outer)
-φB,  θB,  rB  = bB.local_grids((dealias, dealias, dealias))
-φBg, θBg, rBg = bB.global_grids((dealias, dealias, dealias))
-φS,  θS,  rS  = bS.local_grids((dealias, dealias, dealias))
-φSg, θSg, rSg = bS.global_grids((dealias, dealias, dealias))
+φB,  θB,  rB  = bB.local_grids(dealias_tuple)
+φBg, θBg, rBg = bB.global_grids(dealias_tuple)
+φS,  θS,  rS  = bS.local_grids(dealias_tuple)
+φSg, θSg, rSg = bS.global_grids(dealias_tuple)
 
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
@@ -191,8 +193,8 @@ if args['--sponge']:
     spongeS.require_scales(dealias_tuple)
     spongeS['g'] = zero_to_one(rS, r_inner + 2*L_shell/3, 0.1*L_shell)
 # Get local slices
-slicesB     = GridSlicer(pB)
-slicesS     = GridSlicer(pS)
+slicesB     = GridSlicer(pB, dealias=(1,1,1))
+slicesS     = GridSlicer(pS, dealias=(1,1,1))
 
 erB['g'][2] = 1
 erS['g'][2] = 1
@@ -312,6 +314,9 @@ u_perp_bcS_mid = angComp(radComp(σS(r=r_inner)), index=0)
 uS_r_bc        = radComp(uS(r=r_outer))
 u_perp_bcS_top = radComp(angComp(ES(r=r_outer), index=1))
 
+for f in [s1B, s1S, uB, uS]:
+    f.require_scales(dealias_tuple)
+
 #Initial conditions
 if args['--restart'] is not None:
     fname = args['--restart']
@@ -348,7 +353,7 @@ else:
         s1S['g'] = A0*np.sqrt(35/np.pi)*(rS/r_outer)**3*(1-(rS/r_outer)**2)*(np.cos(φS)+np.sin(φS))*np.sin(θS)**3
     else:
         # Initial conditions
-        A0   = float(1e-6)
+        A0   = float(1e-3)
         seed = 42 + d.comm_cart.rank
         rand = np.random.RandomState(seed=seed)
         filter_scale = 0.25
@@ -440,6 +445,8 @@ visual_dt = 0.05*t_buoy
 outer_shell_dt = max_dt
 r_valsB = field.Field(dist=d, bases=(bB,), dtype=dtype)
 r_valsS = field.Field(dist=d, bases=(bS,), dtype=dtype)
+for f in [r_valsB, r_valsS]:
+    f.require_scales(dealias_tuple)
 r_valsB['g'] = rB
 r_valsS['g'] = rS
 erB = operators.Grid(erB).evaluate()
@@ -502,7 +509,7 @@ for extra_op, name in zip([mer_slicer1S, mer_slicer2S, mer_slicer3S, mer_slicer4
 analysis_tasks.append(slices)
 
 re_ball = solver.evaluator.add_dictionary_handler(iter=10)
-re_ball.add_task(Re*(uB_squared)**(1/2), name='Re_avg_ball', layout='g')
+re_ball.add_task(Re*(uB_squared)**(1/2), name='Re_avg_ball', layout='g', scales=dealias_tuple)
 
 scalars = d3FileHandler(solver, '{:s}/scalars'.format(out_dir), sim_dt=scalar_dt, max_writes=np.inf)
 scalars.add_task(Re*(uB_squared)**(1/2), name='Re_avg_ball',  layout='g', extra_op = vol_averagerB, extra_op_comm=True)

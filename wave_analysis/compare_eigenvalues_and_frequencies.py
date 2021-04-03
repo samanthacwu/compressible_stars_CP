@@ -119,10 +119,6 @@ if wave_flux_file is None:
     transfer_power_func = interp1d(transfer_om/(2*np.pi), transfer_power)
     sim_power_func = interp1d(freqs, power.squeeze())
     transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
-
-
-
-
 else:
     radius = 1.15
     with h5py.File(wave_flux_file, 'r') as f:
@@ -136,9 +132,15 @@ else:
         wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
         tau = freqs_sim.max()/freqs_inv_day.max()
 
-    fudge_factor = 10
+    fudge_factor = 1e-5
     shiode_energies = fudge_factor * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
+
+    transfer_power = fudge_factor*transfer**2*wave_flux_func(transfer_om)
+#    transfer_power_func = interp1d(transfer_om/(2*np.pi), transfer_power)
+#    sim_power_func = interp1d(freqs, power.squeeze())
+#    transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
+
 
 fig = plt.figure()
 plt.loglog(freqs, power, c='k', label='IVP')

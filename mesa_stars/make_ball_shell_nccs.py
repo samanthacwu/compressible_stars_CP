@@ -26,6 +26,7 @@ from docopt import docopt
 from astropy import units as u
 from astropy import constants
 from scipy.signal import savgol_filter
+from scipy.interpolate import interp1d
 from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
@@ -38,14 +39,15 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
 
-def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False):
+def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False, r_int=None, ylim=None):
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
     if zero_line:
         ax1.axhline(0, c='k', lw=0.5)
 
-    ax1.plot(r, mesa_y, label='mesa', c='k', lw=3)
-    ax1.plot(r, dedalus_y, label='dedalus', c='red')
+    ax1.plot(mesa_r, mesa_y, label='mesa', c='k', lw=3)
+    for r, y in zip(dedalus_rs, dedalus_ys):
+        ax1.plot(r, y, label='dedalus', c='red')
     plt.legend(loc='best')
     ax1.set_xlabel('radius/L', labelpad=-3)
     ax1.set_ylabel('{}'.format(ylabel))
@@ -53,14 +55,26 @@ def plot_ncc_figure(r, mesa_y, dedalus_y, N, ylabel="", fig_name="", out_dir='.'
     ax1.xaxis.set_label_position('top')
     if log:
         ax1.set_yscale('log')
+    if ylim is not None:
+        ax1.set_ylim(ylim)
 
     ax2 = fig.add_subplot(2,1,2)
-    difference = np.abs(1 - dedalus_y/mesa_y)
-    ax2.plot(r, np.abs(difference).flatten())
-    ax2.set_ylabel('abs(1 - dedalus/mesa)')
+    mesa_func = interp1d(mesa_r, mesa_y, bounds_error=False, fill_value='extrapolate') 
+    for r, y in zip(dedalus_rs, dedalus_ys):
+        diff = np.abs(1 - mesa_func(r)/y)
+        ax2.plot(r, diff)
+    ax2.axhline(1e-1, c='k', lw=0.5)
+    ax2.axhline(1e-2, c='k', lw=0.5)
+    ax2.axhline(1e-3, c='k', lw=0.5)
+    ax2.set_ylabel('abs(1 - mesa/dedalus)')
     ax2.set_xlabel('radius/L')
     ax2.set_yscale('log')
-    fig.suptitle('coeff bandwidth = {}'.format(N))
+
+    ax2.set_ylim(1e-4, 1)
+    fig.suptitle('coeff bandwidth = {}, {}'.format(Ns[0], Ns[1]))
+    if r_int is not None:
+        for ax in [ax1, ax2]:
+            ax.axvline(r_int, c='k')
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
 ### Read in command line args
@@ -115,6 +129,11 @@ dlogrhodr = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
 dlogTdr   = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
 
+#plt.plot(r, L_conv)
+#plt.xlabel('radius')
+#plt.ylabel('L_conv')
+#plt.show()
+
 
 # Entropy gradient, for ncc
 grad_s = cp*N2/g #includes composition terms
@@ -143,6 +162,7 @@ else:
     r_outer    = bot_fe_cz_r
 ball_bool  = r <= r_inner
 shell_bool = (r > r_inner)*(r <= r_outer)
+sim_bool = r <= r_outer
 
 cp_surf = cp[shell_bool][-1]
 
@@ -185,13 +205,14 @@ Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
 s_c = Ma2*(gamma0-1)*cp0
 Pe_rad = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
+print("L CZ:", L_CZ)
 
 sim_inv_Pe_rad = np.copy(inv_Pe_rad)
-sim_inv_Pe_rad -= 1/simulation_Re
-sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
-r_Pe_min = r[sim_inv_Pe_rad > 0].min()
-sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
-sim_inv_Pe_rad += 1/simulation_Re
+#sim_inv_Pe_rad -= 1/simulation_Re
+#sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
+#r_Pe_min = r[sim_inv_Pe_rad > 0].min()
+#sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
+#sim_inv_Pe_rad += 1/simulation_Re
 
 
 r_ball = r[ball_bool]/L
@@ -242,30 +263,42 @@ def make_NCC(basis, interp_args, Nmax=32, vector=False):
         this_field['c'][:, :, Nmax:] = 0
     return this_field, interp
 
-def match_boundary(fB, fS):
+def match_boundary(fB, fS, adjust_ball=False):
     if len(fB.tensorsig) == 1:
         fB_interface = radComp(fB(r=r_inner.value)).evaluate()['g'].max()
         fS_interface = radComp(fS(r=r_inner.value)).evaluate()['g'].max()
-        fS['g'][2,:] -= (fS_interface - fB_interface)
+        if adjust_ball:
+            fB['g'][2,:] -= (fB_interface - fS_interface)
+        else:
+            fS['g'][2,:] -= (fS_interface - fB_interface)
     else:
         fB_interface = fB(r=r_inner.value).evaluate()['g'].max()
         fS_interface = fS(r=r_inner.value).evaluate()['g'].max()
-        fS['g'][:] -= (fS_interface - fB_interface)
+        if adjust_ball:
+            fB['g'][:] -= (fB_interface - fS_interface)
+        else:
+            fS['g'][:] -= (fS_interface - fB_interface)
 
 ### Radiative diffusivity
-NmaxB, NmaxS = 8, 32#np.min((true_NmaxS - 1, 126))
+NmaxB, NmaxS = 8, 90#np.min((true_NmaxS - 1, 126))
+transition = (r/L)[sim_inv_Pe_rad > 1/simulation_Re][0].value
 gradPe_B_cutoff = 10
-gradPe_S_cutoff = 60
-inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool]), Nmax=NmaxB)
+gradPe_S_cutoff = 93
+inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool] ), Nmax=NmaxB)
 inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, sim_inv_Pe_rad[shell_bool]), Nmax=NmaxS)
+inv_Pe_rad_fieldB['g'] += 1/simulation_Re
+inv_Pe_rad_fieldS['g'] = (1/simulation_Re) + zero_to_one(rS, transition-0.05, width=0.05) * (inv_Pe_rad_fieldS['g'] - 1/simulation_Re)
 
 #match_boundary(inv_Pe_rad_fieldB, inv_Pe_rad_fieldS)
 
+
 grad_inv_Pe_B = grad(inv_Pe_rad_fieldB).evaluate()
 grad_inv_Pe_B['c'][:,:,:,gradPe_B_cutoff:] = 0
+grad_inv_Pe_B['g'] = 0
+#
 grad_inv_Pe_S = grad(inv_Pe_rad_fieldS).evaluate()
-grad_inv_Pe_S['c'][:,:,:,NmaxS:] = 0
-grad_inv_Pe_S['g'][2,:] *= zero_to_one(rS, (r_Pe_min/L).value - 0.25  , width=0.25)
+grad_inv_Pe_S['c'][:,:,:,int(NmaxS*1/3):] = 0
+grad_inv_Pe_S['g'][2] *= zero_to_one(rS, transition-0.05, width=0.05)
 grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 
 #match_boundary(grad_inv_Pe_B, grad_inv_Pe_S)
@@ -274,15 +307,12 @@ grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 #grad_inv_Pe_rad_fieldS, grad_inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, np.gradient(inv_Pe_rad, r/L)[shell_bool]), Nmax=NmaxS)
 grad_inv_Pe_rad = np.gradient(inv_Pe_rad, r)
 if plot:
-    plot_ncc_figure(rB.flatten(), np.interp(rB.flatten(), r_ball, inv_Pe_rad[ball_bool]), inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), NmaxB, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radB", out_dir=out_dir, log=True)
-    plot_ncc_figure(rS.flatten(), np.interp(rS.flatten(), r_shell,inv_Pe_rad[shell_bool]), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten(), NmaxS, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_radS", out_dir=out_dir, log=True)
-    plot_ncc_figure(rB.flatten(), np.interp(rB.flatten(), r_ball, np.gradient(inv_Pe_rad[ball_bool], r_ball)), grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), NmaxB, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_radB", out_dir=out_dir, log=True)
-    plot_ncc_figure(rS.flatten(), np.interp(rS.flatten(), r_shell,np.gradient(inv_Pe_rad[shell_bool], r_shell)), grad_inv_Pe_S['g'][2][:1,:1,:].flatten(), NmaxS, ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_radS", out_dir=out_dir, log=True)
-
+    plot_ncc_figure(r[sim_bool]/L, sim_inv_Pe_rad[sim_bool], (rB.flatten(), rS.flatten()), (inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value)
+    plot_ncc_figure(r[sim_bool]/L, np.gradient(sim_inv_Pe_rad, r/L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), grad_inv_Pe_S['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value, ylim=(1e-4/simulation_Re, 1))
 
 
 ### Log Density 
-NmaxB, NmaxS = 8, 32
+NmaxB, NmaxS = 32, 32
 ln_rho_fieldB, ln_rho_interpB = make_NCC(bB, (rB, r_ball, np.log(rho/rho0)[ball_bool]), Nmax=NmaxB)
 grad_ln_rho_fieldB, grad_ln_rho_interpB = make_NCC(bB, (rB, r_ball, dlogrhodr[ball_bool]*L), Nmax=NmaxB, vector=True)
 ln_rho_fieldS, ln_rho_interpS = make_NCC(bS, (rS, r_shell, np.log(rho/rho0)[shell_bool]), Nmax=NmaxS)
@@ -292,10 +322,8 @@ grad_ln_rho_fieldS, grad_ln_rho_interpS = make_NCC(bS, (rS, r_shell, dlogrhodr[s
 #match_boundary(grad_ln_rho_fieldB, grad_ln_rho_fieldS)
 
 if plot:
-    plot_ncc_figure(rB.flatten(), (-1)+ln_rho_interpB.flatten(), (-1)+ln_rho_fieldB['g'][:1,:1,:].flatten(), NmaxB, ylabel=r"$\ln\rho - 1$", fig_name="ln_rhoB", out_dir=out_dir)
-    plot_ncc_figure(rB.flatten(), grad_ln_rho_interpB.flatten(), grad_ln_rho_fieldB['g'][2][:1,:1,:].flatten(), NmaxB, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rhoB", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), (-1)+ln_rho_interpS.flatten(), (-1)+ln_rho_fieldS['g'][:1,:1,:].flatten(), NmaxS, ylabel=r"$\ln\rho - 1$", fig_name="ln_rhoS", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), grad_ln_rho_interpS.flatten(), grad_ln_rho_fieldS['g'][2][:1,:1,:].flatten(), NmaxS, ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rhoS", out_dir=out_dir)
+    plot_ncc_figure(r[sim_bool]/L, np.log(rho/rho0)[sim_bool], (rB.flatten(), rS.flatten()), (ln_rho_fieldB['g'][:1,:1,:].flatten(), ln_rho_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln\rho$", fig_name="ln_rho", out_dir=out_dir, log=False, r_int=r_inner.value)
+    plot_ncc_figure(r[sim_bool]/L, (dlogrhodr*L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_rho_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_rho_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir, log=False, r_int=r_inner.value)
 
 ### Log Temperature
 NmaxB, NmaxS = 16, 32
@@ -308,10 +336,8 @@ grad_ln_T_fieldS, grad_ln_T_interpS  = make_NCC(bS, (rS, r_shell, dlogTdr[shell_
 #match_boundary(grad_ln_T_fieldB, grad_ln_T_fieldS)
 
 if plot:
-    plot_ncc_figure(rB.flatten(), (-1)+ln_T_interpB.flatten(), (-1)+ln_T_fieldB['g'][:1,:1,:].flatten(), NmaxB, ylabel=r"$\ln(T) - 1$", fig_name="ln_TB", out_dir=out_dir)
-    plot_ncc_figure(rB.flatten(), grad_ln_T_interpB.flatten(), grad_ln_T_fieldB['g'][2][:1,:1,:].flatten(), NmaxB, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_TB", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), (-1)+ln_T_interpS.flatten(), (-1)+ln_T_fieldS['g'][:1,:1,:].flatten(), NmaxS, ylabel=r"$\ln(T) - 1$", fig_name="ln_TS", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), grad_ln_T_interpS.flatten(), grad_ln_T_fieldS['g'][2][:1,:1,:].flatten(), NmaxS, ylabel=r"$\nabla\ln(T)$", fig_name="grad_ln_TS", out_dir=out_dir)
+    plot_ncc_figure(r[sim_bool]/L, np.log(T/T0)[sim_bool], (rB.flatten(), rS.flatten()), (ln_T_fieldB['g'][:1,:1,:].flatten(), ln_T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln T$", fig_name="ln_T", out_dir=out_dir, log=False, r_int=r_inner.value)
+    plot_ncc_figure(r[sim_bool]/L, (dlogTdr*L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_T_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln T$", fig_name="grad_ln_T", out_dir=out_dir, log=False, r_int=r_inner.value)
 
 ### Temperature
 NmaxB, NmaxS = 32, 32
@@ -321,8 +347,7 @@ T_fieldS, T_interpS = make_NCC(bS, (rS, r_shell, (T/T0)[shell_bool]), Nmax=NmaxS
 #match_boundary(T_fieldB, T_fieldS)
 
 if plot:
-    plot_ncc_figure(rB.flatten(), T_interpB.flatten(), T_fieldB['g'][:1,:1,:].flatten(), NmaxB, ylabel=r"$T/T_c$", fig_name="TB", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), T_interpS.flatten(), T_fieldS['g'][:1,:1,:].flatten(), NmaxS, ylabel=r"$T/T_c$", fig_name="TS", out_dir=out_dir)
+    plot_ncc_figure(r[sim_bool]/L, (T/T0)[sim_bool], (rB.flatten(), rS.flatten()), (T_fieldB['g'][:1,:1,:].flatten(), T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$T$", fig_name="T", out_dir=out_dir, log=True, r_int=r_inner.value)
 
 
 grad_T = (T/T0)*dlogTdr*L
@@ -333,8 +358,7 @@ grad_T_fieldS, grad_T_interpS = make_NCC(bS, (rS, r_shell, grad_T[shell_bool]), 
 #match_boundary(grad_T_fieldB, grad_T_fieldS)
 
 if plot:
-    plot_ncc_figure(rB.flatten(), grad_T_interpB.flatten(), grad_T_fieldB['g'][2][:1,:1,:].flatten(), NmaxB, ylabel=r"$grad(T/T_c)$", fig_name="grad_TB", out_dir=out_dir)
-    plot_ncc_figure(rS.flatten(), grad_T_interpS.flatten(), grad_T_fieldS['g'][2][:1,:1,:].flatten(), NmaxS, ylabel=r"$grad(T/T_c)$", fig_name="grad_TS", out_dir=out_dir)
+    plot_ncc_figure(r[sim_bool]/L, -grad_T[sim_bool], (rB.flatten(), rS.flatten()), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(), -grad_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=r_inner.value)
 
 
 
@@ -351,17 +375,16 @@ if plot:
 #H_NCC_ball[r_ball > amount_to_adjust] = approx_H[r_ball > amount_to_adjust]
 #print('outer', full_lum_above, full_lum_approx)
 H_NCC = ((H_eff)  / H0) * (rho0*T0/rho/T)
-NmaxB, NmaxS = true_NmaxB, true_NmaxS
+NmaxB, NmaxS = true_NmaxB, 10
 H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball, H_NCC[ball_bool]), Nmax=NmaxB)
 H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell, H_NCC[shell_bool]), Nmax=NmaxS)
 if plot:
-    plot_ncc_figure(rB.flatten(), H_interpB.flatten(), H_fieldB['g'][:1,:1,:].flatten(), NmaxB, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_effB", out_dir=out_dir, zero_line=True)
-    plot_ncc_figure(rS.flatten(), H_interpS.flatten(), H_fieldS['g'][:1,:1,:].flatten(), NmaxS, ylabel=r"$(H_{eff}/(\rho c_p T))$ (nondimensional)", fig_name="H_effS", out_dir=out_dir, zero_line=True)
+    plot_ncc_figure(r[sim_bool]/L, H_NCC[sim_bool], (rB.flatten(), rS.flatten()), (H_fieldB['g'][:1,:1,:].flatten(), H_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=r_inner.value)
 
 
 ### entropy gradient
 transition_point = 1.03
-width = 0.1
+width = 0.04
 center =  transition_point - 0.5*width
 width *= (L_CZ/L).value
 center *= (L_CZ/L).value
@@ -372,14 +395,14 @@ flat_value  = np.interp(transition_point, r/L, grad_s)
 grad_s_smooth[r/L < transition_point] = flat_value
 
 NmaxB, NmaxS = 31, 62
-NmaxB_after = 94
+NmaxB_after = true_NmaxB - 1
 grad_s_fieldB, grad_s_interpB = make_NCC(bB, (rB, r_ball, (grad_s_smooth*L/s_c)[ball_bool]), Nmax=NmaxB, vector=True)
 grad_s_interpB = np.interp(rB, r_ball, (grad_s*L/s_c)[ball_bool])
 grad_s_fieldS, grad_s_interpS = make_NCC(bS, (rS, r_shell, (grad_s*L/s_c)[shell_bool]), Nmax=NmaxS, vector=True)
+#match_boundary(grad_s_fieldB, grad_s_fieldS, adjust_ball=True)
 grad_s_fieldB['g'][2] *= zero_to_one(rB, center, width=width)
 grad_s_fieldB['c'][:,:,:,NmaxB_after:] = 0
 
-#match_boundary(grad_s_fieldB, grad_s_fieldS)
 
 #plt.figure()
 #plt.plot(rB.flatten(), grad_s_fieldB['g'][2,0,0,:])
@@ -388,8 +411,7 @@ grad_s_fieldB['c'][:,:,:,NmaxB_after:] = 0
 #plt.show()
 
 if plot:
-    plot_ncc_figure(rB.flatten(), grad_s_interpB.flatten(), grad_s_fieldB['g'][2][:1,:1,:].flatten(), NmaxB, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sB", out_dir=out_dir, log=True)
-    plot_ncc_figure(rS.flatten(), grad_s_interpS.flatten(), grad_s_fieldS['g'][2][:1,:1,:].flatten(), NmaxS, ylabel=r"$L(\nabla s/s_c)$", fig_name="grad_sS", out_dir=out_dir, log=True)
+    plot_ncc_figure(r[sim_bool]/L, (grad_s*L/s_c)[sim_bool], (rB.flatten(), rS.flatten()), (grad_s_fieldB['g'][2][:1,:1,:].flatten(), grad_s_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB_after, NmaxS), ylabel=r"$\nabla s$", fig_name="grad_s", out_dir=out_dir, log=True, r_int=r_inner.value)
 
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     #slicing preserves dimensionality.
