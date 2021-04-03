@@ -258,14 +258,15 @@ else:
     t_buoy      = 1
 
 
-    for basis_r, basis_fields in zip((rB, rS), ((TB, ρB, ρ_NCCB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, grad_TB, H_effB, grad_s0B), (TS, ρS, ρ_NCCS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, grad_TS, H_effS, grad_s0S))):
-        T, ρ, ρ_NCC, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, grad_T, H_eff, grad_s0 = basis_fields
+    for basis_r, basis_fields in zip((rB, rS), ((TB, ρB, inv_TB, ln_TB, ln_ρB, grad_ln_TB, grad_ln_ρB, grad_TB, H_effB, grad_s0B), (TS, ρS, inv_TS, ln_TS, ln_ρS, grad_ln_TS, grad_ln_ρS, grad_TS, H_effS, grad_s0S))):
+        for f in basis_fields:
+            f.require_scales(dealias_tuple)
+        T, ρ, inv_T, ln_T, ln_ρ, grad_ln_T, grad_ln_ρ, grad_T, H_eff, grad_s0 = basis_fields
 
         grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
         T['g']           = T_func(basis_r)
         grad_T['g']      = grad(T).evaluate()['g']
         ρ['g']           = ρ_func(basis_r)
-        ρ_NCC['g']       = ρ_func(basis_r)
         inv_T['g']       = T_func(basis_r)
         H_eff['g']       = H_eff_func(basis_r)
         ln_T['g']        = np.log(T_func(basis_r))
@@ -560,6 +561,7 @@ imaginary_cadence = 100
 #CFL setup
 from dedalus.extras.flow_tools import CFL
 heaviside_cfl = field.Field(dist=d, bases=(bB,), dtype=dtype)
+heaviside_cfl.require_scales(dealias_tuple)
 heaviside_cfl['g'] = 1
 if args['--CFL_max_r'] is not None:
     if np.sum(rB > float(args['--CFL_max_r'])) > 0:
