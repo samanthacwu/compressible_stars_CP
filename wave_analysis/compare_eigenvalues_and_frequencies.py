@@ -8,6 +8,7 @@ Usage:
 Options:
     --freq_power=<p>     Power law exponent for convective wave driving [default: -13/2]
     --transfer_file=<f>  File to get the transfer function from
+    --mesa_file=<f>      MESA-derived NCC file
 
 """
 from fractions import Fraction
@@ -120,7 +121,23 @@ if wave_flux_file is None:
     sim_power_func = interp1d(freqs, power.squeeze())
     transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
 else:
+    with h5py.File(args['--mesa_file'], 'r') as f:
+        r_mesa = f['r_mesa'][()]/f['L'][()]
+        N2_mesa = f['N2_mesa'][()] * (60*60*24)**2
+        N2_inv_day_func = interp1d(r_mesa, N2_mesa)
+        print(r_mesa, N2_mesa.max())
+
+        sim_grad_T = np.concatenate( (f['grad_TB'][()][2,:].squeeze(), f['grad_TS'][()][2,:].squeeze()) )
+        sim_grad_s0 = np.concatenate( (f['grad_s0B'][()][2,:].squeeze(), f['grad_s0S'][()][2,:].squeeze()) )
+        sim_radius = np.concatenate( (f['rB'][()].squeeze(), f['rS'][()].squeeze()) )
+
+        grad_s0_func = interp1d(sim_radius, sim_grad_s0)
+        grad_T_func = interp1d(sim_radius, sim_grad_T)
+        
+       
     radius = 1.15
+    k_h = np.sqrt(ell*(ell+1))/radius
+
     with h5py.File(wave_flux_file, 'r') as f:
         ells = np.expand_dims(f['ells'][()].flatten(), axis=0)
         freqs_inv_day = np.expand_dims(f['real_freqs_inv_day'][()], axis=1)
@@ -132,11 +149,17 @@ else:
         wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
         tau = freqs_sim.max()/freqs_inv_day.max()
 
-    fudge_factor = 1e-5
-    shiode_energies = fudge_factor * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
+    sim_k_r = np.sqrt((N2_inv_day_func(radius)/transfer_om**2 - 1)*k_h)
+    u_r = np.sqrt(wave_flux_func(transfer_om) / (-1 * grad_s0_func(radius) * grad_T_func(radius) * sim_k_r / ((sim_k_r**2 + k_h**2) * transfer_om)))
+    print(k_h, sim_k_r, u_r)
+
+    fudge_factor_shiode = 1
+    shiode_energies = fudge_factor_shiode * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
-    transfer_power = fudge_factor*transfer**2*wave_flux_func(transfer_om)
+    fudge_factor_transfer = 1e-2
+    transfer_power = fudge_factor_transfer*(transfer*u_r)**2
+    print(transfer_power)
 #    transfer_power_func = interp1d(transfer_om/(2*np.pi), transfer_power)
 #    sim_power_func = interp1d(freqs, power.squeeze())
 #    transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
