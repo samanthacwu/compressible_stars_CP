@@ -41,7 +41,7 @@ rho = interpolate.interp1d(r.flatten(), ρ.flatten())
 def transfer_function(om, values, u_dual, u_outer, r_range):
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
-    dr = r_range[None, :, None]
+    dr = np.gradient(r_range)[None, :, None]
     om = om[None, None, :] #The None's expand dims.
     T = (2*np.pi**2*rho(r_range[None,:,None])*r_range[None,:,None]**3*om)*u_dual[:,:, None]*u_outer[:, None, None]/(om-values[:, None, None])
     return np.sum(np.abs(np.sum(T*dr, axis=0)), axis=0)/np.sum(dr)
@@ -106,8 +106,8 @@ for ell in ell_list:
         om1 = values.real[0]*2
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-        r0 = 1.05
-        r1 = r0 + 0.2*r.max()
+        r0 = 1.1
+        r1 = r0 + 0.05*r.max()
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
 
@@ -136,11 +136,11 @@ for ell in ell_list:
         for f in interps:
             vals.append(f(omega))
         good_T[i] = np.min(vals)
-    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = good_om
         f['transfer'] = good_T
+    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
     plt.xlabel('frequency 1/day')
     plt.legend()
     plt.show()

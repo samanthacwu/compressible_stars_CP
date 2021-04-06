@@ -123,16 +123,18 @@ if wave_flux_file is None:
 else:
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_mesa = f['r_mesa'][()]/f['L'][()]
-        N2_mesa = f['N2_mesa'][()] * (60*60*24)**2
+        N2_mesa = f['N2_mesa'][()] * (60*60*24)**2 #1/s^2 -> 1/day^2
         N2_inv_day_func = interp1d(r_mesa, N2_mesa)
-        print(r_mesa, N2_mesa.max())
 
         sim_grad_T = np.concatenate( (f['grad_TB'][()][2,:].squeeze(), f['grad_TS'][()][2,:].squeeze()) )
         sim_grad_s0 = np.concatenate( (f['grad_s0B'][()][2,:].squeeze(), f['grad_s0S'][()][2,:].squeeze()) )
+        sim_ln_ρ = np.concatenate( (f['ln_ρB'][()].squeeze(), f['ln_ρS'][()].squeeze()) )
         sim_radius = np.concatenate( (f['rB'][()].squeeze(), f['rS'][()].squeeze()) )
 
         grad_s0_func = interp1d(sim_radius, sim_grad_s0)
         grad_T_func = interp1d(sim_radius, sim_grad_T)
+        ln_ρ_func = interp1d(sim_radius, sim_ln_ρ)
+        N2_sim = lambda r: -grad_T_func(r)*grad_s0_func(r)
         
        
     radius = 1.15
@@ -142,27 +144,33 @@ else:
         ells = np.expand_dims(f['ells'][()].flatten(), axis=0)
         freqs_inv_day = np.expand_dims(f['real_freqs_inv_day'][()], axis=1)
         freqs_sim = np.expand_dims(f['real_freqs'][()], axis=1)
-        d2F_dell_df = f['wave_flux'][()]/radius**2 #wave flux calculation is currently r^2 * rho(r) * hat(ur) * conj(hat(p))
+        d2F_dell_df = f['wave_flux'][()]  #wave flux calculation is currently r^2 * rho(r) * hat(ur) * conj(hat(p))
         d2F_dlnell_dlnf = ells*freqs_sim*d2F_dell_df
         sim_omegas = 2*np.pi*freqs_inv_day
         this_ell_flux = d2F_dlnell_dlnf[:, ells.flatten() == ell]
-        wave_flux_func = interp1d(sim_omegas.flatten(), this_ell_flux.flatten())
         tau = freqs_sim.max()/freqs_inv_day.max()
 
-    sim_k_r = np.sqrt((N2_inv_day_func(radius)/transfer_om**2 - 1)*k_h)
-    u_r = np.sqrt(wave_flux_func(transfer_om) / (-1 * grad_s0_func(radius) * grad_T_func(radius) * sim_k_r / ((sim_k_r**2 + k_h**2) * transfer_om)))
-    print(k_h, sim_k_r, u_r)
+    #wave flux vs omega fit
+    nvals = len(complex_eigenvalues)
+    good = (sim_omegas.flatten() > complex_eigenvalues.real[int(nvals/2)])*(sim_omegas.flatten() < complex_eigenvalues.real[2])
+    x = np.log10(sim_omegas.flatten())
+    y = np.log10(this_ell_flux.flatten()/(10**(x))**(float(Fraction(args['--freq_power']))))
+    mean_offset = np.sum(np.gradient(x[good])*y[good])/np.sum(np.gradient(x[good]))
+    wave_flux_func = lambda omega: 10**(mean_offset)*omega**(float(Fraction(args['--freq_power'])))
+    print('wave flux: {:.3e} * omega ^ {}'.format(10**(mean_offset), args['--freq_power']))
 
+    #Shiode eqn 9
     fudge_factor_shiode = 1
-    shiode_energies = fudge_factor_shiode * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag))
+    shiode_energies = fudge_factor_shiode * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(tau*complex_eigenvalues.imag) / radius**2)
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
-    fudge_factor_transfer = 1e-2
+
+    #Transfer function
+    sim_k_r = np.sqrt((N2_sim(radius)/(tau)**2/transfer_om**2 - 1)*k_h**2)
+    sim_k = np.sqrt(sim_k_r**2 + k_h**2)
+    u_r = np.sqrt( ( 2*np.pi*sim_k**2/(ell*sim_k_r) ) * (1/(radius**2 * np.exp(ln_ρ_func(radius))*N2_sim(radius))) * wave_flux_func(transfer_om ) )
+    fudge_factor_transfer = 1
     transfer_power = fudge_factor_transfer*(transfer*u_r)**2
-    print(transfer_power)
-#    transfer_power_func = interp1d(transfer_om/(2*np.pi), transfer_power)
-#    sim_power_func = interp1d(freqs, power.squeeze())
-#    transfer_power *= sim_power_func(match_freq_guess)/transfer_power_func(match_freq_guess)
 
 
 fig = plt.figure()
