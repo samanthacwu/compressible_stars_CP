@@ -500,6 +500,18 @@ weight_rB1 = bB1.radial_basis.local_weights(dealias)
 weight_rS1 = bS1.radial_basis.local_weights(dealias)*rS1**2
 weight1 = weight_θ1 * weight_φ1
 volume1 = np.sum(weight1)
+weight1 *= 4*np.pi / volume1
+
+rB_volume1 = np.sum(weight1*weight_rB1)
+rS_volume1 = np.sum(weight1*weight_rS1)
+
+weight_rB1 *= ((4/3) * np.pi * r_inner**3) / rB_volume1
+weight_rS1 *= ((4/3) * np.pi * (r_outer**3 - r_inner**3)) / rS_volume1
+full_weight_1 = weight1 * np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()))[None, None, :]
+
+print(volume1 / (4*np.pi))
+print(rB_volume1 / ((4/3) * np.pi * r_inner**3))
+print(rS_volume1 / ((4/3) * np.pi * (r_outer**3 - r_inner**3)))
 
 if NmaxB_hires is not None:
     bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
@@ -533,12 +545,12 @@ angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 
 r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
 radial_weights_1 = np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()), axis=-1)
-def IP(velocity1, velocity2):
+def IP(velocity1, velocity2, density):
     """ Integrate the bra-ket of two eigenfunctions of velocity. """
     int_field = np.sum(velocity1*np.conj(velocity2), axis=0)
-    return np.sum(int_field*radial_weights_1)/np.sum(radial_weights_1)
+    return np.sum(density*int_field*full_weight_1)
 
-def calculate_duals(velocity_list):
+def calculate_duals(velocity_list, density):
     """
     Calculate the dual basis of the velocity eigenvectors.
     """
@@ -548,7 +560,7 @@ def calculate_duals(velocity_list):
     for i in range(n_modes):
         if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
         for j in range(n_modes):
-            IP_matrix[i,j] = IP(velocity_list[i], velocity_list[j])
+            IP_matrix[i,j] = IP(velocity_list[i], velocity_list[j], density)
     
     print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
     IP_inv = np.linalg.inv(IP_matrix)
@@ -620,7 +632,6 @@ for i in range(Lmax):
             if rv/L_mesa > 1.0 and rv/L_mesa < r_outer:
                 opt_depth += depth_integrand[i]
         depths.append(opt_depth)
-    print(depths)
 
         
 
@@ -628,6 +639,7 @@ for i in range(Lmax):
     bB = namespace1['bB']
     ρS = namespace1['ρS']
     ρB = namespace1['ρB']
+    ρ  = np.concatenate((ρB['g'][0,0,:], ρS['g'][0,0,:]))
     pS = namespace1['pS']
     pB = namespace1['pB']
     uS = namespace1['uS']
@@ -714,8 +726,10 @@ for i in range(Lmax):
 #        print(subsystem.group, s1_amplitudes[i], old_s1_amplitudes, integ_energies[i], old_integ_energy, s1_amplitudes[i]/old_s1_amplitudes, integ_energies[i]/old_integ_energy)
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-        f['good_evalues'] = solver1.eigenvalues/tau
-        f['good_omegas']  = solver1.eigenvalues.real/tau
+        f['good_evalues'] = solver1.eigenvalues
+        f['good_omegas']  = solver1.eigenvalues.real
+        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
+        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
         f['s1_amplitudes']  = s1_amplitudes
         f['integ_energies'] = integ_energies
         f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
@@ -727,10 +741,12 @@ for i in range(Lmax):
         f['ρS'] = namespace1['ρS']['g']
         f['depths'] = np.array(depths)
 
-    velocity_duals = calculate_duals(velocity_eigenfunctions)
+    velocity_duals = calculate_duals(velocity_eigenfunctions, ρ[None, None, :])
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-        f['good_evalues'] = solver1.eigenvalues/tau
-        f['good_omegas']  = solver1.eigenvalues.real/tau
+        f['good_evalues'] = solver1.eigenvalues
+        f['good_omegas']  = solver1.eigenvalues.real
+        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
+        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
         f['s1_amplitudes']  = s1_amplitudes
         f['integ_energies'] = integ_energies
         f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)

@@ -21,13 +21,15 @@ args = docopt(__doc__)
 #TODO: fix rho
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as mf:
-        r_mesa = mf['r_mesa'][()]/mf['L'][()]
-        N2_mesa = mf['N2_mesa'][()]*((60*60*24)/(2*np.pi))**2
-        S1_mesa = mf['S1_mesa'][()]*(60*60*24)/(2*np.pi)
-        N2_mesa_full = mf['N2_mesa'][()]
-        g_mesa  = mf['g_mesa'][()]
-        cp_mesa = mf['cp_mesa'][()]
-        pre_PE = g_mesa**2/cp_mesa**2/N2_mesa_full * (mf['tau'][()]*mf['s_c'][()]/mf['L'][()])**2
+#        r_mesa = mf['r_mesa'][()]/mf['L'][()]
+#        N2_mesa = mf['N2_mesa'][()]*((60*60*24)/(2*np.pi))**2
+#        S1_mesa = mf['S1_mesa'][()]*(60*60*24)/(2*np.pi)
+#        N2_mesa_full = mf['N2_mesa'][()]
+#        g_mesa  = mf['g_mesa'][()]
+#        cp_mesa = mf['cp_mesa'][()]
+#        pre_PE = g_mesa**2/cp_mesa**2/N2_mesa_full * (mf['tau'][()]*mf['s_c'][()]/mf['L'][()])**2
+        tau_s = mf['tau'][()]
+        tau = tau_s/(60*60*24)
         rB = mf['rB']
         rS = mf['rS']
         ρB = np.exp(mf['ln_ρB'])
@@ -80,6 +82,7 @@ print(ell_list)
 dir = args['<root_dir>']
 
 for ell in ell_list:
+    plt.figure()
     print("ell = %i" % ell)
 
     transfers = []
@@ -88,6 +91,7 @@ for ell in ell_list:
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
             values = f['good_evalues'][()]
+            values_inv_day = f['good_evalues_inv_day'][()]
             velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
             s1_amplitudes = f['s1_amplitudes'][()]
             depths = f['depths'][()]
@@ -102,8 +106,8 @@ for ell in ell_list:
         velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
      
-        om0 = values.real[-2]
-        om1 = values.real[0]*2
+        om0 = values.real[-1]
+        om1 = 1.1*values.real[0]
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         r0 = 1.1
@@ -119,7 +123,7 @@ for ell in ell_list:
 
 
     #    plt.loglog(om, T)
-        plt.loglog(om/(2*np.pi), np.abs(T)**2*om**(-13/2), lw=3-j, label='depth filter = {}'.format(d_filter))
+        plt.loglog(om/(2*np.pi) / tau, np.abs(T)**2*om**(-13/2), lw=3-j, label='depth filter = {}'.format(d_filter))
         oms.append(om)
         transfers.append(T)
 
@@ -139,9 +143,12 @@ for ell in ell_list:
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = good_om
+        f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
-    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
+    plt.loglog(good_om/(2*np.pi) / tau, np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
     plt.xlabel('frequency 1/day')
     plt.legend()
-    plt.show()
+    plt.title("ell = %i" % ell)
+plt.show()
 
