@@ -6,7 +6,7 @@ Usage:
     compare_eigenvalues_and_frequences.py <sh_spectrum_file> <evp_data_file> <wave_flux_file> [options]
 
 Options:
-    --freq_power=<p>     Power law exponent for convective wave driving [default: -13/2]
+    --freq_power=<p>     Power law exponent for convective wave driving [default: -15/2]
     --transfer_file=<f>  File to get the transfer function from
     --mesa_file=<f>      MESA-derived NCC file
 
@@ -148,47 +148,62 @@ else:
         ells = np.expand_dims(f['ells'][()].flatten(), axis=0)
         waveflux_freqs_inv_day = np.expand_dims(f['real_freqs_inv_day'][()], axis=1)
         waveflux_freqs = np.expand_dims(f['real_freqs'][()], axis=1)
-        d2F_dell_df = 4 * np.pi * f['wave_flux'][()]  #wave flux calculation is currently r^2 * rho(r) * hat(ur) * conj(hat(p))
-        d2F_dlnell_dlnf = ells*waveflux_freqs*d2F_dell_df
+        d2F_dell_df = 4 * np.pi * f['wave_flux'][()]  #wave flux calculation is currently r^2 * rho(r) * hat(ur) * conj(hat(p)) \propto dF / d ell / d f
+        #delta F = rho * hat(ur) * conj(hat(p))
+        #sum[delta F] = F
+        #dF / d ell d f = delta F / (delta ell delta f); delta ell = 1; delta f = 1/T where T is total time of sample
+        #delta f = np.diff(waveflux_freqs)
+        d2F_dell_dlnf = waveflux_freqs*d2F_dell_df
+        this_ell_d2F_dell_dlnf = ell**3*d2F_dell_dlnf[:, ells.flatten() == ell]
         waveflux_omegas = 2*np.pi*waveflux_freqs
-        this_ell_flux = d2F_dlnell_dlnf[:, ells.flatten() == ell]
+        this_ell_flux = d2F_dell_df[:, ells.flatten() == ell]
         tau = waveflux_freqs.max()/waveflux_freqs_inv_day.max()
 
     #wave flux vs omega fit
     #fit a omega^{freq_power} function to omega between the 3rd highest freq eigenvalue and the median eigenvalue
+    fit_power = -13/2
     nvals = len(complex_eigenvalues)
     good = (waveflux_omegas.flatten() > complex_eigenvalues.real[int(nvals/2)])*(waveflux_omegas.flatten() < complex_eigenvalues.real[2])
     x = np.log10(waveflux_omegas.flatten())
-    y = np.log10(this_ell_flux.flatten()/(10**(x))**(float(Fraction(args['--freq_power']))))
+    y = np.log10(this_ell_d2F_dell_dlnf.flatten()/waveflux_omegas.flatten()**(fit_power))
     mean_offset = np.sum(np.gradient(x[good])*y[good])/np.sum(np.gradient(x[good]))
-    wave_flux_func = lambda omega: 10**(mean_offset)*omega**(float(Fraction(args['--freq_power'])))
-    print('wave flux: {:.3e} * omega ^ {}'.format(10**(mean_offset), args['--freq_power']))
+    wave_lum_func = lambda omega: 10**(mean_offset)*omega**(fit_power)
+    print('wave flux: {:.3e} * omega ^ {}'.format(10**(mean_offset), fit_power))
 
-#    plt.figure()
-#    plt.loglog(10**x, this_ell_flux.flatten())
-#    plt.loglog(10**x, wave_flux_func(10**x))
-#    plt.show()
-
-    #Shiode eqn a
-    fudge_factor_shiode = 1
-    shiode_energies = fudge_factor_shiode * (0.5 * Nm*wave_flux_func(complex_eigenvalues.real)/np.abs(complex_eigenvalues.imag) / (4*np.pi*radius**2))
+    #Shiode eqn 9
+    fudge_factor_shiode = 3e1*(complex_eigenvalues.real/(2*np.pi))**2 / ell**3
+    shiode_energies = fudge_factor_shiode * (0.5 * Nm**(-1)*wave_lum_func(complex_eigenvalues.real)/np.abs(complex_eigenvalues.imag) / (4*np.pi*radius**2))
     adjusted_energies = np.abs(s1_amplitudes**2/integ_energies) * shiode_energies
 
 
     #Transfer function
-    H = -1/grad_ln_ρ_func(radius)
+    #wave flux vs omega fit
+    #fit a omega^{freq_power} function to omega between the 3rd highest freq eigenvalue and the median eigenvalue
+    fit_power = -15/2
+    nvals = len(complex_eigenvalues)
+    good = (waveflux_omegas.flatten() > complex_eigenvalues.real[int(nvals/2)])*(waveflux_omegas.flatten() < complex_eigenvalues.real[2])
+    x = np.log10(waveflux_omegas.flatten())
+    y = np.log10(this_ell_flux.flatten()/waveflux_omegas.flatten()**(fit_power))
+    mean_offset = np.sum(np.gradient(x[good])*y[good])/np.sum(np.gradient(x[good]))
+    wave_lum_func = lambda omega: 10**(mean_offset)*omega**(fit_power)
+    print('wave flux: {:.3e} * omega ^ {}'.format(10**(mean_offset), fit_power))
+
+
+    #TODO: check to make sure that both N^2 and om^2 are in angular frequency units
+#    H = -1/grad_ln_ρ_func(radius)
     k_h = np.sqrt(ell*(ell+1))/radius
 #    k_r = np.sqrt((N2_mesa_func(radius)/transfer_om**2 - 1)*k_h**2 - 1/(4*H**2))
-    k_r = np.sqrt((N2_sim(radius)/transfer_om**2 - 1)*k_h**2 - 1/(4*H**2))
-    k = np.sqrt(k_r**2 + k_h**2)
+#    print(N2_sim(radius)/transfer_om**2 - 1, k_h, 1/(2*H))
+#    k_r = np.sqrt((N2_sim(radius)/transfer_om**2 - 1)*k_h**2 - 1/(4*H**2))
+#    k = np.sqrt(k_r**2 + k_h**2)
 
     print(transfer_om.max(), transfer_om_inv_day.max())
-    u_r2 = wave_flux_func(transfer_om)
-    u_r2 *= transfer_om * k**2 / k_r
-    u_r2 /= 4*np.pi*radius**2 * np.exp(ln_ρ_func(1)) * N2_sim(1)
-#    u_r = np.sqrt( ( (transfer_om_sim)*k**2/(k_r) ) * (1/((4*np.pi*radius**2) * np.exp(ln_ρ_func(radius))*N2_sim(radius))) * wave_flux_func(transfer_om) )
+    u_r2 = k_h/(N2_mesa_func(radius) - transfer_om**2)*wave_lum_func(transfer_om) / (4*np.pi*radius**2)
+#    u_r2 *= transfer_om * k**2 / k_r
+#    u_r2 /= 4*np.pi*radius**2 * np.exp(ln_ρ_func(1)) * N2_sim(1)
+#    u_r = np.sqrt( ( (transfer_om_sim)*k**2/(k_r) ) * (1/((4*np.pi*radius**2) * np.exp(ln_ρ_func(radius))*N2_sim(radius))) * wave_lum_func(transfer_om) )
     u_r = np.sqrt(u_r2)
-    fudge_factor_transfer = 1
+    fudge_factor_transfer =  1e2 / ell**2#1e-2# / k_h**2
     transfer_power = fudge_factor_transfer*(transfer*u_r)**2
 
 
@@ -201,7 +216,7 @@ plt.xlim(1e-1, 1e1)
 plt.xlabel('frequency (day$^{-1}$)')
 plt.ylabel('power')
 plt.title(r'$\ell = ${}'.format(ell))
-plt.ylim(1e-14, 1e0)
+plt.ylim(1e-14, 1e2)
 plt.legend()
 plt.savefig('scratch/ell{:03d}_data_theory_comparison.png'.format(ell), dpi=300)
 
