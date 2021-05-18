@@ -10,8 +10,8 @@ Usage:
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 6]
-    --N=<Nmax>           The value of Nmax   [default: 31]
+    --L=<Lmax>           The value of Lmax   [default: 14]
+    --N=<Nmax>           The value of Nmax   [default: 63]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -81,7 +81,8 @@ if args['<config>'] is not None:
 # Parameters
 Lmax      = int(args['--L'])
 Nmax      = int(args['--N'])
-L_dealias = N_dealias = dealias = 1
+L_dealias = N_dealias = dealias = 1.5
+dealias_tuple = (L_dealias, L_dealias, N_dealias)
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--mesa_file'] is None:
@@ -116,17 +117,17 @@ Pe  = Pr*Re
 
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as f:
-        radius = f['r_inner'][()]
+        radius = f['radius'][()]
 else:
-    radius = 1.5
+    raise ValueError("Must provide a path to a MESA NCC file with --mesa_file flag")
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
-b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
+b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype, dealias=dealias_tuple)
 b_S2 = b.S2_basis()
-φ, θ, r = b.local_grids((dealias, dealias, dealias))
-φg, θg, rg = b.global_grids((dealias, dealias, dealias))
+φ, θ, r = b.local_grids(dealias_tuple)
+φg, θg, rg = b.global_grids(dealias_tuple)
 
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
@@ -142,76 +143,54 @@ radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
 LiftTau   = lambda A: operators.LiftTau(A, b, -1)
 
-# Fields
+# Problem variables
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 p = field.Field(dist=d, bases=(b,), dtype=dtype)
 s1 = field.Field(dist=d, bases=(b,), dtype=dtype)
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 
-ρ   = field.Field(dist=d, bases=(b,), dtype=dtype)
-T   = field.Field(dist=d, bases=(b,), dtype=dtype)
 
+#nccs
+grad_ln_ρ       = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_s0         = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_ln_T       = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_T0         = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+grad_inv_Pe_rad = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
+ln_ρ            = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+ln_T            = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+T0              = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+inv_Pe_rad      = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+inv_T           = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
+H_eff           = field.Field(dist=d, bases=(b,), dtype=dtype)
+ρ               = field.Field(dist=d, bases=(b,), dtype=dtype)
+T               = field.Field(dist=d, bases=(b,), dtype=dtype)
 
+#Radial unit vector
 er = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 er.set_scales(dealias)
 er['g'][2,:] = 1
 
-#nccs
-grad_ln_ρ    = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_s0      = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-grad_ln_T    = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-ln_ρ    = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-ln_T    = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-T_NCC   = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-inv_T   = field.Field(dist=d, bases=(b,), dtype=dtype) #only on RHS, multiplies other terms
-H_eff   = field.Field(dist=d, bases=(b,), dtype=dtype)
-grad_s0_RHS      = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-
 
 slicer = GridSlicer(p)
-if args['--mesa_file'] is not None:
-    with h5py.File(args['--mesa_file'], 'r') as f:
-        if np.prod(grad_s0['g'].shape) > 0:
-            grad_s0['g']        = f['grad_s0B'][()][:,:,:,  slicer[2]].reshape(grad_s0['g'].shape)
-            grad_ln_ρ['g']      = f['grad_ln_ρB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
-            grad_ln_T['g']      = f['grad_ln_TB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
-        ln_ρ['g']      = f['ln_ρB'][()][:,:, slicer[2]]
-        ln_T['g']      = f['ln_TB'][()][:,:, slicer[2]]
-        H_eff['g']     = f['H_effB'][()][:,:,slicer[2]]
-        T_NCC['g']     = f['TB'][()][:,:,slicer[2]]
-        ρ['g']         = np.exp(f['ln_ρB'][()][:,:,slicer[2]].reshape(r.shape))
-        T['g']         = f['TB'][()][:,:,slicer[2]].reshape(r.shape)
-        inv_T['g']     = 1/T['g']
-        grad_s0_RHS['g'][2]        = f['grad_s0B'][()][2,:,:,slicer[2]].reshape(r.shape)
+with h5py.File(args['--mesa_file'], 'r') as f:
+    if np.prod(grad_s0['g'].shape) > 0:
+        grad_s0['g']         = f['grad_s0B'][()][:,:,:,  slicer[2]].reshape(grad_s0['g'].shape)
+        grad_ln_ρ['g']       = f['grad_ln_ρB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
+        grad_ln_T['g']       = f['grad_ln_TB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
+        grad_T0['g']         = f['grad_TB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
+        grad_inv_Pe_rad['g'] = f['grad_inv_Pe_radB'][()][:,:,:,slicer[2]].reshape(grad_s0['g'].shape)
+    T0['g']        = f['TB'][()][:,:,slicer[2]]
+    H_eff['g']     = f['H_effB'][()][:,:,slicer[2]]
+    ln_ρ['g']      = f['ln_ρB'][()][:,:, slicer[2]]
+    ln_T['g']      = f['ln_TB'][()][:,:, slicer[2]]
+    inv_Pe_rad['g']= f['inv_Pe_radB'][()][:,:, slicer[2]]
+    ρ['g']         = np.exp(f['ln_ρB'][()][:,:,slicer[2]])
+    T['g']         = f['TB'][()][:,:,slicer[2]]
+    inv_T['g']     = 1/T['g']
 
-        t_buoy = 1
-        max_grad_s0 = f['grad_s0B'][()][2,0,0,-1]
-
-else:
-    logger.info("Using polytropic initial conditions")
-    from scipy.interpolate import interp1d
-    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
-        T_func = interp1d(f['r'][()], f['T'][()])
-        ρ_func = interp1d(f['r'][()], f['ρ'][()])
-        grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-        H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
-    grad_s0['g'][2]     = grad_s0_func(r)#*zero_to_one(r, 0.5, width=0.1)
-    grad_s0_RHS['g'][2] = grad_s0_func(r)#*zero_to_one(r, 0.5, width=0.1)
-    T['g']           = T_func(r)
-    T_NCC['g']       = T_func(r)
-    ρ['g']           = ρ_func(r)
-    inv_T['g']       = T_func(r)
-    H_eff['g']       = H_eff_func(r)
-    ln_T['g']        = np.log(T_func(r))
-    ln_ρ['g']        = np.log(ρ_func(r))
-    grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
-    grad_ln_T['g']        = grad(ln_T).evaluate()['g']
-
-    max_grad_s0 = grad_s0_func(radius)
-    t_buoy      = 1
-
-max_dt = 3/np.sqrt(max_grad_s0)
+    max_dt = f['max_dt'][()]
+    t_buoy = 1 #Assume nondimensionalization on heating ~ buoyancy time
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
@@ -232,15 +211,12 @@ divU.store_last = True
 σ = 2*(E - (1/3)*divU*I_matrix)
 momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
-#trace_E = trace(E)
-#trace_E.store_last = True
 VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 
 #Impenetrable, stress-free boundary conditions
 u_r_bc    = radComp(u(r=radius))
 u_perp_bc = radComp(angComp(E(r=radius), index=1))
 therm_bc  = s1(r=radius)
-
 
 H_eff = operators.Grid(H_eff).evaluate()
 inv_T = operators.Grid(inv_T).evaluate()
@@ -253,9 +229,9 @@ problem = problems.IVP([p, u, s1, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) + grad(T_NCC)*s1 - (1/Re)*momentum_viscous_terms + LiftTau(tau_u) = cross(u, curl(u))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(u) + grad(p) + grad_T0*s1 - (1/Re)*momentum_viscous_terms + LiftTau(tau_u) = cross(u, curl(u))"), condition = "nθ != 0")
 problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - (1/Pe)*(lap(s1) + dot(grads1, (grad_ln_ρ + grad_ln_T))) + LiftTau(tau_T) = - dot(u, grads1) + H_eff + (1/Re)*inv_T*VH "))
+problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - inv_Pe_rad*(lap(s1) + dot(grads1, (grad_ln_ρ + grad_ln_T))) - dot(grads1, grad_inv_Pe_rad) + LiftTau(tau_T) = - dot(u, grads1) + H_eff + (1/Re)*inv_T*VH "))
 problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
@@ -278,8 +254,8 @@ h = p - 0.5*u_squared + T*s1
 pomega_hat = p - 0.5*u_squared
 visc_flux_r = 2*(dot(er, dot(u, E)) - (1/3) * ur * divU)
 
-
 r_vals = field.Field(dist=d, bases=(b,), dtype=dtype)
+r_vals.set_scales(dealias_tuple)
 r_vals['g'] = r
 r_vals = operators.Grid(r_vals).evaluate()
 
@@ -289,7 +265,7 @@ equator_slicer    = EquatorSlicer(p)
 analysis_tasks = []
 
 re_ball = solver.evaluator.add_dictionary_handler(iter=10)
-re_ball.add_task(Re*(u_squared)**(1/2), name='Re_avg', layout='g')
+re_ball.add_task(Re*(u_squared)**(1/2), name='Re_avg', layout='g', scales=dealias_tuple)
 
 scalars = d3FileHandler(solver, '{:s}/scalars'.format(out_dir), max_writes=np.inf, sim_dt=scalar_dt)
 scalars.add_task(Re*(u_squared)**(1/2), name='Re_avg', layout='g', extra_op=vol_averager, extra_op_comm=True)
@@ -298,29 +274,26 @@ scalars.add_task(ρ*T*s1,                name='TE',     layout='g', extra_op=vol
 analysis_tasks.append(scalars)
 
 profiles =d3FileHandler(solver, '{:s}/profiles'.format(out_dir), max_writes=100, sim_dt=flux_dt)
-profiles.add_task((4*np.pi*r_vals**2)*(ρ*ur*h),                        name='enth_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
-profiles.add_task((4*np.pi*r_vals**2)*(-ρ*visc_flux_r/Re),             name='visc_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
+profiles.add_task((4*np.pi*r_vals**2)*(ρ*ur*h),                      name='enth_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
+profiles.add_task((4*np.pi*r_vals**2)*(-ρ*visc_flux_r/Re),           name='visc_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
 profiles.add_task((4*np.pi*r_vals**2)*(-ρ*T*dot(er, grads1)/Pe),     name='cond_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
-profiles.add_task((4*np.pi*r_vals**2)*(0.5*ρ*ur*u_squared),            name='KE_lum',   layout='g', extra_op=radial_averager, extra_op_comm=True)
-profiles.add_task((4*np.pi*r_vals**2)*(ρ*ur*pomega_hat),              name='wave_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
+profiles.add_task((4*np.pi*r_vals**2)*(0.5*ρ*ur*u_squared),          name='KE_lum',   layout='g', extra_op=radial_averager, extra_op_comm=True)
+profiles.add_task((4*np.pi*r_vals**2)*(ρ*ur*pomega_hat),             name='wave_lum', layout='g', extra_op=radial_averager, extra_op_comm=True)
 analysis_tasks.append(profiles)
 
 ORI = OutputRadialInterpolate
 slices = d3FileHandler(solver, '{:s}/slices'.format(out_dir), max_writes=40, sim_dt=visual_dt)
-slices.add_task(u(r=0.5), extra_op=ORI(s1, u(r=0.5)), name='u_r0.5', layout='g')
-slices.add_task(s1(r=0.5), extra_op=ORI(s1, s1(r=0.5)), name='s1_r0.5',  layout='g')
-slices.add_task(u(r=1.0), extra_op=ORI(s1, u(r=1.0)), name='u_r1', layout='g')
-slices.add_task(s1(r=1.0), extra_op=ORI(s1, s1(r=1.0)), name='s1_r1',  layout='g')
-slices.add_task(u, name='u', extra_op=equator_slicer, layout='g')
-slices.add_task(s1, name='s1', extra_op=equator_slicer, layout='g')
+slices.add_task(u(r=0.5), extra_op=ORI(s1, u(r=0.5*radius)), name='u_r0.5', layout='g')
+slices.add_task(s1(r=0.5), extra_op=ORI(s1, s1(r=0.5*radius)), name='s1_r0.5',  layout='g')
+slices.add_task(u(r=1.0), extra_op=ORI(s1, u(r=0.95*radius)), name='u_r0.95', layout='g')
+slices.add_task(s1(r=1.0), extra_op=ORI(s1, s1(r=0.95*radius)), name='s1_r0.95',  layout='g')
+slices.add_task(u,  name='u_eq', extra_op=equator_slicer, layout='g')
+slices.add_task(s1, name='s1_eq', extra_op=equator_slicer, layout='g')
 analysis_tasks.append(slices)
-
 
 checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
 checkpoint.add_task(s1, name='s1', scales=1, layout='c')
-checkpoint.add_task(p, name='p', scales=1, layout='c')
 checkpoint.add_task(u, name='u', scales=1, layout='c')
-
 
 imaginary_cadence = 100
 
