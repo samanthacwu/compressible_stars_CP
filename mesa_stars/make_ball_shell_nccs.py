@@ -10,7 +10,6 @@ Options:
     --NS=<N>        Maximum radial coefficients (shell) [default: 95]
     --file=<f>      Path to MESA log file [default: MESA_Models_Dedalus_Full_Sphere/LOGS/6.data]
     --pre_log_folder=<f>  Folder name in which 'LOGS' sits [default: ]
-    --halfStar      If flagged, only get the inner 50% of the star
 """
 import os
 import time
@@ -83,10 +82,7 @@ true_NmaxS = NmaxS = int(args['--NS'])
 simulation_Re = float(args['--Re'])
 read_file = args['--file']
 filename = read_file.split('/LOGS/')[-1]
-if args['--halfStar']:
-    out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell_halfStar')
-else:
-    out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell')
+out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell')
 if args['--pre_log_folder'] != '':
     out_dir = '{:s}_{:s}'.format(args['--pre_log_folder'], out_dir)
 print('saving files to {}'.format(out_dir))
@@ -96,133 +92,108 @@ if not os.path.exists('{:s}'.format(out_dir)):
 
 ### Read MESA file
 p = mr.MesaData(read_file)
-mass = p.mass[::-1] * u.M_sun
-r = p.radius[::-1] * u.R_sun
-mass, r = mass.cgs, r.cgs
-rho = 10**p.logRho[::-1] * u.g / u.cm**3
-P = 10**p.logP[::-1] * u.g / u.cm / u.s**2
-eps = p.eps_nuc[::-1] * u.erg / u.g / u.s
-nablaT = p.gradT[::-1] #dlnT/dlnP
-T = 10**p.logT[::-1] * u.K
-cp = p.cp[::-1]  * u.erg / u.K / u.g
-cv = p.cv[::-1]  * u.erg / u.K / u.g
-opacity = p.opacity[::-1] * (u.cm**2 / u.g)
-mu = p.mu[::-1]
-N2 = p.brunt_N2[::-1] / u.s**2
+mass           = p.mass[::-1] * u.M_sun
+r              = p.radius[::-1] * u.R_sun
+rho            = 10**p.logRho[::-1] * u.g / u.cm**3
+P              = 10**p.logP[::-1] * u.g / u.cm / u.s**2
+eps            = p.eps_nuc[::-1] * u.erg / u.g / u.s
+nablaT         = p.gradT[::-1] #dlnT/dlnP
+nablaT_ad      = p.grada[::-1]
+chiRho         = p.chiRho[::-1]
+chiT           = p.chiT[::-1]
+T              = 10**p.logT[::-1] * u.K
+cp             = p.cp[::-1]  * u.erg / u.K / u.g
+cv             = p.cv[::-1]  * u.erg / u.K / u.g
+opacity        = p.opacity[::-1] * (u.cm**2 / u.g)
+mu             = p.mu[::-1]
+N2             = p.brunt_N2[::-1] / u.s**2
 N2_structure   = p.brunt_N2_structure_term[::-1] / u.s**2
 N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
-Luminosity = p.luminosity[::-1] * u.L_sun
-Luminosity = Luminosity.cgs
-L_conv = p.conv_L_div_L[::-1]*Luminosity
-csound = p.csound[::-1] * u.cm / u.s
-rad_diff = 16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)
-rad_diff = rad_diff.cgs
-g = constants.G.cgs*mass/r**2
-gamma = cp/cv
-chiRho  = p.chiRho[::-1]
-chiT    = p.chiT[::-1]
-nablaT =  p.gradT[::-1]
-nablaT_ad = p.grada[::-1]
-dlogPdr = -rho*g/P
-gamma1  = dlogPdr/(-g/csound**2)
-dlogrhodr = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
-dlogTdr   = dlogPdr*(nablaT)
+Luminosity     = p.luminosity[::-1] * u.L_sun
+conv_L_div_L   = p.conv_L_div_L[::-1]
+csound         = p.csound[::-1] * u.cm / u.s
+
+#secondary MESA fields
+mass            = mass.cgs
+r               = r.cgs
+Luminosity      = Luminosity.cgs
+L_conv          = conv_L_div_L*Luminosity
+rad_diff        = 16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)
+rad_diff        = rad_diff.cgs
+g               = constants.G.cgs*mass/r**2
+gamma           = cp/cv
+dlogPdr         = -rho*g/P
+gamma1          = dlogPdr/(-g/csound**2)
+dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
+dlogTdr         = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
+grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
+H_eff           = (np.gradient(L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
+H_eff[0]        = H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
 
-#plt.plot(r, L_conv)
-#plt.xlabel('radius')
-#plt.ylabel('L_conv')
-#plt.show()
-
-
-# Entropy gradient, for ncc
-grad_s = cp*N2/g #includes composition terms
-# Heating, for ncc, H = rho*eps - portion carried by radiation
-H_eff = (np.gradient(L_conv,r)/(4*np.pi*r**2))
-H_eff[0] = H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
 
 #Find edge of core cz
-cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1])
+cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
 core_cz_mass_bound = mass[cz_bool][-1]
-core_cz_bound_ind = np.argmin(np.abs(mass - core_cz_mass_bound))
+core_cz_r          = r[cz_bool][-1]
+core_cz_bound_ind  = np.argmin(np.abs(mass - core_cz_mass_bound))
 
 #Find bottom edge of FeCZ
-fracStar = 0.95
-fe_cz = (mass > 1.1*mass[core_cz_bound_ind])*(L_conv.value > 1)
-bot_fe_cz_r = fracStar*r[fe_cz][0]
+fracStar    = 0.95 #Simulate this much of the star, from r = 0 to r = base_FeCZ
+fe_cz_bool  = (mass > 1.1*mass[core_cz_bound_ind])*(L_conv.value > 1)
+bot_fe_cz_r = fracStar*r[fe_cz_bool][0]
 fe_cz_bound_ind = np.argmin(np.abs(r - bot_fe_cz_r))
 print('fraction of FULL star simulated: {}'.format(bot_fe_cz_r/r[-1]))
 
 #Set things up to slice out the star appropriately
-halfStar_r = r[-1]/2
-r_inner    = r[cz_bool][-1]*1.1
-if args['--halfStar']:
-    r_outer    = halfStar_r
-else:
-    r_outer    = bot_fe_cz_r
-ball_bool  = r <= r_inner
-shell_bool = (r > r_inner)*(r <= r_outer)
-sim_bool = r <= r_outer
+r_inner_MESA  = r[cz_bool][-1]*1.1 #outer radius of BallBasis; inner radius of SphericalShellBasis
+r_outer_MESA  = bot_fe_cz_r        #outer rdius of SphericalShellBasis
+ball_bool     = r <= r_inner_MESA
+shell_bool    = (r > r_inner_MESA)*(r <= r_outer_MESA)
+sim_bool      = r <= r_outer_MESA
 
 cp_surf = cp[shell_bool][-1]
 
+#Plot a propagation diagram
 lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
 plt.figure()
 plt.plot(r, np.sqrt(N2), label=r'$N$')
 plt.plot(r, lamb_freq(1), label=r'$S_1$')
 plt.plot(r, lamb_freq(10), label=r'$S_{10}$')
 plt.plot(r, lamb_freq(100), label=r'$S_{100}$')
-plt.xlim(0, r_outer.value)
+plt.xlim(0, r_outer_MESA.value)
 plt.xlabel('r (cm)')
 plt.ylabel('freq (1/s)')
 plt.yscale('log')
 plt.legend(loc='best')
 plt.savefig('{}/propagation_diagram.png'.format(out_dir), dpi=300, bbox_inches='tight')
 
-
-#plt.plot(r, cv)#gamma, label=r'$\gamma = cp/cv$')
-##plt.plot(r, gamma, label=r'$\gamma = cp/cv$')
-##plt.plot(r, gamma1, label=r'$\Gamma_1 = dlogPdr/(-g/c_sound^2)$')
-##plt.legend(loc='best')
-#plt.axvline(bot_fe_cz_r.value)
-#plt.xlabel('r')
-#plt.ylabel('cp')
-#plt.show()
-
 #Nondimensionalization
-L = L_CZ  = r[core_cz_bound_ind]
-g0 = g[core_cz_bound_ind] 
-rho0 = rho[0]
-P0 = P[0]
-T0 = T[0]
-cp0 = cp[0]
-gamma0 = gamma[0]
-H0 = H_eff[0]
-tau = (H0/L**2/rho0)**(-1/3)
-tau = tau.cgs
-u_H = L/tau
-Ma2 = u_H**2 / ((gamma0-1)*cp0*T0)
-s_c = Ma2*(gamma0-1)*cp0
-Pe_rad = u_H*L/rad_diff
+L       = L_CZ  = r[core_cz_bound_ind]
+g0      = g[core_cz_bound_ind] 
+rho0    = rho[0]
+P0      = P[0]
+T0      = T[0]
+cp0     = cp[0]
+gamma0  = gamma[0]
+H0      = H_eff[0]
+tau     = (H0/L**2/rho0)**(-1/3)
+tau     = tau.cgs
+u_H     = L/tau
+Ma2     = u_H**2 / ((gamma0-1)*cp0*T0)
+s_c     = Ma2*(gamma0-1)*cp0
+Pe_rad  = u_H*L/rad_diff
 inv_Pe_rad = 1/Pe_rad
+cp_surf = cp[shell_bool][-1]
 print("L CZ:", L_CZ)
 
-sim_inv_Pe_rad = np.copy(inv_Pe_rad)
-#sim_inv_Pe_rad -= 1/simulation_Re
-#sim_inv_Pe_rad[sim_inv_Pe_rad < 0] = 0
-#r_Pe_min = r[sim_inv_Pe_rad > 0].min()
-#sim_inv_Pe_rad *= zero_to_one(r/L, r_Pe_min/L, width=0.05)
-#sim_inv_Pe_rad += 1/simulation_Re
-
-
+#MESA radial values, in simulation units
 r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
-r_inner /= L
-r_outer /= L
+r_inner = r_inner_MESA/L
+r_outer = r_outer_MESA/L
 
-cp_surf = cp[shell_bool][-1]
-print(s_c, cp_surf)
-
+#Get some timestepping & wave frequency info
 N2max_ball = N2[ball_bool].max()
 N2max_shell = N2[shell_bool].max()
 N2plateau = N2[r < 4.5e11*u.cm][-1]
@@ -281,11 +252,11 @@ def match_boundary(fB, fS, adjust_ball=False):
 
 ### Radiative diffusivity
 NmaxB, NmaxS = 8, 90#np.min((true_NmaxS - 1, 126))
-transition = (r/L)[sim_inv_Pe_rad > 1/simulation_Re][0].value
+transition = (r/L)[inv_Pe_rad > 1/simulation_Re][0].value
 gradPe_B_cutoff = 10
 gradPe_S_cutoff = 93
-inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  sim_inv_Pe_rad[ball_bool] ), Nmax=NmaxB)
-inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, sim_inv_Pe_rad[shell_bool]), Nmax=NmaxS)
+inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  inv_Pe_rad[ball_bool] ), Nmax=NmaxB)
+inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, inv_Pe_rad[shell_bool]), Nmax=NmaxS)
 inv_Pe_rad_fieldB['g'] += 1/simulation_Re
 inv_Pe_rad_fieldS['g'] = (1/simulation_Re) + zero_to_one(rS, transition-0.05, width=0.05) * (inv_Pe_rad_fieldS['g'] - 1/simulation_Re)
 
@@ -307,8 +278,8 @@ grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 #grad_inv_Pe_rad_fieldS, grad_inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, np.gradient(inv_Pe_rad, r/L)[shell_bool]), Nmax=NmaxS)
 grad_inv_Pe_rad = np.gradient(inv_Pe_rad, r)
 if plot:
-    plot_ncc_figure(r[sim_bool]/L, sim_inv_Pe_rad[sim_bool], (rB.flatten(), rS.flatten()), (inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value)
-    plot_ncc_figure(r[sim_bool]/L, np.gradient(sim_inv_Pe_rad, r/L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), grad_inv_Pe_S['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value, ylim=(1e-4/simulation_Re, 1))
+    plot_ncc_figure(r[sim_bool]/L, inv_Pe_rad[sim_bool], (rB.flatten(), rS.flatten()), (inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value)
+    plot_ncc_figure(r[sim_bool]/L, np.gradient(inv_Pe_rad, r/L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), grad_inv_Pe_S['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value, ylim=(1e-4/simulation_Re, 1))
 
 
 ### Log Density 
