@@ -535,16 +535,16 @@ profiles.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*uS_squared),       name='KE_
 analysis_tasks.append(profiles)
 
 if args['--sponge']:
-    surface_shell_slices = d3FileHandler(solver, '{:s}/wave_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
-    surface_shell_slices.add_task(radComp(uB(r=1.05)),  extra_op=ORI(pB, radComp(uB(r=1.05))), name='u(r=1.05)', layout='g')
-    surface_shell_slices.add_task(pomega_hat_B(r=1.05), extra_op=ORI(pB, pomega_hat_B(r=1.05)), name='pomega(r=1.05)',    layout='g')
-    for rval in [1.15, 1.30, 1.45, 1.60, 1.75]:
+    surface_shell_slices = d3FileHandler(solver, '{:s}/wave_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=20)
+    for rval in [0.90, 1.05]:
+        surface_shell_slices.add_task(radComp(uB(r=rval)),  extra_op=ORI(pB, radComp(uB(r=rval))), name='u(r={})'.format(rval), layout='g')
+        surface_shell_slices.add_task(pomega_hat_B(r=rval), extra_op=ORI(pB, pomega_hat_B(r=rval)), name='pomega(r={})'.format(rval),    layout='g')
+    for rval in [1.15, 1.60]:
         surface_shell_slices.add_task(radComp(uS(r=rval)),  extra_op=ORI(pS, radComp(uB(r=rval))), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_S(r=rval), extra_op=ORI(pS, pomega_hat_B(r=rval)), name='pomega(r={})'.format(rval),    layout='g')
     analysis_tasks.append(surface_shell_slices)
 else:
-    surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=100)
-    surface_shell_slices.add_task(angComp(uS(r=r_outer), index=0), name='u_ang_surf', layout='g', extra_op=ORI(pS, angComp(uS(r=r_outer), index=0)))
+    surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=20)
     surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
     analysis_tasks.append(surface_shell_slices)
 
