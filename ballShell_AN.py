@@ -464,6 +464,65 @@ pomega_hat_S = pS - 0.5*dot(uS,uS)
 visc_fluxB_r = 2*(dot(erB, dot(uB, EB)) - (1/3) * urB * divUB)
 visc_fluxS_r = 2*(dot(erS, dot(uS, ES)) - (1/3) * urS * divUS)
 
+# Angular momentum, etc. 
+ezB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+ezB.set_scales(dealias_tuple)
+ezB['g'][1] = -np.sin(θB)
+ezB['g'][2] =  np.cos(θB)
+ezB = operators.Grid(ezB).evaluate()
+
+exB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+exB.set_scales(dealias_tuple)
+exB['g'][0] = -np.sin(φB)
+exB['g'][1] = np.cos(θB)*np.cos(φB)
+exB['g'][2] = np.sin(θB)*np.cos(φB)
+exB = operators.Grid(exB).evaluate()
+
+eyB = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+eyB.set_scales(dealias_tuple)
+eyB['g'][0] = np.cos(φB)
+eyB['g'][1] = np.cos(θB)*np.sin(φB)
+eyB['g'][2] = np.sin(θB)*np.sin(φB)
+eyB = operators.Grid(eyB).evaluate()
+
+rB_vec_post = field.Field(dist=d, bases=(bB,), tensorsig=(c,), dtype=dtype)
+rB_vec_post.set_scales(dealias_tuple)
+rB_vec_post['g'][2] = rB
+L_AMB = cross(rB_vec_post, ρ*uB)
+Lx_AMB = dot(exB, L_AMB)
+Ly_AMB = dot(eyB, L_AMB)
+Lz_AMB = dot(ezB, L_AMB)
+
+ezS = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+ezS.set_scales(dealias_tuple)
+ezS['g'][1] = -np.sin(θS)
+ezS['g'][2] =  np.cos(θS)
+ezS = operators.Grid(ezS).evaluate()
+
+exS = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+exS.set_scales(dealias_tuple)
+exS['g'][0] = -np.sin(φS)
+exS['g'][1] = np.cos(θS)*np.cos(φS)
+exS['g'][2] = np.sin(θS)*np.cos(φS)
+exS = operators.Grid(exS).evaluate()
+
+eyS = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+eyS.set_scales(dealias_tuple)
+eyS['g'][0] = np.cos(φS)
+eyS['g'][1] = np.cos(θS)*np.sin(φS)
+eyS['g'][2] = np.sin(θS)*np.sin(φS)
+eyS = operators.Grid(eyS).evaluate()
+
+rS_vec_post = field.Field(dist=d, bases=(bS,), tensorsig=(c,), dtype=dtype)
+rS_vec_post.set_scales(dealias_tuple)
+rS_vec_post['g'][2] = rS
+L_AMS = cross(rS_vec_post, ρ*uS)
+Lx_AMS = dot(exS, L_AMS)
+Ly_AMS = dot(eyS, L_AMS)
+Lz_AMS = dot(ezS, L_AMS)
+
+
+
 uB_squared = dot(uB, uB)
 uS_squared = dot(uS, uS)
 uB_squared.store_last = True
@@ -519,6 +578,12 @@ scalars.add_task(ρB*uB_squared/2,    name='KE_ball',   layout='g', extra_op = v
 scalars.add_task(ρS*uS_squared/2,    name='KE_shell',  layout='g', extra_op = vol_averagerS, extra_op_comm=True)
 scalars.add_task(ρB*TB*s1B,           name='TE_ball',  layout='g', extra_op = vol_averagerB, extra_op_comm=True)
 scalars.add_task(ρS*TS*s1S,           name='TE_shell', layout='g', extra_op = vol_averagerS, extra_op_comm=True)
+scalars.add_task(Lx_AMB, name='Lx_AM_ball', layout='g', extra_op=vol_averagerB, extra_op_comm=True)
+scalars.add_task(Ly_AMB, name='Ly_AM_ball', layout='g', extra_op=vol_averagerB, extra_op_comm=True)
+scalars.add_task(Lz_AMB, name='Lz_AM_ball', layout='g', extra_op=vol_averagerB, extra_op_comm=True)
+scalars.add_task(Lx_AMS, name='Lx_AM_shell', layout='g', extra_op=vol_averagerS, extra_op_comm=True)
+scalars.add_task(Ly_AMS, name='Ly_AM_shell', layout='g', extra_op=vol_averagerS, extra_op_comm=True)
+scalars.add_task(Lz_AMS, name='Lz_AM_shell', layout='g', extra_op=vol_averagerS, extra_op_comm=True)
 analysis_tasks.append(scalars)
 
 profiles = d3FileHandler(solver, '{:s}/profiles'.format(out_dir), sim_dt=visual_dt, max_writes=100)
