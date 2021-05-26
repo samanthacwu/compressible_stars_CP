@@ -137,9 +137,9 @@ with plotter.my_sync:
 #                ax1.plot(phi_plot[0]*np.ones(1000), np.linspace(0, 1, 1000))
 
                 shell_color='k'
-                ax1.plot(np.linspace(0, 4*np.pi, 1000), 0.5*np.ones(1000),          lw=2.5, c=shell_color)
-                ax1.plot(np.linspace(0, 4*np.pi, 1000), 1.0*np.ones(1000),          lw=2.5, c=shell_color)
-                ax1.plot(np.linspace(0, 4*np.pi, 1000), 0.95*r_outer*np.ones(1000), lw=2.5, c=shell_color)
+                ax1.plot(np.linspace(-np.pi/2, np.pi/2, 1000), 0.5*np.ones(1000),          lw=2.5, c=shell_color)
+                ax1.plot(np.linspace(-np.pi/2, np.pi/2, 1000), 1.0*np.ones(1000),          lw=2.5, c=shell_color)
+                ax1.plot(np.linspace(-np.pi/2, np.pi/2, 1000), 0.95*r_outer*np.ones(1000), lw=2.5, c=shell_color)
 
                 ax1.set_theta_zero_location("S")
 
@@ -147,13 +147,13 @@ with plotter.my_sync:
                 for ax, color in zip([ax2, ax3, ax4], [shell_color, shell_color, shell_color]):
                     ax.spines['geo'].set_color(color)
                     ax.gridlines(color=color, alpha=0.3)
-                    ax.plot(np.linspace(-180, 180, 1000), np.zeros(1000), transform=ccrs.PlateCarree(), c=color)
+                    ax.plot(np.linspace(-180, 180, 1000), np.zeros(1000), transform=ccrs.PlateCarree(), c=color, lw=2)
 #                    ax.plot(((phi_plot[0])*180/np.pi-180)*np.ones(1000), np.linspace(-90, 90, 1000), transform=ccrs.PlateCarree(), c='k')
 
                 ax1.set_xticks([])
                 ax1.set_rticks([])
                 ax1.set_aspect(1)
-                ax1.text( 0, 0.97, 't = {:.2f} days'.format(sim_time[i]*time_day), transform=ax1.transAxes)
+                ax1.text( -0.03, 0.97, 't = {:.2f} days'.format(sim_time[i]*time_day), transform=ax1.transAxes)
 #                plt.colorbar(p, cax2, orientation='horizontal')
 
 #                cax2.text(0.5, 0.5, 'z vorticity', ha='center', va='center', transform=cax2.transAxes)

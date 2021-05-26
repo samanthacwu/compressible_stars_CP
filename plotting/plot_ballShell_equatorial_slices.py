@@ -129,13 +129,13 @@ if not plotter.idle:
 
             s1B -= np.mean(s1B, axis=0)
             s1S -= np.mean(s1S, axis=0)
-            s1B /= np.mean(np.abs(s1B), axis=0)
-            s1S /= np.mean(np.abs(s1S), axis=0)
+#            s1B /= np.mean(np.abs(s1B), axis=0)
+#            s1S /= np.mean(np.abs(s1S), axis=0)
 
-            uφB /= np.std(uφB, axis=0)
-            uφS /= np.std(uφS, axis=0)
-            uθB /= np.std(uθB, axis=0)
-            uθS /= np.std(uθS, axis=0)
+#            uφB /= np.std(uφB, axis=0)
+#            uφS /= np.std(uφS, axis=0)
+#            uθB /= np.std(uθB, axis=0)
+#            uθS /= np.std(uθS, axis=0)
 
             if args['--entropy_only']:
                 zip_list = zip((ax1,), (cax1,), (s1B,), (s1S,))

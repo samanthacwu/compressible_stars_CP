@@ -45,11 +45,12 @@ if n_files is not None:
 
 plotter = ProfilePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
 if int(args['--fig_type']) == 1:
-    plotter.add_profile('enth_flux',  avg_writes, basis='r')
-    plotter.add_profile('visc_flux', avg_writes,  basis='r')
-    plotter.add_profile('cond_flux', avg_writes,  basis='r')
-    plotter.add_profile('KE_flux', avg_writes,    basis='r')
-    plotter.add_profile('s1', avg_writes,    basis='r')
+    for l in ['B', 'S']:
+        plotter.add_profile('{}{}'.format('enth_lum',l),  avg_writes, basis='r')
+        plotter.add_profile('{}{}'.format('visc_lum',l), avg_writes,  basis='r')
+        plotter.add_profile('{}{}'.format('cond_lum',l), avg_writes,  basis='r')
+        plotter.add_profile('{}{}'.format('KE_lum',l), avg_writes,    basis='r')
+        plotter.add_profile('{}{}'.format('wave_lum',l), avg_writes,    basis='r')
 
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 plotter.plot_avg_profiles(dpi=int(args['--dpi']), **plotter_kwargs)
@@ -64,24 +65,17 @@ if args['--mesa_file'] is not None:
     import matplotlib.pyplot as plt
 
     with h5py.File(args['--mesa_file'], 'r') as f:
-        ρ = np.exp(f['ln_ρ'][()])
-        T = np.exp(f['ln_T'][()])
-        H = f['H_eff'][()]
+        ρB = np.exp(f['ln_ρB'][()])
+        TB = np.exp(f['ln_TB'][()])
+        HB = f['H_effB'][()]
 
 
     with h5py.File('{:s}/{:s}/averaged_{:s}.h5'.format(root_dir, fig_name, fig_name), 'r') as f:
-        enth_flux = f['enth_flux'][()][-1,:]
-        visc_flux = f['visc_flux'][()][-1,:]
-        cond_flux = f['cond_flux'][()][-1,:]
-        KE_flux   = f['KE_flux'][()][-1,:]
+        enth_lum = f['enth_lumB'][()][-1,:]
+        visc_lum = f['visc_lumB'][()][-1,:]
+        cond_lum = f['cond_lumB'][()][-1,:]
+        KE_lum   = f['KE_lumB'][()][-1,:]
         r_flat    = f['r'][()].flatten()
-
-    d_r_flat = np.gradient(r_flat)
-    L_enth = 2*np.pi*r_flat*enth_flux
-    L_visc = 2*np.pi*r_flat*visc_flux
-    L_cond = 2*np.pi*r_flat*cond_flux
-    L_KE   = 2*np.pi*r_flat*KE_flux
-
 
     if 'polytrope' in args['--mesa_file']:
         rbot = 0.5
@@ -108,23 +102,23 @@ if args['--mesa_file'] is not None:
         L_S = -L_S['g']
  
 
-    L_diff  = L_S + L_enth + L_visc + L_cond + L_KE
-    L_tot   = L_enth + L_visc + L_cond + L_KE
+    L_tot   = enth_lum + visc_lum + cond_lum + KE_lum
+    L_diff  = L_S + L_tot
 
     fig = plt.figure(figsize=(4,3))
     plt.axhline(0, c='k', lw=0.25)
     plt.plot(r_flat, L_tot,  label='L tot',  c='k')
     plt.plot(r_flat, L_diff,  label='L diff',  c='k', lw=0.5, ls='--')
     plt.plot(r_flat, -L_S,   label='-(L source)', c='grey',  lw=0.75)
-    plt.plot(r_flat, L_enth, label='L enth', lw=0.5)
-    plt.plot(r_flat, L_visc, label='L visc', lw=0.5)
-    plt.plot(r_flat, L_cond, label='L cond', lw=0.5)
-    plt.plot(r_flat, L_KE,   label='L KE',   lw=0.5)
+    plt.plot(r_flat, enth_lum, label='L enth', lw=0.5)
+    plt.plot(r_flat, visc_lum, label='L visc', lw=0.5)
+    plt.plot(r_flat, cond_lum, label='L cond', lw=0.5)
+    plt.plot(r_flat, KE_lum,   label='L KE',   lw=0.5)
     plt.xlabel('r')
     plt.xlim(r_flat.min(), r_flat.max())
     plt.ylabel('Luminosity')
     plt.legend(loc='best')
 
-    fig.savefig('{:s}/{:s}/final_fluxes.png'.format(root_dir, fig_name), dpi=400, bbox_inches='tight')
+    fig.savefig('{:s}/{:s}/final_lums.png'.format(root_dir, fig_name), dpi=400, bbox_inches='tight')
 
 

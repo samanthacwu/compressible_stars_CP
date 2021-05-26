@@ -21,11 +21,12 @@ Options:
                                             1 - T, velocities, fluxes
                                         [default: 1]
     --mesa_file=<f>                     NCC file for making full flux plot
-    --polytrope                         Use polytropic background
+    --nr=<nr>                           Number of r-coeffs in problem [default: 64]
 """
 from docopt import docopt
 args = docopt(__doc__)
 from plotpal.profiles import ProfilePlotter
+import dedalus.public as de
 
 # Read in master output directory
 root_dir    = args['<root_dir>']
@@ -44,18 +45,18 @@ if n_files is not None:
 
 plotter = ProfilePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
 if int(args['--fig_type']) == 1:
-    plotter.add_profile('enth_flux',  avg_writes, basis='r')
-    plotter.add_profile('visc_flux', avg_writes, basis='r')
-    plotter.add_profile('cond_flux', avg_writes, basis='r')
-    plotter.add_profile('KE_flux', avg_writes, basis='r')
-    plotter.add_profile('s1', avg_writes, basis='r')
-    plotter.add_profile('ρ_ur', avg_writes, basis='r')
+    for l in ['B', 'S']:
+        plotter.add_profile('{}{}'.format('enth_lum',l),  avg_writes, basis='r')
+        plotter.add_profile('{}{}'.format('visc_lum',l), avg_writes,  basis='r')
+        plotter.add_profile('{}{}'.format('cond_lum',l), avg_writes,  basis='r')
+        plotter.add_profile('{}{}'.format('KE_lum',l), avg_writes,    basis='r')
+        plotter.add_profile('{}{}'.format('wave_lum',l), avg_writes,    basis='r')
 
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 plotter.plot_avg_profiles(dpi=int(args['--dpi']), **plotter_kwargs)
 
 
-if args['--mesa_file'] is not None or args['--polytrope']:
+if args['--mesa_file'] is not None:
     import h5py
     import numpy as np
     from scipy.interpolate import interp1d
@@ -63,72 +64,61 @@ if args['--mesa_file'] is not None or args['--polytrope']:
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
+    with h5py.File(args['--mesa_file'], 'r') as f:
+        ρB = np.exp(f['ln_ρB'][()])
+        TB = np.exp(f['ln_TB'][()])
+        HB = f['H_effB'][()]
+
+
     with h5py.File('{:s}/{:s}/averaged_{:s}.h5'.format(root_dir, fig_name, fig_name), 'r') as f:
-        enth_flux = f['enth_flux'][()][-1,:]
-        visc_flux = f['visc_flux'][()][-1,:]
-        cond_flux = f['cond_flux'][()][-1,:]
-        KE_flux   = f['KE_flux'][()][-1,:]
+        enth_lum = f['enth_lumB'][()][-1,:]
+        visc_lum = f['visc_lumB'][()][-1,:]
+        cond_lum = f['cond_lumB'][()][-1,:]
+        KE_lum   = f['KE_lumB'][()][-1,:]
         r_flat    = f['r'][()].flatten()
 
-    d_r_flat = np.gradient(r_flat)
-    L_enth = 4*np.pi*r_flat**2*enth_flux
-    L_visc = 4*np.pi*r_flat**2*visc_flux
-    L_cond = 4*np.pi*r_flat**2*cond_flux
-    L_KE   = 4*np.pi*r_flat**2*KE_flux
-
-
-
-    if args['--polytrope']:
-        n_rho = 1
-        gamma = 5/3
-        gradT = np.exp(n_rho * (1 - gamma)) - 1
-
-        #Gaussian luminosity -- zero at r = 0 and r = 1
-        mu = 0.5
-        sig = 0.15
-        L_S  = -np.exp(-(r_flat - mu)**2/(2*sig**2))#1 - 4 * (rg - 0.5)**2
-
-        r = r_flat
+    if 'polytrope' in args['--mesa_file']:
+        rbot = 0.5
+        L_S = -(1 - 4*(r_flat-(0.5+rbot))**2)
     else:
-        with h5py.File(args['--mesa_file'], 'r') as f:
-            ρ = np.exp(f['ln_ρ'][()])
-            T = np.exp(f['ln_T'][()])
-            H = f['H_eff'][()]
-            r = f['r'][()]
-        r_dense  = np.linspace(r.min(), r.max(), 2048)
-        dr_dense = np.gradient(r_dense)
-        H_dense  = np.interp(r_dense, r.flatten(), H.flatten())
-        T_dense  = np.interp(r_dense, r.flatten(), T.flatten())
-        ρ_dense  = np.interp(r_dense, r.flatten(), ρ.flatten())
-        d_L_S_dense = -4*np.pi*r_dense**2*ρ_dense*T_dense*H_dense*dr_dense
+        Lbot = 0.5
+        Lr   = 1
+        nr = int(args['--nr'])
+        r_basis = de.Chebyshev('r', nr, interval = [Lbot, Lbot+Lr], dealias=1)
 
-        L_S_dense      = np.zeros_like(d_L_S_dense)
-        for i in range(L_S_dense.shape[-1]-1):
-            L_S_dense[i+1] = L_S_dense[i] + d_L_S_dense[i]
-        L_S    = np.interp(r.flatten(), r_dense, L_S_dense)
-        L_enth = interp1d(r_flat, L_enth, bounds_error=False, fill_value='extrapolate')(r.flatten())
-        L_visc = interp1d(r_flat, L_visc, bounds_error=False, fill_value='extrapolate')(r.flatten())
-        L_cond = interp1d(r_flat, L_cond, bounds_error=False, fill_value='extrapolate')(r.flatten())
-        L_KE   = interp1d(r_flat, L_KE, bounds_error=False, fill_value='extrapolate')(r.flatten())
+        domain = de.Domain([r_basis,], grid_dtype=np.float64, mesh=None)
+        r = z = domain.grid(-1)
+        dr = np.gradient(r.flatten()).reshape(r.shape)
 
+        H_eff = domain.new_field()
+        d_L_S = domain.new_field()
+        L_S   = domain.new_field()
+        print(r-Lbot)
+        H_factor   = 4*np.pi*(r-Lbot)**2 / (2 * np.pi * r)
+        H_eff['g'] = H_factor*H
+        d_L_S['g'] = ρ*T*(2 * np.pi * r) * H_eff['g']
+        d_L_S.antidifferentiate('r', ('left', 0), out=L_S)
 
-    L_diff  = L_S + L_enth + L_visc + L_cond + L_KE
-    L_tot   = L_enth + L_visc + L_cond + L_KE
+        L_S = -L_S['g']
+ 
+
+    L_tot   = enth_lum + visc_lum + cond_lum + KE_lum
+    L_diff  = L_S + L_tot
 
     fig = plt.figure(figsize=(4,3))
     plt.axhline(0, c='k', lw=0.25)
-    plt.plot(r.flatten(),  L_tot.flatten(),  label='L tot',  c='k')
-    plt.plot(r.flatten(), L_diff.flatten(),  label='L diff',  c='k', lw=0.5, ls='--')
-    plt.plot(r.flatten(),   -L_S.flatten(),   label='-(L source)', c='grey',  lw=1)
-    plt.plot(r.flatten(), L_enth.flatten(), label='L enth', lw=0.5)
-    plt.plot(r.flatten(), L_visc.flatten(), label='L visc', lw=0.5)
-    plt.plot(r.flatten(), L_cond.flatten(), label='L cond', lw=0.5)
-    plt.plot(r.flatten(),   L_KE.flatten(),   label='L KE',   lw=0.5)
+    plt.plot(r_flat, L_tot,  label='L tot',  c='k')
+    plt.plot(r_flat, L_diff,  label='L diff',  c='k', lw=0.5, ls='--')
+    plt.plot(r_flat, -L_S,   label='-(L source)', c='grey',  lw=0.75)
+    plt.plot(r_flat, enth_lum, label='L enth', lw=0.5)
+    plt.plot(r_flat, visc_lum, label='L visc', lw=0.5)
+    plt.plot(r_flat, cond_lum, label='L cond', lw=0.5)
+    plt.plot(r_flat, KE_lum,   label='L KE',   lw=0.5)
     plt.xlabel('r')
     plt.xlim(r_flat.min(), r_flat.max())
     plt.ylabel('Luminosity')
     plt.legend(loc='best')
 
-    fig.savefig('{:s}/{:s}/final_fluxes.png'.format(root_dir, fig_name), dpi=400, bbox_inches='tight')
+    fig.savefig('{:s}/{:s}/final_lums.png'.format(root_dir, fig_name), dpi=400, bbox_inches='tight')
 
 

@@ -5,11 +5,11 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    plot_mollweide_snapshots.py <root_dir> [options]
+    plot_ortho_snapshots.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: shell_slice]
-    --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_mollweide]
+    --data_dir=<dir>                    Name of data handler directory [default: shell_sliceS]
+    --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_ortho]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
@@ -49,13 +49,20 @@ if n_files is not None:
 plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 if int(args['--fig_type']) == 1:
-    plotter.setup_grid(2, 2, mollweide=True, **plotter_kwargs)
+    plotter.setup_grid(2, 2, ortho=True, **plotter_kwargs)
     fnames = [  
-                (('s1_r0.5',),        {'mollweide' : True, 'remove_mean' : False}), 
-                (('ur_r0.5',),        {'mollweide' : True, 'cmap' : 'PuOr_r'}),
-                (('s1_r1',),        {'mollweide' : True, 'remove_mean' : False}), 
-                (('ur_r1',),        {'mollweide' : True, 'cmap' : 'PuOr_r'}),
+                (('s1S_near_surf',),        {'ortho' : True, 'remove_mean' : True}), 
+                (('urS_near_surf',),        {'ortho' : True, 'cmap' : 'PuOr_r'}),
+                (('uφS_near_surf',),        {'ortho' : True, 'cmap' : 'PuOr_r'}),
+                (('uθS_near_surf',),        {'ortho' : True, 'cmap' : 'PuOr_r'}),
              ]
+elif int(args['--fig_type']) == 2:
+    plotter.setup_grid(1, 2, ortho=True, **plotter_kwargs)
+    fnames = [  
+                (('u_phi_surf',),          {'ortho' : True, 'cmap' : 'PuOr_r'}), 
+                (('u_theta_surf',),        {'ortho' : True, 'cmap' : 'PuOr_r'}),
+             ]
+
 
 for tup in fnames:
     plotter.add_colormesh(*tup[0], x_basis='φ', y_basis='θ', **tup[1])
