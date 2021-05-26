@@ -631,10 +631,11 @@ heaviside_cfl['g'] = 1
 if args['--CFL_max_r'] is not None:
     if np.sum(rB > float(args['--CFL_max_r'])) > 0:
         heaviside_cfl['g'][:,:, rB.flatten() > float(args['--CFL_max_r'])] = 0
-my_cfl = CFL(solver, max_dt, safety=float(args['--safety']), cadence=1, max_dt=max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
+initial_max_dt = 0.5*t_buoy
+my_cfl = CFL(solver, initial_max_dt, safety=float(args['--safety']), cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*uB)
 
-dt = max_dt
+dt = initial_max_dt
 
 #startup iterations
 for i in range(10):
@@ -644,6 +645,7 @@ for i in range(10):
 # Main loop
 start_time = time.time()
 start_iter = solver.iteration
+max_dt_check = True
 try:
     while solver.ok:
         solver.step(dt)
@@ -658,6 +660,9 @@ try:
         if solver.iteration % 10 == 0:
             Re0 = vol_averagerB(re_ball.fields['Re_avg_ball'], comm=True)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
+            if max_dt_check and Re0 > 1:
+                my_cfl.max_dt = max_dt
+                max_dt_check = False
 
 except:
     logger.info('something went wrong in main loop, making final checkpoint')
