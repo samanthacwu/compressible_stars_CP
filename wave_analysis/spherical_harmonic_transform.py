@@ -89,19 +89,21 @@ if not plotter.idle:
     res = re.compile('(.*)\(r=(.*)\)')
 
     # Bases
-    dealias = 1
+    dealias = 1.5
     if args['--shell_basis']:
         c = coords.SphericalCoordinates('φ', 'θ', 'r')
+        dealias_tuple = (dealias, dealias, dealias)
         d = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
-        global_b = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, 1), radii=((1-1e-6)*float(args['--radius']), float(args['--radius'])), dtype=dtype)
-        φ, θ, r= global_b.local_grids((dealias, dealias, dealias))
-        φg, θg, rg = global_b.global_grids((dealias, dealias, dealias))
+        global_b = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, 1), radii=((1-1e-6)*float(args['--radius']), float(args['--radius'])), dtype=dtype, dealias=dealias_tuple)
+        φ, θ, r= global_b.local_grids(dealias_tuple)
+        φg, θg, rg = global_b.global_grids(dealias_tuple)
     else:
         c = coords.S2Coordinates('φ', 'θ')
+        dealias_tuple = (dealias, dealias)
         d = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
-        global_b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dtype)
-        φ, θ = global_b.local_grids((dealias, dealias))
-        φg, θg = global_b.global_grids((dealias, dealias))
+        global_b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=float(args['--radius']), dtype=dtype, dealias=dealias_tuple)
+        φ, θ = global_b.local_grids(dealias_tuple)
+        φg, θg = global_b.global_grids(dealias_tuple)
 
     ells = global_b.local_ell
     ms = global_b.local_m
@@ -113,6 +115,8 @@ if not plotter.idle:
 
     global_s_field = field.Field(dist=d, bases=(global_b,), dtype=dtype)
     global_v_field = field.Field(dist=d, bases=(global_b,), tensorsig=(c,), dtype=dtype)
+    global_s_field.require_scales(dealias_tuple)
+    global_v_field.require_scales(dealias_tuple)
 
     out_tsk = OrderedDict()
     for f in fields: out_tsk[f] = []
@@ -137,9 +141,11 @@ if not plotter.idle:
                         radius = float(f.split('r=')[-1].split(')')[0])
                         k = 'r={}'.format(radius)
                         if k not in S2_bases.keys():
-                            b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=radius, dtype=dtype)
+                            b = basis.SWSH(c, (2*(Lmax+2), Lmax+1), radius=radius, dtype=dtype, dealias=dealias_tuple)
                             s_field = field.Field(dist=d, bases=(b,), dtype=dtype)
                             v_field = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+                            s_field.require_scales(dealias_tuple)
+                            v_field.require_scales(dealias_tuple)
                             S2_bases[k] = (b, s_field, v_field)
                         else:
                             b, s_field, v_field = S2_bases[k]

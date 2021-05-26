@@ -22,7 +22,7 @@ Options:
     --SBDF2              Use SBDF2 (default)
     --RK222              Use RK222
     --SBDF4              Use SBDF4
-    --safety=<s>         Timestep CFL safety factor [default: 0.4]
+    --safety=<s>         Timestep CFL safety factor [default: 0.35]
     --CFL_max_r=<r>      zero out velocities above this radius value for CFL
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model

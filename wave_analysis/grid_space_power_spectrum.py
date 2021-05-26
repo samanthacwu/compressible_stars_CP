@@ -95,10 +95,11 @@ if not args['--plot_only']:
     weight = weight_θ * weight_φ
     volume = np.sum(weight)
 
-    field = field.Field(dist=d, bases=(b,), dtype=dtype)
+    s_field = field.Field(dist=d, bases=(b,), dtype=dtype)
+    v_field = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 
     plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
-    fields = ['s1_surf',]#, 'u_theta_surf',]
+    fields = ['s1_surf', 'u_ang_surf',]
 
     times = []
     print('getting times...')
@@ -110,7 +111,8 @@ if not args['--plot_only']:
         plotter.current_filenum += 1
 
     times = np.concatenate(times)
-    data_cube = np.zeros((times.shape[0], *tuple(field['g'].shape)), dtype=dtype)
+    data_cube = np.zeros((times.shape[0], *tuple(s_field['g'].shape)), dtype=dtype)
+    v_data_cube = np.zeros((times.shape[0], *tuple(v_field['g'].shape)), dtype=dtype)
 
     print('filling datacube...')
     writes = 0
@@ -120,33 +122,43 @@ if not args['--plot_only']:
         with h5py.File('{}'.format(file_name), 'r') as f:
             this_file_writes = len(f['scales/sim_time'][()].flatten())
             data_cube[writes:writes+this_file_writes,:] = f['tasks/s1_surf'][()].squeeze()
+            v_data_cube[writes:writes+this_file_writes,:] = f['tasks/u_ang_surf'][()].squeeze()
             writes += this_file_writes
         plotter.current_filenum += 1
 
     print('taking transform')
-    transform = np.zeros((int(times.shape[0]/2)+1, *tuple(field['g'].shape)), dtype=np.complex128)
+    transform = np.zeros((int(times.shape[0]/2)+1, *tuple(s_field['g'].shape)), dtype=np.complex128)
+    v_transform = np.zeros((int(times.shape[0]/2)+1, *tuple(v_field['g'].shape)), dtype=np.complex128)
     for i in range(transform.shape[1]):
         print('taking transforms {}/{}'.format(i+1, data_cube.shape[1]))
         for j in range(transform.shape[2]):
             freqs, transform[:,i,j] = clean_rfft(times, data_cube[:,i,j])
+            freqs, v_transform[:,:,i,j] = clean_rfft(times, v_data_cube[:,:,i,j])
     del data_cube
+    del v_data_cube
     gc.collect()
     print ('making power spectrum')
     full_power = (transform*np.conj(transform)).real
+    full_v_power = (v_transform*np.conj(v_transform)).real
     del transform
+    del v_transform
     gc.collect()
     print('summing power over grid space')
     power = 4*np.pi*np.sum(np.sum(weight*full_power, axis=2), axis=1)/volume
+    v_power = 4*np.pi*np.sum(np.sum(np.sum(weight*full_v_power, axis=3), axis=2), axis=1)/volume
     del full_power
+    del full_v_power
     gc.collect()
 
     with h5py.File('{}/grid_power_spectra.h5'.format(full_out_dir), 'w') as f:
-        f['power'] = power
+        f['power_s1'] = power
+        f['power_u_ang'] = v_power
         f['freqs'] = freqs 
         f['freqs_inv_day'] = freqs/tau
 else:  
     with h5py.File('{}/grid_power_spectra.h5'.format(full_out_dir), 'r') as f:
-        power = f['power'][()]
+        power = f['power_s1'][()]
+        v_power = f['power_u_ang'][()]
         freqs = f['freqs'][()]
 
 freqs /= tau
@@ -157,10 +169,11 @@ max_freq = freqs.max()
 ymin = power[(freqs > 5e-2)*(freqs < max_freq)][-1].min()/2
 ymax = power[(freqs > 5e-2)*(freqs <= max_freq)].max()*2
 
-plt.plot(freqs[good], power[good], c = 'k')
+plt.plot(freqs[good], power[good], c = 'k', label='entropy')
+plt.plot(freqs[good], v_power[good], c = 'b', label='velocity')
 plt.yscale('log')
 plt.xscale('log')
-plt.ylabel(r'Power (simulation s1 units squared)')
+plt.ylabel(r'Power (simulation units squared)')
 plt.xlabel(r'Frequency (day$^{-1}$)')
 plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
 plt.xlim(min_freq, max_freq)

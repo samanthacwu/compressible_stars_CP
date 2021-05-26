@@ -121,7 +121,10 @@ def normalize_cfft_power(freqs, ft):
     for f in freqs:
         if f < 0:
             power[freqs == -f] += power[freqs == f]
-    p_power = power[freqs >= 0]
+    if len(power.shape) == 1:
+        p_power = power[freqs >= 0]
+    else:
+        p_power = power[freqs >= 0,:]
     p_freqs = freqs[freqs >= 0]
     return p_freqs, p_power
 

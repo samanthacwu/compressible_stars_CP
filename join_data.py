@@ -34,7 +34,7 @@ for d in glob.glob(data_dir):
     if args['--data_type'] is not None:
         data_types=[args['--data_type']]
     else:
-        data_types = ['surface_shell_slices', 'scalars', 'slices', 'checkpoint', 'final_checkpoint']
+        data_types = ['wave_shell_slices', 'surface_shell_slices', 'scalars', 'slices', 'checkpoint', 'final_checkpoint']
 
     for data_type in data_types:
         logger.info("merging {}".format(data_type))
