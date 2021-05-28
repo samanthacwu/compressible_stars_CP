@@ -167,9 +167,9 @@ if not plotter.idle:
                             of.create_dataset(name='tasks/'+f, shape=[len(sim_times),] + shape, dtype=np.complex128)
                         logger.info('file {}, transforming {}, {}/{}'.format(file_num, f, i+1, len(sim_times)))
                         if len(shape) == 3:
-                            s_field['g'] = task_data
+                            s_field['g'] = task_data.reshape(s_field['g'].shape)
                         else:
-                            v_field['g'] = task_data
+                            v_field['g'] = task_data.reshape(v_field['g'].shape)
                         for j, ell in enumerate(ell_values):
                             for k, m in enumerate(m_values):
                                 bool_map = (ell == ells)*(m == ms)
