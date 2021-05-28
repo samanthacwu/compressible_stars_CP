@@ -19,7 +19,7 @@ Options:
 
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
-    --do_ft                             Do the base fourier transforms
+    --no_ft                             Do the base fourier transforms
 """
 import re
 import gc
@@ -95,7 +95,7 @@ for f in fields:
         radius = float(f.split('r=')[-1].split(')')[0])
         if radius not in radii:
             radii.append(radius)
-if args['--do_ft']:
+if not args['--no_ft']:
 
     times = []
     print('getting times...')
