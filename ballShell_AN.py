@@ -84,7 +84,8 @@ if args['<config>'] is not None:
 Lmax      = int(args['--L'])
 NmaxB      = int(args['--NB'])
 NmaxS      = int(args['--NS'])
-L_dealias = N_dealias = dealias = 1.5
+N_dealias = 1.5
+L_dealias = 1.5
 
 out_dir = './' + sys.argv[0].split('.py')[0]
 if args['--sponge']:
@@ -114,8 +115,15 @@ else:
     timestepper_history = [0, 1,]
 dtype = np.float64
 mesh = args['--mesh']
+ncpu = MPI.COMM_WORLD.size
 if mesh is not None:
-    mesh = [int(m) for m in mesh.split(',')]
+    mesh = mesh.split(',')
+    mesh = [int(mesh[0]), int(mesh[1])]
+else:
+    log2 = np.log2(ncpu)
+    if log2 == int(log2):
+        mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
+    logger.info("running on processor mesh={}".format(mesh))
 
 Re  = float(args['--Re'])
 Pr  = 1
@@ -147,6 +155,15 @@ b_top = bS.S2_basis(radius=r_outer)
 φS,  θS,  rS  = bS.local_grids(dealias_tuple)
 φSg, θSg, rSg = bS.global_grids(dealias_tuple)
 
+kBtau = 0
+kBrhs = 0
+kStau = 0
+kSrhs = 0
+bB_tau = bB._new_k(kBtau)
+bB_rhs = bB._new_k(kBrhs)
+bS_tau = bS._new_k(kStau)
+bS_rhs = bS._new_k(kSrhs)
+
 #Operators
 div       = lambda A: operators.Divergence(A, index=0)
 lap       = lambda A: operators.Laplacian(A, c)
@@ -159,8 +176,15 @@ ddt       = lambda A: operators.TimeDerivative(A)
 transpose = lambda A: operators.TransposeComponents(A)
 radComp   = lambda A: operators.RadialComponent(A)
 angComp   = lambda A, index=1: operators.AngularComponent(A, index=index)
-LiftTauB   = lambda A: operators.LiftTau(A, bB, -1)
-LiftTauS   = lambda A, n: operators.LiftTau(A, bS, n)
+LiftTauB   = lambda A: operators.LiftTau(A, bB_tau, -1)
+LiftTauS   = lambda A, n: operators.LiftTau(A, bS_tau, n)
+Grid = operators.Coeff
+Coeff = operators.Coeff
+Conv = operators.Convert
+RHSB = lambda A: Coeff(Conv(A, bB_rhs))
+RHSS = lambda A: Coeff(Conv(A, bS_rhs))
+
+
 
 # Fields
 tB     = field.Field(dist=d, bases=(b_mid,), dtype=dtype)
@@ -340,12 +364,12 @@ if args['--restart'] is not None:
         pS['c'] = f['tasks/pS'][()][-1,:]
         uS['c'] = f['tasks/uS'][()][-1,:]
 
-        s1B.require_scales(dealias)
-        pB.require_scales(dealias)
-        uB.require_scales(dealias)
-        s1S.require_scales(dealias)
-        pS.require_scales(dealias)
-        uS.require_scales(dealias)
+        s1B.require_scales(dealias_tuple)
+        pB.require_scales(dealias_tuple)
+        uB.require_scales(dealias_tuple)
+        s1S.require_scales(dealias_tuple)
+        pS.require_scales(dealias_tuple)
+        uS.require_scales(dealias_tuple)
 else:
     if args['--benchmark']:
         #Marti benchmark-like ICs
@@ -364,7 +388,7 @@ else:
         s1B.require_scales(filter_scale)
         s1B['c']
         s1B['g']
-        s1B.require_scales(dealias)
+        s1B.require_scales(dealias_tuple)
 
 H_effB = operators.Grid(H_effB).evaluate()
 H_effS = operators.Grid(H_effS).evaluate()
@@ -379,13 +403,13 @@ problem = problems.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_
 
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*momentum_viscous_termsB + LiftTauB(tBt) = RHSB(cross(uB, curl(uB)))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
 if args['--sponge']:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + spongeS*uS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + spongeS*uS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = RHSS( cross(uS, curl(uS)) )"), condition = "nθ != 0")
 else:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*momentum_viscous_termsS + LiftTauS(tSt_bot, -1) + LiftTauS(tSt_top, -2) = RHSS( cross(uS, curl(uS)) )"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -397,9 +421,9 @@ grads1B = grad(s1B)
 grads1S = grad(s1S)
 grads1B.store_last = True
 grads1S.store_last = True
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB "))
+problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grads1B, (grad_ln_ρB + grad_ln_TB))) - dot(grads1B, grad_inv_PeB) + LiftTauB(tB) = RHSB( - dot(uB, grads1B) + H_effB + (1/Re)*inv_TB*VHB ) "))
 ### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2)  = - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS "))
+problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grads1S, (grad_ln_ρS + grad_ln_TS))) - dot(grads1S, grad_inv_PeS) + LiftTauS(tS_bot, -1) + LiftTauS(tS_top, -2)  = RHSS( - dot(uS, grads1S) + H_effS + (1/Re)*inv_TS*VHS ) "))
 
 
 #Velocity BCs ell != 0
