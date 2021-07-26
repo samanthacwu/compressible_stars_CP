@@ -114,6 +114,7 @@ if not args['--no_ft']:
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
 
+    #TODO: only load in one ell and m at a time, that'll save memory.
     for i, f in enumerate(fields):
         print('reading field {}'.format(f))
         data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
