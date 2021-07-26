@@ -1,6 +1,17 @@
 """
 d3 script for anelastic convection in a polytrope.
 
+Usage:
+    polytrope_ball_AN.py [options]
+
+Options:
+    --L=<Lmax>          The value of Lmax   [default: 15]
+    --N=<Nmax>          The value of Nmax   [default: 15]
+    --ktau=<k>          The value of ktau   [default: 0]
+    --krhs=<k>          The value of krhs   [default: 0]
+
+
+
 """
 import os
 import time
@@ -20,11 +31,17 @@ logger = logging.getLogger(__name__)
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 
+from docopt import docopt
+args   = docopt(__doc__)
+
 # Parameters
-Lmax      = 14
-Nmax      = 15
+Nmax      = int(args['--N'])
+Lmax      = int(args['--L'])
+ktau      = int(args['--ktau'])
+krhs      = int(args['--krhs'])
 L_dealias = N_dealias = dealias = 1.5
 dealias_tuple = (L_dealias, L_dealias, N_dealias)
+
 
 ts = timesteppers.SBDF2
 timestepper_history = [0, 1,]
@@ -40,12 +57,15 @@ else:
         mesh = [int(2**np.ceil(log2/2)),int(2**np.floor(log2/2))]
     logger.info("running on processor mesh={}".format(mesh))
 
-Re  = 1e2
+
+
+Re  = 2e2
 Pr  = 1
 Pe  = Pr*Re
 
-max_dt = t_buoy = 1
-t_end = 1e3*t_buoy
+t_buoy = 1
+dt = 1e-1* t_buoy
+t_end = 2e3*t_buoy
 
 alpha = 1
 rhoc  = 1
@@ -58,13 +78,11 @@ radius = np.pi/(2*alpha)
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
-b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype, dealias=dealias_tuple)
+b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius, dtype=dtype, dealias=dealias_tuple)
 b_S2 = b.S2_basis()
 φ, θ, r = b.local_grids(dealias_tuple)
 φg, θg, rg = b.global_grids(dealias_tuple)
 
-ktau = 0
-krhs = 0
 b_tau = b._new_k(ktau)
 b_rhs = b._new_k(krhs)
 
@@ -85,6 +103,7 @@ Grid = operators.Coeff
 Coeff = operators.Coeff
 Conv = operators.Convert
 RHS = lambda A: Coeff(Conv(A, b_rhs))
+
 
 # Problem variables
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -113,23 +132,43 @@ for f in [u, p, s1, grad_ln_ρ, grad_ln_T, grad_T0, grad_ρ0, T0, inv_T, Heat, �
 
 ρ['g'] = rhoc * np.sin(alpha*r) / (alpha * r)
 T['g'] = k_d_R * ρ['g']
+inv_T['g'] = 1/T['g']
+Heat['g'] = 1 / Pe
+
 
 gradT = grad(T).evaluate()
 gradρ = grad(ρ).evaluate()
 
-grad_T0['g'][:,0,0,:] = gradT['g'][:,0,0,:]
-grad_ρ0['g'][:,0,0,:] = gradρ['g'][:,0,0,:]
-grad_ln_T['g'][:,0,0,:] = gradT['g'][:,0,0,:]/T['g'][0,0,:]
-grad_ln_ρ['g'][:,0,0,:] = gradρ['g'][:,0,0,:]/ρ['g'][0,0,:]
-T0['g'][0,0,:] = T['g'][0,0,:]
-inv_T['g'] = 1/T['g']
-Heat['g'] = 1 / Pe
 
-Mr['g']   = 4 * np.pi * rhoc * (np.sin(alpha*r) - alpha*r*np.cos(alpha*r)) / alpha**3
-grav['g'][2,:] = -(G/r**2) * Mr['g']
+if np.prod(grad_T0['g'].shape) > 0:
+    scalar_ncc_shape = T0['g'].shape
+    vector_ncc_shape = grad_T0['g'].shape
+    #not all procs have ncc data
+    grad_T0['g'] = gradT['g'][:,0,0,:].reshape(vector_ncc_shape)
+    grad_ρ0['g'] = gradρ['g'][:,0,0,:].reshape(vector_ncc_shape)
+    sys.stdout.flush()
+    grad_ln_T['g'][:,0,0,:] = gradT['g'][:,0,0,:]/T['g'][0,0,:]
+    grad_ln_ρ['g'][:,0,0,:] = gradρ['g'][:,0,0,:]/ρ['g'][0,0,:]
+    T0['g'][0,0,:] = T['g'][0,0,:]
+    Mr['g']   = 4 * np.pi * rhoc * (np.sin(alpha*r) - alpha*r*np.cos(alpha*r)) / alpha**3
+    grav['g'][2,:] = -(G/r**2) * Mr['g']
+    HSE['g'][0,0,:] = R*(ρ['g'][0,0,:]*grad_T0['g'][2,0,0,:] + T['g'][0,0,:]*grad_ρ0['g'][2,0,0,:]) - ρ['g'][0,0,:]*grav['g'][2,0,0,:]
+    print('max hse error: {:.3e} on proc {}'.format(np.abs(HSE['g']).max(), d.comm_cart.rank))
+else:
+    #need to reference 'g' in full fields on other procs or we get a parallel hangup
+    gradT['g']
+    gradρ['g']
+    gradT['g']
+    gradρ['g']
+    T['g']
+    ρ['g']
+    T['g']
+    ρ['g']
 
-HSE['g'][0,0,:] = R*(ρ['g'][0,0,:]*grad_T0['g'][2,0,0,:] + T['g'][0,0,:]*grad_ρ0['g'][2,0,0,:]) - ρ['g'][0,0,:]*grav['g'][2,0,0,:]
-print('max hse error: {:.3e}'.format(np.abs(HSE['g']).max()))
+
+
+    
+
 
 #Radial unit vector
 er = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -152,6 +191,8 @@ momentum_viscous_terms = div(σ) + dot(σ, grad_ln_ρ)
 
 VH  = 2*(trace(dot(E, E)) - (1/3)*divU*divU)
 
+
+
 #Impenetrable, stress-free boundary conditions
 u_r_bc    = radComp(u(r=radius))
 u_perp_bc = radComp(angComp(E(r=radius), index=1))
@@ -160,6 +201,8 @@ therm_bc  = s1(r=radius)
 Heat = operators.Grid(Heat).evaluate()
 inv_T = operators.Grid(inv_T).evaluate()
 grads1 = grad(s1)
+
+
 
 # Problem
 def eq_eval(eq_str):
@@ -175,6 +218,8 @@ problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
 problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("therm_bc  = 0"))
+
+
 
 logger.info("Problem built")
 # Solver
@@ -194,8 +239,32 @@ vol_correction = 4*np.pi/3/vol_test
 A0 = 1e-2
 s1['g'] = (Pe/6)*Heat['g']*(1-r**2) +  A0*(r/radius)**3*(1-(r/radius)**2)*np.cos(φ)*np.sin(θ)**3
 
+
+from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer, MeridionSlicer
+from d3_outputs.writing      import d3FileHandler
+
+out_dir = './' + sys.argv[0].split('.py')[0]
+out_dir += '_Re{}_{}x{}_ktau{}_krhs{}'.format(Re, Lmax, Nmax, ktau, krhs)
+logger.info('saving data to {:s}'.format(out_dir))
+if MPI.COMM_WORLD.rank == 0:
+    if not os.path.exists('{:s}/'.format(out_dir)):
+        os.makedirs('{:s}/'.format(out_dir))
+
+vol_averager      = BallVolumeAverager(p)
+
+u_squared = dot(u,u)
+analysis_tasks = []
+scalars = d3FileHandler(solver, '{:s}/scalars'.format(out_dir), iter=1, max_writes=np.inf)
+scalars.add_task(Re**2 * u_squared / 2, name='KE', layout='g', extra_op = vol_averager, extra_op_comm=True)
+analysis_tasks.append(scalars)
+
+
+ke_dict = solver.evaluator.add_dictionary_handler(iter=10)
+ke_dict.add_task(Re**2 * u_squared / 2, name='KE', layout='g', scales=dealias_tuple)
+
+
+
 # Main loop
-dt = 1e-1* t_buoy
 start_time = time.time()
 start_iter = solver.iteration
 hermitian_cadence = 100
@@ -204,10 +273,15 @@ try:
         solver.step(dt)
 
         if solver.iteration % 10 == 0:
-            KE = np.sum(vol_correction*weight_r*weight_theta*(Re*u['g'].real)**2)
-            KE = 0.5*KE*(np.pi)/(Lmax+1)/L_dealias
-            KE = reducer.reduce_scalar(KE, MPI.SUM)
+            KE = vol_averager(ke_dict.fields['KE'], comm=True)
+#            KE = np.sum(vol_correction*weight_r*weight_theta*(Re*u['g'].real)**2)
+#            KE = 0.5*KE*(np.pi)/(Lmax+1)/L_dealias
+#            KE = reducer.reduce_scalar(KE, MPI.SUM)
             logger.info("t = %f, dt = %f, KE = %.10e" %(solver.sim_time, dt, KE))
+
+            if not np.isfinite(KE) or np.isnan(KE):
+                logger.info('exiting with NaN')
+                break
 
         if solver.iteration % hermitian_cadence in timestepper_history:
             for f in solver.state:
