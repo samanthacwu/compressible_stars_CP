@@ -21,7 +21,7 @@ while getopts ":d:n:h?:" opt; do
 done
 echo $DIR
 echo $NCORE
-echo "Processing $DIR on $NCORE cores"
+echo "Processing wave flux $DIR on $NCORE cores"
 
 mpiexec_mpt -n $NCORE python3 spherical_harmonic_transform.py $DIR --data_dir=wave_shell_slices --shell_basis
 mpiexec_mpt -n 1 python3 spherical_harmonic_wave_flux.py $DIR

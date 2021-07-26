@@ -1,11 +1,8 @@
 """
-This script plots snapshots of the evolution of 2D slices from a 2D simulation in polar geometry.
-
-The fields specified in 'fig_type' are plotted (temperature and enstrophy by default).
-To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
+This script computes the wave flux in a d3 spherical simulation
 
 Usage:
-    plot_mollweide_snapshots.py <root_dir> [options]
+    spherical_harmonci_wave_flux.py <root_dir> [options]
 
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: SH_transform_wave_shell_slices]
@@ -85,10 +82,7 @@ out_dir = 'SH_wave_flux_spectra'.format(data_dir)
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
 with h5py.File(plotter.files[0], 'r') as f:
-    fields = list(f.keys())
-fields.remove('time')
-fields.remove('ells')
-fields.remove('ms')
+    fields = list(f['tasks'].keys())
 radii = []
 for f in fields:
     if res.match(f):
@@ -126,7 +120,7 @@ if not args['--no_ft']:
             file_name = plotter.files[plotter.current_filenum]
             with h5py.File('{}'.format(file_name), 'r') as rf:
                 this_file_writes = len(rf['time'][()])
-                data_cube[writes:writes+this_file_writes,:] = rf[f][:,:,:]
+                data_cube[writes:writes+this_file_writes,:] = rf['tasks'][f][:,:,:].squeeze()
                 writes += this_file_writes
             plotter.current_filenum += 1
 

@@ -154,6 +154,7 @@ if not plotter.idle:
                         v_field = global_v_field
                 
                     for i in range(len(sim_times)):
+                        do_vec = False
                         task_data = in_f['tasks/{}'.format(f)][i,:]
                         shape = list(task_data.shape)
                         if len(shape) == len(s_field['g'].shape):
@@ -167,14 +168,16 @@ if not plotter.idle:
                             of.create_dataset(name='tasks/'+f, shape=[len(sim_times),] + shape, dtype=np.complex128)
                         logger.info('file {}, transforming {}, {}/{}'.format(file_num, f, i+1, len(sim_times)))
                         if len(shape) == 3:
+                            do_vec = False
                             s_field['g'] = task_data.reshape(s_field['g'].shape)
                         else:
+                            do_vec = True
                             v_field['g'] = task_data.reshape(v_field['g'].shape)
                         for j, ell in enumerate(ell_values):
                             for k, m in enumerate(m_values):
                                 bool_map = (ell == ells)*(m == ms)
                                 if np.sum(bool_map) > 0:
-                                    if len(shape) == len(s_field['g'].shape):
+                                    if not do_vec:
                                         values = s_field['c'][bool_map]
                                         out_field[j,k] = values[0] + 1j*values[1]
                                     else:
