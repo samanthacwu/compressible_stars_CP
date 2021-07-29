@@ -156,9 +156,9 @@ b_top = bS.S2_basis(radius=r_outer)
 φSg, θSg, rSg = bS.global_grids(dealias_tuple)
 
 kBtau = 0
-kBrhs = 0
+kBrhs = 1
 kStau = 0
-kSrhs = 0
+kSrhs = 1
 bB_tau = bB._new_k(kBtau)
 bB_rhs = bB._new_k(kBrhs)
 bS_tau = bS._new_k(kStau)
@@ -624,7 +624,7 @@ profiles.add_task((4*np.pi*r_valsS**2)*(0.5*ρS*urS*uS_squared),       name='KE_
 analysis_tasks.append(profiles)
 
 if args['--sponge']:
-    surface_shell_slices = d3FileHandler(solver, '{:s}/wave_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=20)
+    surface_shell_slices = d3FileHandler(solver, '{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
     for rval in [0.90, 1.05]:
         surface_shell_slices.add_task(radComp(uB(r=rval)),  extra_op=ORI(pB, radComp(uB(r=rval))), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_B(r=rval), extra_op=ORI(pB, pomega_hat_B(r=rval)), name='pomega(r={})'.format(rval),    layout='g')
@@ -633,7 +633,7 @@ if args['--sponge']:
         surface_shell_slices.add_task(pomega_hat_S(r=rval), extra_op=ORI(pS, pomega_hat_B(r=rval)), name='pomega(r={})'.format(rval),    layout='g')
     analysis_tasks.append(surface_shell_slices)
 else:
-    surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=max_dt, max_writes=20)
+    surface_shell_slices = d3FileHandler(solver, '{:s}/surface_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
     surface_shell_slices.add_task(s1S(r=r_outer),         name='s1_surf',    layout='g', extra_op=ORI(pS, s1S(r=r_outer)))
     analysis_tasks.append(surface_shell_slices)
 
@@ -665,28 +665,56 @@ dt = initial_max_dt
 for i in range(10):
     logger.info('startup iteration {}'.format(i))
     solver.step(dt)
+    dt = my_cfl.compute_dt()
 
 # Main loop
 start_time = time.time()
 start_iter = solver.iteration
 max_dt_check = True
+current_max_dt = my_cfl.max_dt
+slice_cadence = max_dt
+slice_process = False
+just_wrote    = False
+slice_time = np.inf
 try:
     while solver.ok:
-        solver.step(dt)
         dt = my_cfl.compute_dt()
-        base2_frac = 2**(np.ceil(np.log2(max_dt/dt)))
-        dt = max_dt/base2_frac
+        dt = np.min((dt, current_max_dt))
+
+        if just_wrote:
+            just_wrote = False
+            num_steps = np.ceil(slice_cadence / dt)
+            dt = current_max_dt = CFL.stored_dt = slice_cadence/num_steps
+        elif dt < current_max_dt:
+            current_max_dt /= 2
+            dt = CFL.stored_dt = current_max_dt
+
+        t_future = solver.sim_time + dt
+        if t_future >= slice_time*(1-1e-8):
+           slice_process = True
 
         if solver.iteration % imaginary_cadence in timestepper_history:
             for f in solver.state:
                 f.require_grid_space()
 
+        solver.step(dt)
+
         if solver.iteration % 10 == 0:
             Re0 = vol_averagerB(re_ball.fields['Re_avg_ball'], comm=True)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
-            if max_dt_check and Re0 > 1:
-                my_cfl.max_dt = max_dt
-                max_dt_check = False
+        if max_dt_check and dt < slice_cadence:
+            my_cfl.max_dt = max_dt
+            max_dt_check = False
+            just_wrote = True
+            slice_time = solver.sim_time + slice_cadence
+
+        if slice_process:
+            slice_process = False
+            wall_time = time.time() - solver.start_time
+            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=dt)
+            slice_time = solver.sim_time + slice_cadence
+            just_wrote = True
+
 
 except:
     logger.info('something went wrong in main loop, making final checkpoint')
