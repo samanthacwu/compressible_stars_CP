@@ -22,7 +22,7 @@ Options:
     --SBDF2              Use SBDF2 (default)
     --RK222              Use RK222
     --SBDF4              Use SBDF4
-    --safety=<s>         Timestep CFL safety factor [default: 0.35]
+    --safety=<s>         Timestep CFL safety factor [default: 0.2]
     --CFL_max_r=<r>      zero out velocities above this radius value for CFL
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
@@ -156,9 +156,9 @@ b_top = bS.S2_basis(radius=r_outer)
 φSg, θSg, rSg = bS.global_grids(dealias_tuple)
 
 kBtau = 0
-kBrhs = 1
+kBrhs = 0
 kStau = 0
-kSrhs = 1
+kSrhs = 0
 bB_tau = bB._new_k(kBtau)
 bB_rhs = bB._new_k(kBrhs)
 bS_tau = bS._new_k(kStau)
@@ -384,7 +384,7 @@ else:
         filter_scale = 0.25
 
         # Generate noise & filter it
-        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*np.sin(2*np.pi*rB)
+        s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(rB, 0.9*r_inner, width=0.05*r_inner)
         s1B.require_scales(filter_scale)
         s1B['c']
         s1B['g']
@@ -655,7 +655,7 @@ heaviside_cfl['g'] = 1
 if args['--CFL_max_r'] is not None:
     if np.sum(rB > float(args['--CFL_max_r'])) > 0:
         heaviside_cfl['g'][:,:, rB.flatten() > float(args['--CFL_max_r'])] = 0
-initial_max_dt = 0.5*t_buoy
+initial_max_dt = max_dt/2#visual_dt/5
 my_cfl = CFL(solver, initial_max_dt, safety=float(args['--safety']), cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*uB)
 
@@ -663,8 +663,8 @@ dt = initial_max_dt
 
 #startup iterations
 for i in range(10):
-    logger.info('startup iteration {}'.format(i))
     solver.step(dt)
+    logger.info("startup iteration %d, t = %f, dt = %f" %(i, solver.sim_time, dt))
     dt = my_cfl.compute_dt()
 
 # Main loop
@@ -676,16 +676,18 @@ slice_cadence = max_dt
 slice_process = False
 just_wrote    = False
 slice_time = np.inf
+Re0 = 0
 try:
     while solver.ok:
         dt = my_cfl.compute_dt()
-        dt = np.min((dt, current_max_dt))
 
         if just_wrote:
             just_wrote = False
             num_steps = np.ceil(slice_cadence / dt)
             dt = current_max_dt = CFL.stored_dt = slice_cadence/num_steps
-        elif dt < current_max_dt:
+
+        dt = np.min((dt, current_max_dt))
+        if dt < current_max_dt and not max_dt_check:
             current_max_dt /= 2
             dt = CFL.stored_dt = current_max_dt
 
@@ -703,7 +705,7 @@ try:
             Re0 = vol_averagerB(re_ball.fields['Re_avg_ball'], comm=True)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
         if max_dt_check and dt < slice_cadence:
-            my_cfl.max_dt = max_dt
+#            my_cfl.max_dt = max_dt
             max_dt_check = False
             just_wrote = True
             slice_time = solver.sim_time + slice_cadence
@@ -714,6 +716,10 @@ try:
             solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=dt)
             slice_time = solver.sim_time + slice_cadence
             just_wrote = True
+
+        if np.isnan(Re0):
+            logger.info('exiting with NaN')
+            break
 
 
 except:
