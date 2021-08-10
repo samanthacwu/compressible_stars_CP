@@ -22,7 +22,7 @@ Options:
     --SBDF2              Use SBDF2 (default)
     --RK222              Use RK222
     --SBDF4              Use SBDF4
-    --safety=<s>         Timestep CFL safety factor [default: 0.2]
+    --safety=<s>         Timestep CFL safety factor [default: 0.3]
     --CFL_max_r=<r>      zero out velocities above this radius value for CFL
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
@@ -157,7 +157,7 @@ b_top = bS.S2_basis(radius=r_outer)
 
 kBtau = 0
 kBrhs = 0
-kStau = 0
+kStau = 2
 kSrhs = 0
 bB_tau = bB._new_k(kBtau)
 bB_rhs = bB._new_k(kBrhs)
@@ -182,6 +182,7 @@ Grid = operators.Coeff
 Coeff = operators.Coeff
 Conv = operators.Convert
 RHSB = lambda A: Coeff(Conv(A, bB_rhs))
+#RHSS = lambda A: A
 RHSS = lambda A: Coeff(Conv(A, bS_rhs))
 
 
@@ -655,7 +656,7 @@ heaviside_cfl['g'] = 1
 if args['--CFL_max_r'] is not None:
     if np.sum(rB > float(args['--CFL_max_r'])) > 0:
         heaviside_cfl['g'][:,:, rB.flatten() > float(args['--CFL_max_r'])] = 0
-initial_max_dt = max_dt/2#visual_dt/5
+initial_max_dt = visual_dt
 my_cfl = CFL(solver, initial_max_dt, safety=float(args['--safety']), cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*uB)
 
@@ -685,11 +686,17 @@ try:
             just_wrote = False
             num_steps = np.ceil(slice_cadence / dt)
             dt = current_max_dt = CFL.stored_dt = slice_cadence/num_steps
-
-        dt = np.min((dt, current_max_dt))
-        if dt < current_max_dt and not max_dt_check:
-            current_max_dt /= 2
-            dt = CFL.stored_dt = current_max_dt
+        elif max_dt_check:
+            dt = np.min((dt, current_max_dt))
+        else:
+            CFL.stored_dt = dt = current_max_dt
+#            
+#            
+#
+#        dt = np.min((dt, current_max_dt))
+#        if dt < current_max_dt and not max_dt_check:
+#            current_max_dt /= 2
+#            dt = CFL.stored_dt = current_max_dt
 
         t_future = solver.sim_time + dt
         if t_future >= slice_time*(1-1e-8):
@@ -705,7 +712,7 @@ try:
             Re0 = vol_averagerB(re_ball.fields['Re_avg_ball'], comm=True)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
         if max_dt_check and dt < slice_cadence:
-#            my_cfl.max_dt = max_dt
+            my_cfl.max_dt = max_dt
             max_dt_check = False
             just_wrote = True
             slice_time = solver.sim_time + slice_cadence
