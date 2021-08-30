@@ -11,8 +11,8 @@ Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           The value of Lmax   [default: 1]
-    --NB=<Nmax>          The ball value of Nmax   [default: 63]
-    --NS=<Nmax>          The shell value of Nmax   [default: 63]
+    --NB=<Nmax>          The ball value of Nmax   [default: 64]
+    --NS=<Nmax>          The shell value of Nmax   [default: 64]
     --NB_hires=<Nmax>    The ball value of Nmax
     --NS_hires=<Nmax>    The shell value of Nmax
 
@@ -46,7 +46,6 @@ from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 from mpi4py import MPI
 import matplotlib.pyplot as plt
 from scipy.linalg import eig
@@ -349,10 +348,10 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
     uB2 = namespace2['uB']
     uS2 = namespace2['uS']
 #    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, 1))
-    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, (NmaxB_hires+1)/(NmaxB+1)))
+    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, (NmaxB_hires)/(NmaxB)))
     φB2,  θB2,  rB2  = bB2.local_grids((1, 1, 1))
     φS1_0,  θS1_0,  rS1_0  = bS1.local_grids((1, 1, 1))
-    φS1,  θS1,  rS1  = bS1.local_grids((1, 1, (NmaxS_hires+1)/(NmaxS+1)))
+    φS1,  θS1,  rS1  = bS1.local_grids((1, 1, (NmaxS_hires)/(NmaxS)))
     φS2,  θS2,  rS2  = bS2.local_grids((1, 1, 1))
     weight_rB2 = bB2.radial_basis.local_weights(dealias)
     weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
@@ -374,8 +373,8 @@ def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespac
 #                print((np.abs(v1 - v2)/np.abs(v1)).min())
                 solver1.set_state(i, subsystems1[0])
                 solver2.set_state(j, subsystems2[0])
-                uB1.require_scales((1, 1, (NmaxB_hires+1)/(NmaxB+1)))
-                uS1.require_scales((1, 1, (NmaxS_hires+1)/(NmaxS+1)))
+                uB1.require_scales((1, 1, (NmaxB_hires)/(NmaxB)))
+                uS1.require_scales((1, 1, (NmaxS_hires)/(NmaxS)))
 
                 #Get eigenvectors
                 for f in [uB1, uS1, uB2, uS2]:
@@ -483,9 +482,9 @@ logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
-d    = distributor.Distributor((c,), mesh=None)
-bB1   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype)
-bS1   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype)
+d    = distributor.Distributor((c,), mesh=None, dtype=dtype)
+bB1   = basis.BallBasis(c, (2*(Lmax), Lmax, NmaxB), radius=r_inner, dtype=dtype)
+bS1   = basis.SphericalShellBasis(c, (2*(Lmax), Lmax, NmaxS), radii=(r_inner, r_outer), dtype=dtype)
 b_midB1 = bB1.S2_basis(radius=r_inner)
 b_midS1 = bS1.S2_basis(radius=r_inner)
 b_top1 = bS1.S2_basis(radius=r_outer)
@@ -514,8 +513,8 @@ print(rB_volume1 / ((4/3) * np.pi * r_inner**3))
 print(rS_volume1 / ((4/3) * np.pi * (r_outer**3 - r_inner**3)))
 
 if NmaxB_hires is not None:
-    bB2   = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, NmaxB_hires+1), radius=r_inner, dtype=dtype)
-    bS2   = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, NmaxS_hires+1), radii=(r_inner, r_outer), dtype=dtype)
+    bB2   = basis.BallBasis(c, (2*(Lmax), Lmax, NmaxB_hires), radius=r_inner, dtype=dtype)
+    bS2   = basis.SphericalShellBasis(c, (2*(Lmax), Lmax, NmaxS_hires), radii=(r_inner, r_outer), dtype=dtype)
     b_midB2 = bB2.S2_basis(radius=r_inner)
     b_midS2 = bS2.S2_basis(radius=r_inner)
     b_top2 = bS2.S2_basis(radius=r_outer)

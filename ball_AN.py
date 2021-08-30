@@ -10,8 +10,8 @@ Usage:
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 14]
-    --N=<Nmax>           The value of Nmax   [default: 63]
+    --L=<Lmax>           The value of Lmax   [default: 16]
+    --N=<Nmax>           The value of Nmax   [default: 64]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -45,7 +45,6 @@ from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 from mpi4py import MPI
 
 from d3_outputs.extra_ops    import BallVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer
@@ -123,8 +122,8 @@ else:
 
 # Bases
 c = coords.SphericalCoordinates('φ', 'θ', 'r')
-d = distributor.Distributor((c,), mesh=mesh)
-b = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, Nmax+1), radius=radius, dtype=dtype, dealias=dealias_tuple)
+d = distributor.Distributor((c,), mesh=mesh, dtype=dtype)
+b = basis.BallBasis(c, (2*(Lmax), Lmax, Nmax), radius=radius, dtype=dtype, dealias=dealias_tuple)
 b_S2 = b.S2_basis()
 φ, θ, r = b.local_grids(dealias_tuple)
 φg, θg, rg = b.global_grids(dealias_tuple)
