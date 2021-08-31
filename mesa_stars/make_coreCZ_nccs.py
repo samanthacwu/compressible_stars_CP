@@ -167,7 +167,7 @@ inv_Pe_rad = 1/Pe_rad
 print("L CZ:", L_CZ)
 
 #MESA radial values, in simulation units
-r_sim = r[sim_bool]/L
+r_MESA_sim = r[sim_bool]/L
 radius = radius_MESA/L
 
 #Get some timestepping & wave frequency info
@@ -200,7 +200,7 @@ def make_NCC(basis, interp_args, Nmax=32, vector=False):
 
 ### Radiative diffusivity == constant in CZ
 Nmax = 3
-inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_sim,  (1/simulation_Re)*np.ones_like(r_sim) ), Nmax=Nmax)
+inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_MESA_sim,  (1/simulation_Re)*np.ones_like(r_MESA_sim) ), Nmax=Nmax)
 grad_inv_Pe_B = grad(inv_Pe_rad_fieldB).evaluate()
 grad_inv_Pe_B['g'] = 0
 grad_inv_Pe_rad = np.gradient(inv_Pe_rad, r)
@@ -210,33 +210,39 @@ if plot:
 
 
 ### Log Density 
-Nmax = 32
-ln_rho_fieldB, ln_rho_interpB = make_NCC(bB, (rB, r_sim, np.log(rho/rho0)[sim_bool]), Nmax=Nmax)
-grad_ln_rho_fieldB, grad_ln_rho_interpB = make_NCC(bB, (rB, r_sim, dlogrhodr[sim_bool]*L), Nmax=Nmax, vector=True)
+Nmax = 8
+ln_rho_fieldB, ln_rho_interpB = make_NCC(bB, (rB, r_MESA_sim, np.log(rho/rho0)[sim_bool]), Nmax=Nmax)
+grad_ln_rho_fieldB, grad_ln_rho_interpB = make_NCC(bB, (rB, r_MESA_sim, dlogrhodr[sim_bool]*L), Nmax=Nmax, vector=True)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, np.log(rho/rho0)[sim_bool], (rB.flatten(),), (ln_rho_fieldB['g'][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$\ln\rho$", fig_name="ln_rho", out_dir=out_dir, log=False, r_int=radius.value)
     plot_ncc_figure(r[sim_bool]/L, (dlogrhodr*L)[sim_bool], (rB.flatten(),), (grad_ln_rho_fieldB['g'][2][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir, log=False, r_int=radius.value)
 
+#Uncomment to look at coeffs of ln_rho_field.
+#plt.figure()
+#plt.plot(np.abs(ln_rho_fieldB['c'][0,0,:]))
+#plt.yscale('log')
+#plt.show()
+
 ### Log Temperature
-Nmax = 16
-ln_T_fieldB, ln_T_interpB  = make_NCC(bB, (rB, r_sim, np.log(T/T0)[sim_bool]), Nmax=Nmax)
-grad_ln_T_fieldB, grad_ln_T_interpB  = make_NCC(bB, (rB, r_sim, dlogTdr[sim_bool]*L), Nmax=Nmax, vector=True)
+Nmax = 8
+ln_T_fieldB, ln_T_interpB  = make_NCC(bB, (rB, r_MESA_sim, np.log(T/T0)[sim_bool]), Nmax=Nmax)
+grad_ln_T_fieldB, grad_ln_T_interpB  = make_NCC(bB, (rB, r_MESA_sim, dlogTdr[sim_bool]*L), Nmax=Nmax, vector=True)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, np.log(T/T0)[sim_bool], (rB.flatten(),), (ln_T_fieldB['g'][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$\ln T$", fig_name="ln_T", out_dir=out_dir, log=False, r_int=radius.value)
     plot_ncc_figure(r[sim_bool]/L, (dlogTdr*L)[sim_bool], (rB.flatten(),), (grad_ln_T_fieldB['g'][2][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$\nabla\ln T$", fig_name="grad_ln_T", out_dir=out_dir, log=False, r_int=radius.value)
 
 ### Temperature
-Nmax = 32
-T_fieldB, T_interpB = make_NCC(bB, (rB, r_sim, (T/T0)[sim_bool]), Nmax=Nmax)
+Nmax = 8
+T_fieldB, T_interpB = make_NCC(bB, (rB, r_MESA_sim, (T/T0)[sim_bool]), Nmax=Nmax)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, (T/T0)[sim_bool], (rB.flatten(),), (T_fieldB['g'][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$T$", fig_name="T", out_dir=out_dir, log=True, r_int=radius.value)
 
 
-Nmax = 32
-grad_T_fieldB, grad_T_interpB = make_NCC(bB, (rB, r_sim,  grad_T[sim_bool] * (L/T0)), Nmax=Nmax, vector=True)
+Nmax = 8
+grad_T_fieldB, grad_T_interpB = make_NCC(bB, (rB, r_MESA_sim,  grad_T[sim_bool] * (L/T0)), Nmax=Nmax, vector=True)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, -grad_T[sim_bool]*(L/T0), (rB.flatten(),), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=radius.value)
@@ -246,14 +252,14 @@ if plot:
 ### effective heating / (rho * T)
 H_NCC = ((H_eff)  / H0) * (rho0*T0/rho/T)
 Nmax = 60
-H_fieldB, H_interpB = make_NCC(bB, (rB, r_sim, H_NCC[sim_bool]), Nmax=Nmax)
+H_fieldB, H_interpB = make_NCC(bB, (rB, r_MESA_sim, H_NCC[sim_bool]), Nmax=Nmax)
 if plot:
     plot_ncc_figure(r[sim_bool]/L, H_NCC[sim_bool], (rB.flatten(),), (H_fieldB['g'][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=radius.value)
 
 
 ### entropy gradient
 Nmax = 3
-grad_s_fieldB, grad_s_interpB = make_NCC(bB, (rB, r_sim, np.zeros_like(r_sim)), Nmax=Nmax, vector=True)
+grad_s_fieldB, grad_s_interpB = make_NCC(bB, (rB, r_MESA_sim, np.zeros_like(r_MESA_sim)), Nmax=Nmax, vector=True)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, (grad_s*L/s_c)[sim_bool], (rB.flatten(),), (grad_s_fieldB['g'][2][:1,:1,:].flatten(),), (Nmax,), ylabel=r"$\nabla s$", fig_name="grad_s", out_dir=out_dir, log=True, r_int=radius.value)

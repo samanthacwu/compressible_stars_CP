@@ -741,7 +741,7 @@ for i in range(Lmax):
         f['ρS'] = namespace1['ρS']['g']
         f['depths'] = np.array(depths)
 
-    velocity_duals = calculate_duals(velocity_eigenfunctions, ρ[None, None, :])
+    velocity_duals = calculate_duals(velocity_eigenfunctions, ρ)
     with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
         f['good_evalues'] = solver1.eigenvalues
         f['good_omegas']  = solver1.eigenvalues.real

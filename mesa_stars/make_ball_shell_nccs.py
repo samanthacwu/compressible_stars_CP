@@ -113,6 +113,15 @@ Luminosity     = p.luminosity[::-1] * u.L_sun
 conv_L_div_L   = p.conv_L_div_L[::-1]
 csound         = p.csound[::-1] * u.cm / u.s
 
+plt.figure()
+plt.plot(r, cv, c='orange', label='cv')
+plt.plot(r, cp, c='purple', label='cp')
+plt.legend()
+plt.xlabel('r')
+plt.ylabel('specific heat')
+plt.ylim(0, 2e9)
+plt.savefig('cv_cp_vs_r.png', dpi=300, bbox_inches='tight')
+
 #secondary MESA fields
 mass            = mass.cgs
 r               = r.cgs
@@ -129,8 +138,6 @@ dlogTdr         = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
 grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
 H_eff           = (np.gradient(L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
-H_eff[0]        = H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
-
 
 #Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
@@ -187,6 +194,16 @@ inv_Pe_rad = 1/Pe_rad
 cp_surf = cp[shell_bool][-1]
 print("L CZ:", L_CZ)
 
+
+sim_L_conv          = np.copy(L_conv)*one_to_zero(r/L, 0.95, width=0.05) #smooth out CZ boundary (essentially make conductivity a bit steeper there)
+sim_H_eff           = (np.gradient(sim_L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
+sim_H_eff[0]        = sim_H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
+
+#plt.figure()
+#plt.plot(r/L, H_eff)
+#plt.plot(r/L, sim_H_eff)
+#plt.show()
+
 #MESA radial values, in simulation units
 r_ball = r[ball_bool]/L
 r_shell = r[shell_bool]/L
@@ -194,20 +211,22 @@ r_inner = r_inner_MESA/L
 r_outer = r_outer_MESA/L
 
 #Get some timestepping & wave frequency info
+# Should I instead do this based on the characteristic brunt?
 N2max_ball = N2[ball_bool].max()
 N2max_shell = N2[shell_bool].max()
 N2plateau = N2[r < 4.5e11*u.cm][-1]
-wave_tau_ball  = (1/20)*2*np.pi/np.sqrt(N2max_ball)
-wave_tau_shell = (1/20)*2*np.pi/np.sqrt(N2max_shell)
+f_nyq_ball  = np.sqrt(N2max_ball)/(2*np.pi)
+f_nyq_shell = np.sqrt(N2max_shell)/(2*np.pi)
+f_sample    = 2*np.max((f_nyq_ball*tau, f_nyq_shell*tau))
+sample_dt   = (1/f_sample) 
 kepler_tau     = 30*60*u.s
-max_dt_ball    = wave_tau_ball/tau
-max_dt_shell   = wave_tau_shell/tau
 max_dt_kepler  = kepler_tau/tau
-if max_dt_kepler > max_dt_ball and max_dt_kepler > max_dt_shell:
+if max_dt_kepler > sample_dt:
     max_dt = max_dt_kepler
 else:
-    max_dt = np.min((max_dt_ball, max_dt_shell))
+    max_dt = sample_dt
 print('one time unit is {:.2e}'.format(tau))
+print('one length unit is {:.2e}'.format(L))
 print('output cadence is {} s / {} % of a heating time'.format(max_dt*tau, max_dt*100))
 #
 ### Make dedalus domain
@@ -345,8 +364,8 @@ if plot:
 #H_NCC_ball = H_NCC[ball_bool]
 #H_NCC_ball[r_ball > amount_to_adjust] = approx_H[r_ball > amount_to_adjust]
 #print('outer', full_lum_above, full_lum_approx)
-H_NCC = ((H_eff)  / H0) * (rho0*T0/rho/T)
-NmaxB, NmaxS = true_NmaxB, 10
+H_NCC = ((sim_H_eff)  / H0) * (rho0*T0/rho/T)
+NmaxB, NmaxS = 60, 10
 H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball, H_NCC[ball_bool]), Nmax=NmaxB)
 H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell, H_NCC[shell_bool]), Nmax=NmaxS)
 if plot:
@@ -420,8 +439,6 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['H0']  = H0
     f['tau'] = tau 
     f['Ma2'] = tau 
-    f['max_dt_ball'] = max_dt_ball
-    f['max_dt_shell'] = max_dt_shell
     f['max_dt'] = max_dt
     f['s_c'] = s_c
     f['N2max_ball'] = N2max_ball
