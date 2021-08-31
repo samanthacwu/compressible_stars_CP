@@ -10,9 +10,9 @@ Usage:
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           The value of Lmax   [default: 6]
-    --NB=<Nmax>          The ball value of Nmax   [default: 23]
-    --NS=<Nmax>          The shell value of Nmax   [default: 7]
+    --L=<Lmax>           The value of Lmax   [default: 8]
+    --NB=<Nmax>          The ball value of Nmax   [default: 24]
+    --NS=<Nmax>          The shell value of Nmax   [default: 8]
 
     --wall_hours=<t>     The number of hours to run for [default: 24]
     --buoy_end_time=<t>  Number of buoyancy times to run [default: 1e5]
@@ -22,7 +22,7 @@ Options:
     --SBDF2              Use SBDF2 (default)
     --RK222              Use RK222
     --SBDF4              Use SBDF4
-    --safety=<s>         Timestep CFL safety factor [default: 0.3]
+    --safety=<s>         Timestep CFL safety factor [default: 0.35]
     --CFL_max_r=<r>      zero out velocities above this radius value for CFL
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
@@ -48,7 +48,6 @@ from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 from mpi4py import MPI
 
 from d3_outputs.extra_ops    import BallVolumeAverager, ShellVolumeAverager, EquatorSlicer, PhiAverager, PhiThetaAverager, OutputRadialInterpolate, GridSlicer, MeridionSlicer
@@ -144,9 +143,9 @@ dealias_tuple = (L_dealias, L_dealias, N_dealias)
 # Bases
 c    = coords.SphericalCoordinates('φ', 'θ', 'r')
 c_S2 = c.S2coordsys 
-d    = distributor.Distributor((c,), mesh=mesh)
-bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=dtype, dealias=dealias_tuple)
-bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=dtype, dealias=dealias_tuple)
+d    = distributor.Distributor((c,), mesh=mesh, dtype=dtype)
+bB   = basis.BallBasis(c, (2*(Lmax), Lmax, NmaxB), radius=r_inner, dtype=dtype, dealias=dealias_tuple)
+bS   = basis.SphericalShellBasis(c, (2*(Lmax), Lmax, NmaxS), radii=(r_inner, r_outer), dtype=dtype, dealias=dealias_tuple)
 b_mid = bB.S2_basis(radius=r_inner)
 b_midS = bS.S2_basis(radius=r_inner)
 b_top = bS.S2_basis(radius=r_outer)
@@ -290,14 +289,14 @@ else:
 
         grad_s0['g'][2]     = grad_s0_func(basis_r)#*zero_to_one(r, 0.5, width=0.1)
         T['g']           = T_func(basis_r)
-        grad_T['g']      = grad(T).evaluate()['g']
-        ρ['g']           = ρ_func(basis_r)
-        inv_T['g']       = T_func(basis_r)
-        H_eff['g']       = H_eff_func(basis_r)
-        ln_T['g']        = np.log(T_func(basis_r))
-        ln_ρ['g']        = np.log(ρ_func(basis_r))
-        grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
-        grad_ln_T['g']        = grad(ln_T).evaluate()['g']
+#        grad_T['g']      = grad(T).evaluate()['g']
+#        ρ['g']           = ρ_func(basis_r)
+#        inv_T['g']       = T_func(basis_r)
+#        H_eff['g']       = H_eff_func(basis_r)
+#        ln_T['g']        = np.log(T_func(basis_r))
+#        ln_ρ['g']        = np.log(ρ_func(basis_r))
+#        grad_ln_ρ['g']        = grad(ln_ρ).evaluate()['g']
+#        grad_ln_T['g']        = grad(ln_T).evaluate()['g']
 
 logger.info('buoyancy time is {}'.format(t_buoy))
 t_end = float(args['--buoy_end_time'])*t_buoy
