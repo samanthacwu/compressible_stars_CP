@@ -4,18 +4,17 @@ d3 script for anelastic convection in a massive star's core CZ.
 A config file can be provided which overwrites any number of the options below, but command line flags can also be used if preferred.
 
 Usage:
-    coreCZ_AN.py [options]
-    coreCZ_AN.py <config> [options]
+    ball_AN.py [options]
+    ball_AN.py <config> [options]
 
 Options:
-    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 1e3]
+    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 2e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
     --L=<Lmax>           Spherical harmonic degrees of freedom (Lmax+1)   [default: 16]
-    --N=<Nmax>           Radial degrees of freedom (Nmax+1)   [default: 64]
+    --N=<Nmax>           Radial degrees of freedom (Nmax+1)   [default: 32]
 
     --wall_hours=<t>     Max number of wall hours to run simulation for [default: 24]
     --buoy_end_time=<t>  Max number of buoyancy time units to simulate [default: 1e5]
-    --safety=<s>         CFL safety factor for determining timestep size [default: 0.2]
 
     --mesh=<n,m>         The processor mesh over which to distribute the cores
     --A0=<A>             Amplitude of initial noise [default: 1e-6]
@@ -23,6 +22,7 @@ Options:
     --label=<label>      A label to add to the end of the output directory
 
     --SBDF4              Use SBDF4 (default: SBDF2)
+    --safety=<s>         CFL safety factor for determining timestep size [default: 0.2]
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model; if unspecified, uses a polytropic stratification.
     --restart=<chk_f>    path to a checkpoint file to restart from
@@ -55,8 +55,8 @@ if args['<config>'] is not None:
                 args[k] = v
 
 # Parameters
-Lmax      = nθ = int(args['--L'])
-Nmax      = nr = int(args['--N'])
+nθ = int(args['--L'])
+nr = int(args['--N'])
 nφ = int(2*nθ)
 resolution = (nφ, nθ, nr)
 L_dealias = N_dealias = dealias = 1.5
@@ -131,10 +131,10 @@ div  = d3.Divergence
 trace = d3.Trace
 transpose = d3.TransposeComponents
 radComp = d3.RadialComponent
+cross = d3.CrossProduct
+dot = d3.DotProduct
 lap       = lambda A: d3.Laplacian(A, coords)
 grad      = lambda A: d3.Gradient(A, coords)
-dot       = lambda A, B: d3.DotProduct(A, B)
-cross     = lambda A, B: d3.CrossProduct(A, B)
 angComp   = lambda A, index=1: d3.AngularComponent(A, index=index)
 lift_basis = basis.clone_with(k=0)
 lift      = lambda A: d3.LiftTau(A, lift_basis, -1)
@@ -249,6 +249,7 @@ logger.info("Problem built")
 # Solver
 solver = problem.build_solver(ts)
 solver.stop_sim_time = buoy_end_time*t_buoy
+solver.stop_wall_time = wall_hours * 60 * 60
 logger.info("solver built")
 
 # Initial conditions / Checkpoint
@@ -368,7 +369,7 @@ finally:
     n_iter   = end_iter - start_iter
 
     #TODO: Make the end-of-sim report better
-    n_coeffs = 2*(Nmax+1)*(Lmax+1)*(Lmax+2)
+    n_coeffs = np.prod(resolution)
     n_cpu    = dist.comm_cart.size
     dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
     logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
