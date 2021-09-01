@@ -8,7 +8,7 @@ Usage:
     plot_annular_snapshots.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: eq_slice]
+    --data_dir=<dir>                    Name of data handler directory [default: slices]
     --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_eq]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
@@ -52,10 +52,10 @@ plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_fil
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
 if int(args['--fig_type']) == 1:
     plotter.setup_grid(2, 2, polar=True, **plotter_kwargs)
-    fnames = [  (('s1',),         {'polar' : True, 'remove_x_mean' : True, 'divide_x_mean' : True}), 
-                (('uφ',),        {'polar' : True, 'cmap' : 'PuOr_r'}),
-                (('uθ',),        {'polar' : True, 'cmap' : 'PiYG_r'}),
-                (('ur',),        {'polar' : True, 'cmap' : 'PuOr_r'}),
+    fnames = [  (('s1_eq',),         {'polar' : True, 'remove_x_mean' : True, 'divide_x_mean' : True}), 
+                (('u_eq',),         {'polar' : True, 'cmap' : 'PuOr_r', 'vector_ind' : 0}),
+                (('u_eq',),         {'polar' : True, 'cmap' : 'PiYG_r', 'vector_ind' : 1}),
+                (('u_eq',),         {'polar' : True, 'cmap' : 'PuOr_r', 'vector_ind' : 2}),
              ]
 
 
