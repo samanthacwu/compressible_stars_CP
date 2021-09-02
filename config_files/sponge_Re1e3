@@ -1,5 +1,5 @@
 [parameters]
-L = 32
+L = 64
 NB = 96
 NS = 96
 Re = 1e3

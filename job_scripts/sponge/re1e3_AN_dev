@@ -1,10 +1,10 @@
 #PBS -S /bin/bash
 #PBS -N sponge_AN_Re1e3
 #PBS -l select=3:ncpus=28:mpiprocs=28:model=bro
-#PBS -l walltime=8:00:00
+#PBS -l walltime=2:00:00
 #PBS -l site=needed=/home1+/nobackupp12+/nobackupp16/swbuild
 #PBS -j oe
-#PBS -q long
+#PBS -q devel
 #PBS -W group_list=s2114
 
 source /swbuild/eanders/miniconda3/etc/profile.d/conda.sh
