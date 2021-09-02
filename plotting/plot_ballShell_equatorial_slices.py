@@ -16,8 +16,8 @@ Options:
 
     --mesa_file=<f>                     NCC file for making full flux plot
     --polytrope                         Use polytropic background
-    --r_inner=<r>                       linking shell-ball radius [default: 1.2]
-    --r_outer=<r>                       outer shell radius [default: 2]
+    --r_inner=<r>                       linking shell-ball radius
+    --r_outer=<r>                       outer shell radius
 
     --entropy_only
 """
@@ -27,6 +27,7 @@ from docopt import docopt
 args = docopt(__doc__)
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from plotpal.file_reader import SingleFiletypePlotter as SFP
+from plotpal.file_reader import match_basis
 from plotpal.plot_grid import ColorbarPlotGrid as CPG
 
 # Read in master output directory
@@ -50,8 +51,7 @@ if args['--entropy_only']:
 plotter = SFP(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
 
 fields = ['s1B_eq', 's1S_eq', 'uB_eq', 'uS_eq']
-bases  = []
-#bases  = ['φ', 'r']
+bases  = ['φ', 'r']
 
 if args['--entropy_only']:
     plot_grid = CPG(1, 1, polar=True, col_in=5, row_in=5) 
@@ -72,77 +72,66 @@ else:
     cax3 = caxs['ax_0-1']
     cax4 = caxs['ax_1-1']
 
-count = 0
-r_inner = float(args['--r_inner'])
-r_outer = float(args['--r_outer'])
-if args['--mesa_file'] is not None:
+r_inner = args['--r_inner']
+r_outer = args['--r_outer']
+mesa_file = args['--mesa_file']
+if r_inner is not None and r_outer is not None:
+    r_inner = float(r_inner)
+    r_outer = float(r_outer)
+elif mesa_file is not None:
     import h5py
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
+else:
+    raise ValueError("Must specify r_inner & r_outer OR mesa_file")
 
-first = True
 shell_basis_grids = None
 ball_basis_grids = None
 if not plotter.idle:
-    while plotter.files_remain(bases, fields):
-        bases, tasks, write_num, sim_time = plotter.read_next_file()
+    while plotter.files_remain(fields):
+        dsets = plotter.read_next_file()
+        time_dset = dsets['uB_eq'].dims[0]
+        φB = match_basis(dsets['uB_eq'], 'φ')
+        rB = match_basis(dsets['uB_eq'], 'r')
+        φS = match_basis(dsets['uS_eq'], 'φ')
+        rS = match_basis(dsets['uS_eq'], 'r')
 
-        if first:
-            b_shape = tasks['s1B_eq'].shape[1:]
-            s_shape = tasks['s1S_eq'].shape[1:]
-            Lmax = b_shape[0]/2 - 2
-            NmaxB = b_shape[2] - 1
-            NmaxS = s_shape[2] - 1
-            from mpi4py import MPI
-            c    = coords.SphericalCoordinates('φ', 'θ', 'r')
-            d    = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF)
-            bB   = basis.BallBasis(c, (2*(Lmax+2), Lmax+1, NmaxB+1), radius=r_inner, dtype=np.float64)
-            bS   = basis.SphericalShellBasis(c, (2*(Lmax+2), Lmax+1, NmaxS+1), radii=(r_inner, r_outer), dtype=np.float64)
-            dealias=1
-            ball_basis_grids = bB.global_grids((dealias, dealias, dealias))
-            shell_basis_grids = bS.global_grids((dealias, dealias, dealias))
-            first = False
+        φB_plot = np.append(φB, 2*np.pi)
+        φS_plot = np.append(φS, 2*np.pi)
 
-        φB, θB, rB = ball_basis_grids
-        φS, θS, rS = shell_basis_grids
-
-        φB_plot = np.append(φB.flatten(), 2*np.pi)
-        φS_plot = np.append(φS.flatten(), 2*np.pi)
-
-        rB_plot = np.pad(rB, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(0, r_inner))
-        rS_plot = np.pad(rS, ((0,0), (0,0), (1,1)), mode='constant', constant_values=(r_inner, r_outer))
+        rB_plot = np.pad(rB, ((1,1)), mode='constant', constant_values=(0, r_inner))
+        rS_plot = np.pad(rS, ((1,1)), mode='constant', constant_values=(r_inner, r_outer))
 
         rrB, φφB = np.meshgrid(rB_plot.flatten(),  φB_plot)
         rrS, φφS = np.meshgrid(rS_plot.flatten(),  φS_plot)
 
-        for i, n in enumerate(write_num):
+        for i, n in enumerate(time_dset['write_number'][()]):
             print('writing filenum {}'.format(n))
-            s1B = tasks['s1B_eq'][i,:,0,:]
-            s1S = tasks['s1S_eq'][i,:,0,:]
-            uφB = tasks['uB_eq'][i,0,:,0,:]
-            uφS = tasks['uS_eq'][i,0,:,0,:]
-            uθB = tasks['uB_eq'][i,1,:,0,:]
-            uθS = tasks['uS_eq'][i,1,:,0,:]
-            urB = tasks['uB_eq'][i,2,:,0,:]
-            urS = tasks['uS_eq'][i,2,:,0,:]
+            s1B = dsets['s1B_eq'][i,:,0,:]
+            s1S = dsets['s1S_eq'][i,:,0,:]
+            uφB = dsets['uB_eq'][i,0,:,0,:]
+            uφS = dsets['uS_eq'][i,0,:,0,:]
+            uθB = dsets['uB_eq'][i,1,:,0,:]
+            uθS = dsets['uS_eq'][i,1,:,0,:]
+            urB = dsets['uB_eq'][i,2,:,0,:]
+            urS = dsets['uS_eq'][i,2,:,0,:]
 
             s1B -= np.mean(s1B, axis=0)
             s1S -= np.mean(s1S, axis=0)
-#            s1B /= np.mean(np.abs(s1B), axis=0)
-#            s1S /= np.mean(np.abs(s1S), axis=0)
-
-#            uφB /= np.std(uφB, axis=0)
-#            uφS /= np.std(uφS, axis=0)
-#            uθB /= np.std(uθB, axis=0)
-#            uθS /= np.std(uθS, axis=0)
+            s1B /= np.mean(np.abs(s1B), axis=0)
+            s1S /= np.mean(np.abs(s1S), axis=0)
 
             if args['--entropy_only']:
-                zip_list = zip((ax1,), (cax1,), (s1B,), (s1S,))
+                zip_list = zip((ax1,), (cax1,), (s1B,), (s1S,), ('RdBu_r',))
             else:
-                zip_list = zip((ax1, ax2, ax3, ax4), (cax1, cax2, cax3, cax4), (s1B, uθB, uφB, urB), (s1S, uθS, uφS, urS))
+                zip_list = zip((ax1, ax2, ax3, ax4), \
+                               (cax1, cax2, cax3, cax4), \
+                               (s1B, uθB, uφB, urB), \
+                               (s1S, uθS, uφS, urS), \
+                               ('RdBu_r', 'PuOr_r', 'PuOr_r', 'PuOr_r'))
 
-            for ax, cax, fB, fS in zip_list:
+            for ax, cax, fB, fS, cmap in zip_list:
 
                 fB = np.pad(fB, ((0, 0), (1, 0)), mode='edge')
                 fS = np.pad(fS, ((0, 0), (1, 0)), mode='edge')
@@ -151,10 +140,10 @@ if not plotter.idle:
                 vmax  = vals[int(0.998*len(vals))]
                 vmin  = -vmax
 
-                p = ax.pcolormesh(φφB, rrB, fB, cmap='RdBu_r', vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
-                ax.pcolormesh(φφS, rrS, fS, cmap='RdBu_r', vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
+                p = ax.pcolormesh(φφB, rrB, fB, cmap=cmap, vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
+                ax.pcolormesh(φφS, rrS, fS, cmap=cmap, vmin=vmin, vmax=vmax, rasterized=True)#tasksB['s1_B'][0,:,0,:])
                 plt.colorbar(p, cax, orientation='horizontal')
-            plt.suptitle('t = {:.2f}'.format(sim_time[i]))
+            plt.suptitle('t = {:.2f}'.format(time_dset['sim_time'][i]))
             for k, ax in axs.items():
                 ax.set_xticks([])
                 ax.set_rticks([])
@@ -169,9 +158,3 @@ if not plotter.idle:
                 ax.cla()
             for k, cax in caxs.items():
                 cax.cla()
-
-
-            count += 1
-
-        
-

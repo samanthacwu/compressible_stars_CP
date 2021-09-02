@@ -19,7 +19,7 @@ Options:
     --row_inch=<in>                     Number of inches / row [default: 3]
     --static_cbar                       If flagged, don't evolve the colorbar with time
 
-    --radius=<r>                        Max radius of ball [default: 1]
+    --radius=<r>                        Max radius of ball
 
     --fig_type=<fig_type>               Type of figure to plot
                                             1 - T, u
@@ -47,6 +47,11 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
+radius = args['--radius']
+if radius is None:
+    raise ValueError("Must specify outer radius of ball")
+radius = float(radius)
+
 # Create Plotter object, tell it which fields to plot
 plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
 plotter_kwargs = { 'col_in' : int(args['--col_inch']), 'row_in' : int(args['--row_inch']) }
@@ -58,8 +63,6 @@ if int(args['--fig_type']) == 1:
                 (('u_eq',),         {'polar' : True, 'cmap' : 'PuOr_r', 'vector_ind' : 2}),
              ]
 
-
 for tup in fnames:
     plotter.add_colormesh(*tup[0], x_basis='φ', y_basis='r', **tup[1])
-
-plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']), r_pad=[0, float(args['--radius'])])
+plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']), r_pad=[0, radius])

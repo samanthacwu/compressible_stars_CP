@@ -29,6 +29,7 @@ Options:
 
     --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
     --restart=<chk_f>    path to a checkpoint file to restart from
+    --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
 
     --label=<label>      A label to add to the end of the output directory
 """
@@ -74,7 +75,7 @@ nφ = int(2*nθ)
 nrB = int(args['--NB'])
 nrS = int(args['--NS'])
 resolutionB = (nφ, nθ, nrB)
-resolutionB = (nφ, nθ, nrS)
+resolutionS = (nφ, nθ, nrS)
 L_dealias = N_dealias = dealias = 1.5
 dtype = np.float64
 Re  = float(args['--Re'])
@@ -91,13 +92,13 @@ A0 = float(args['--A0'])
 
 # Timestepper
 if args['--SBDF4']:
-    ts = timesteppers.SBDF4
+    ts = d3.SBDF4
     timestepper_history = [0, 1, 2, 3]
 elif args['--RK222']:
-    ts = timesteppers.RK222
+    ts = d3.RK222
     timestepper_history = [0, ]
 else:
-    ts = timesteppers.SBDF2
+    ts = d3.SBDF2
     timestepper_history = [0, 1,]
 hermitian_cadence = 100
 safety = float(args['--safety'])
@@ -147,7 +148,7 @@ logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 coords  = d3.SphericalCoordinates('φ', 'θ', 'r')
 dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
 basisB  = d3.BallBasis(coords, resolutionB, radius=r_inner, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-basisS  = d3.SphericalShellBasis(coords, resolutionS, radii=(r_inner, r_outer), dtype=dtype, dealias=dealias_tuple)
+basisS  = d3.ShellBasis(coords, resolutionS, radii=(r_inner, r_outer), dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
 radial_basisB = basisB.radial_basis
 radial_basisS = basisS.radial_basis
 b_midB = basisB.S2_basis(radius=r_inner)
@@ -193,9 +194,9 @@ pS, s1S = [dist.Field(name=n+'S', bases=basisS) for n in ['p', 's1']]
 
 # Fields - nccs / constants
 grad_ln_ρB, grad_ln_TB, grad_s0B, grad_TB, grad_inv_PeB \
-            = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe']]
+          = [dist.VectorField(coords, name=n+'B', bases=radial_basisB) for n in ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe']]
 grad_ln_ρS, grad_ln_TS, grad_s0S, grad_TS, grad_inv_PeS\
-            = [dist.VectorField(coords, name=n+'S', bases=basisS) for n in ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe']]
+            = [dist.VectorField(coords, name=n+'S', bases=radial_basisS) for n in ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe']]
 ln_ρB, ln_TB, inv_PeB = [dist.Field(name=n+'B', bases=radial_basisB) for n in ['ln_ρ', 'ln_T', 'inv_Pe']] 
 ln_ρS, ln_TS, inv_PeS = [dist.Field(name=n+'S', bases=radial_basisS) for n in ['ln_ρ', 'ln_T', 'inv_Pe']] 
 inv_TB, HB, ρB, TB = [dist.Field(name=n+'B', bases=basisB) for n in ['inv_T', 'H', 'ρ', 'T']]
@@ -208,7 +209,7 @@ if sponge:
 
 # Fields - unit vectors & (NCC) identity matrix
 eφB, eθB, erB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['eφ', 'eθ', 'er']]
-eφS, eθS, erS = [dist.VectorField(coords, name=n+'S', bases=basisB) for n in ['eφ', 'eθ', 'er']]
+eφS, eθS, erS = [dist.VectorField(coords, name=n+'S', bases=basisS) for n in ['eφ', 'eθ', 'er']]
 I_matrixB = dist.TensorField(coords, name='I_matrixB', bases=radial_basisB)
 I_matrixS = dist.TensorField(coords, name='I_matrixS', bases=radial_basisS)
 for f in [eφB, eθB, erB, I_matrixB, eφS, eθS, erS, I_matrixS]: f['g'] = 0
@@ -226,26 +227,26 @@ for i in range(3):
 exB, eyB, ezB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['ex', 'ey', 'ez']]
 exS, eyS, ezS = [dist.VectorField(coords, name=n+'S', bases=basisS) for n in ['ex', 'ey', 'ez']]
 
-exB['g'][0] = -np.sin(φB)
-exB['g'][1] = np.cos(θB)*np.cos(φB)
-exB['g'][2] = np.sin(θB)*np.cos(φB)
-exS['g'][0] = -np.sin(φS)
-exS['g'][1] = np.cos(θS)*np.cos(φS)
-exS['g'][2] = np.sin(θS)*np.cos(φS)
+exB['g'][0] = -np.sin(φ1B)
+exB['g'][1] = np.cos(θ1B)*np.cos(φ1B)
+exB['g'][2] = np.sin(θ1B)*np.cos(φ1B)
+exS['g'][0] = -np.sin(φ1S)
+exS['g'][1] = np.cos(θ1S)*np.cos(φ1S)
+exS['g'][2] = np.sin(θ1S)*np.cos(φ1S)
 
-eyB['g'][0] = np.cos(φB)
-eyB['g'][1] = np.cos(θB)*np.sin(φB)
-eyB['g'][2] = np.sin(θB)*np.sin(φB)
-eyS['g'][0] = np.cos(φS)
-eyS['g'][1] = np.cos(θS)*np.sin(φS)
-eyS['g'][2] = np.sin(θS)*np.sin(φS)
+eyB['g'][0] = np.cos(φ1B)
+eyB['g'][1] = np.cos(θ1B)*np.sin(φ1B)
+eyB['g'][2] = np.sin(θ1B)*np.sin(φ1B)
+eyS['g'][0] = np.cos(φ1S)
+eyS['g'][1] = np.cos(θ1S)*np.sin(φ1S)
+eyS['g'][2] = np.sin(θ1S)*np.sin(φ1S)
 
 ezB['g'][0] = 0
-ezB['g'][1] = -np.sin(θB)
-ezB['g'][2] =  np.cos(θB)
+ezB['g'][1] = -np.sin(θ1B)
+ezB['g'][2] =  np.cos(θ1B)
 ezS['g'][0] = 0
-ezS['g'][1] = -np.sin(θS)
-ezS['g'][2] =  np.cos(θS)
+ezS['g'][1] = -np.sin(θ1S)
+ezS['g'][2] =  np.cos(θ1S)
 
 exB, eyB, ezB, exS, eyS, ezS = [d3.Grid(f).evaluate() for f in [exB, eyB, ezB, exS, eyS, ezS]]
 
@@ -253,35 +254,35 @@ exB, eyB, ezB, exS, eyS, ezS = [d3.Grid(f).evaluate() for f in [exB, eyB, ezB, e
 grid_slicesB  = dist.layouts[-1].slices(uB.domain, 1)
 grid_slicesS  = dist.layouts[-1].slices(uS.domain, 1)
 local_vncc_shapeB = grad_s0B['g'].shape
-local_vncc_shapeS = grad_S0S['g'].shape
+local_vncc_shapeS = grad_s0S['g'].shape
 if mesa_file is not None:
     with h5py.File(mesa_file, 'r') as f:
         if np.prod(local_vncc_shapeB) > 0:
-            grad_s0B['g']      = f['grad_s0B'][:,0,0,None,None,grid_slicesB[-1]]
-            grad_ln_ρB['g']    = f['grad_ln_ρB'][:,0,0,None,None,grid_slicesB[-1]]
-            grad_ln_TB['g']    = f['grad_ln_TB'][:,0,0,None,None,grid_slicesB[-1]]
-            grad_TB['g']       = f['grad_TB'][:,0,0,None,None,grid_slicesB[-1]]
-            grad_inv_PeB['g']  = f['grad_inv_Pe_radB'][:, :,:,grid_slicesB[-1]]
+            grad_s0B['g']      = f['grad_s0B'][:,0,0,grid_slicesB[-1]][:,None,None,:]
+            grad_ln_ρB['g']    = f['grad_ln_ρB'][:,0,0,grid_slicesB[-1]][:,None,None,:]
+            grad_ln_TB['g']    = f['grad_ln_TB'][:,0,0,grid_slicesB[-1]][:,None,None,:]
+            grad_TB['g']       = f['grad_TB'][:,0,0,grid_slicesB[-1]][:,None,None,:]
+            grad_inv_PeB['g']  = f['grad_inv_Pe_radB'][:,0,0,grid_slicesB[-1]][:,None,None,:]
         if np.prod(grad_s0S['g'].shape) > 0:
-            grad_s0S['g']     = f['grad_s0S'][:,0,0,None,None,grid_slicesS[-1]]
-            grad_ln_ρS['g']   = f['grad_ln_ρS'][:,0,0,None,None,grid_slicesS[-1]]
-            grad_ln_TS['g']   = f['grad_ln_TS'][:,0,0,None,None,grid_slicesS[-1]]
-            grad_TS['g']      = f['grad_TS'][:,0,0,None,None,grid_slicesS[-1]]
-            grad_inv_PeS['g'] = f['grad_inv_Pe_radS'][:,0,0,None,None,grid_slicesS[-1]]
+            grad_s0S['g']     = f['grad_s0S'][:,0,0,grid_slicesS[-1]][:,None,None,:]
+            grad_ln_ρS['g']   = f['grad_ln_ρS'][:,0,0,grid_slicesS[-1]][:,None,None,:]
+            grad_ln_TS['g']   = f['grad_ln_TS'][:,0,0,grid_slicesS[-1]][:,None,None,:]
+            grad_TS['g']      = f['grad_TS'][:,0,0,grid_slicesS[-1]][:,None,None,:]
+            grad_inv_PeS['g'] = f['grad_inv_Pe_radS'][:,0,0,grid_slicesS[-1]][:,None,None,:]
         inv_PeB['g']= f['inv_Pe_radB'][:,:,grid_slicesB[-1]]
         ln_ρB['g']      = f['ln_ρB'][:,:,grid_slicesB[-1]]
         ln_TB['g']      = f['ln_TB'][:,:,grid_slicesB[-1]]
-        H_effB['g']     = f['H_effB'][:,:,grid_slicesB[-1]]
-        ρB['g']         = np.exp(f['ln_ρB'][:,:,None,None,grid_slicesB[-1]])
-        TB['g']         = f['TB'][:,:,None,None,grid_slicesB[-1]]
+        HB['g']         = f['H_effB'][:,:,grid_slicesB[-1]]
+        ρB['g']         = np.exp(f['ln_ρB'][:,:,grid_slicesB[-1]])[None,None,:]
+        TB['g']         = f['TB'][:,:,grid_slicesB[-1]][None,None,:]
         inv_TB['g']     = 1/TB['g']
 
         inv_PeS['g']= f['inv_Pe_radS'][:,:,grid_slicesS[-1]]
         ln_ρS['g']      = f['ln_ρS'][:,:,grid_slicesS[-1]]
         ln_TS['g']      = f['ln_TS'][:,:,grid_slicesS[-1]]
-        H_effS['g']     = f['H_effS'][:,:,grid_slicesS[-1]]
-        ρS['g']         = np.exp(f['ln_ρS'][:,:,None,None,grid_slicesS[-1]]), axis=0), axis=0)
-        TS['g']         = f['TS'][:,:,None,None,grid_slicesS[-1]], axis=0), axis=0)
+        HS['g']          = f['H_effS'][:,:,grid_slicesS[-1]]
+        ρS['g']         = np.exp(f['ln_ρS'][:,:,grid_slicesS[-1]])[None,None,:]
+        TS['g']         = f['TS'][:,:,grid_slicesS[-1]][None,None,:]
         inv_TS['g']     = 1/TS['g']
 
         max_dt = f['max_dt'][()]
@@ -340,10 +341,10 @@ visc_div_stressS = div(σS) + dot(σS, grad_ln_ρS)
 VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
 
 # Grid-lock some operators / define grad's
-H_effB = operators.Grid(H_effB).evaluate()
-H_effS = operators.Grid(H_effS).evaluate()
-inv_TB = operators.Grid(inv_TB).evaluate()
-inv_TS = operators.Grid(inv_TS).evaluate()
+HB = d3.Grid(HB).evaluate()
+HS = d3.Grid(HS).evaluate()
+inv_TB = d3.Grid(inv_TB).evaluate()
+inv_TS = d3.Grid(inv_TS).evaluate()
 grad_s1B = grad(s1B)
 grad_s1S = grad(s1S)
 
@@ -369,13 +370,13 @@ problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, t
 # Equations
 ### Ball momentum
 problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = RHSB(cross(uB, curl(uB)))"), condition = "nθ != 0")
+problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
 if args['--sponge']:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = RHSS( cross(uS, curl(uS)) )"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))"), condition = "nθ != 0")
 else:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = RHSS( cross(uS, curl(uS)) )"), condition = "nθ != 0")
+    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
@@ -383,9 +384,9 @@ problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
 problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
 
 ### Ball energy
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + liftB(tB) = RHSB( - dot(uB, grad_s1B) + H_effB + (1/Re)*inv_TB*VHB ) "))
+problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + liftB(tB) = - dot(uB, grad_s1B) + HB + (1/Re)*inv_TB*VHB "))
 ### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + liftS(tS_bot, -1) + liftS(tS_top, -2)  = RHSS( - dot(uS, grad_s1S) + H_effS + (1/Re)*inv_TS*VHS ) "))
+problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + liftS(tS_bot, -1) + liftS(tS_top, -2)  = - dot(uS, grad_s1S) + HS + (1/Re)*inv_TS*VHS "))
 
 # Boundary Conditions
 # Velocity BCs ell != 0
@@ -406,7 +407,7 @@ problem.add_equation(eq_eval("grad_s_surface = 0"))
 
 logger.info("Problem built")
 # Solver
-solver = solvers.InitialValueSolver(problem, ts)
+solver = problem.build_solver(ts)
 solver.stop_sim_time = buoy_end_time*t_buoy
 solver.stop_wall_time = wall_hours * 60 * 60
 logger.info("solver built")
@@ -419,16 +420,16 @@ if restart is not None:
     write_mode = 'append'
 else:
     # Initial conditions
-    seed = 42 + d.comm_cart.rank
+    seed = 42 + dist.comm_cart.rank
     rand = np.random.RandomState(seed=seed)
     filter_scale = 0.25
 
     # Generate noise & filter it
-    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(rB, 0.9*r_inner, width=0.05*r_inner)
+    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(r1B, 0.9*r_inner, width=0.05*r_inner)
     s1B.require_scales(filter_scale)
     s1B['c']
     s1B['g']
-    s1B.require_scales(dealias_tuple)
+    s1B.require_scales(basisB.dealias)
 
 ## Analysis Setup
 # Cadence
@@ -438,14 +439,14 @@ visual_dt = 0.05*t_buoy
 outer_shell_dt = max_dt
 
 # Operators, extra fields
-r_valsB = dist.Field(name='r_valsB', bases=bB)
-r_valsS = dist.Field(name='r_valsS', bases=bS)
+r_valsB = dist.Field(name='r_valsB', bases=basisB)
+r_valsS = dist.Field(name='r_valsS', bases=basisS)
 r_valsB['g'] = r1B
 r_valsS['g'] = r1S
-erB = operators.Grid(erB).evaluate()
-erS = operators.Grid(erS).evaluate()
-r_valsB = operators.Grid(r_valsB).evaluate()
-r_valsS = operators.Grid(r_valsS).evaluate()
+erB = d3.Grid(erB).evaluate()
+erS = d3.Grid(erS).evaluate()
+r_valsB = d3.Grid(r_valsB).evaluate()
+r_valsS = d3.Grid(r_valsS).evaluate()
 uB_squared = dot(uB, uB)
 uS_squared = dot(uS, uS)
 urB = dot(erB, uB)
@@ -485,21 +486,6 @@ vol_avgS = lambda A: d3.Integrate(A/volumeS, coords)
 luminosityB = lambda A: (4*np.pi*r_valsB**2) * s2_avg(A)
 luminosityS = lambda A: (4*np.pi*r_valsS**2) * s2_avg(A)
 
-vol_averagerB      = BallVolumeAverager(pB)
-vol_averagerS      = ShellVolumeAverager(pS)
-profile_averagerB    = PhiThetaAverager(pB)
-profile_averagerS    = PhiThetaAverager(pS)
-equator_slicerB     = EquatorSlicer(pB)
-equator_slicerS     = EquatorSlicer(pS)
-mer_slicer1B          = MeridionSlicer(pB, phi_target=0)
-mer_slicer2B          = MeridionSlicer(pB, phi_target=np.pi/2)
-mer_slicer3B          = MeridionSlicer(pB, phi_target=np.pi)
-mer_slicer4B          = MeridionSlicer(pB, phi_target=3*np.pi/2)
-mer_slicer1S          = MeridionSlicer(pS, phi_target=0)
-mer_slicer2S          = MeridionSlicer(pS, phi_target=np.pi/2)
-mer_slicer3S          = MeridionSlicer(pS, phi_target=np.pi)
-mer_slicer4S          = MeridionSlicer(pS, phi_target=3*np.pi/2)
-ORI = OutputRadialInterpolate
 analysis_tasks = []
 
 slices = solver.evaluator.add_file_handler('{:s}/slices'.format(out_dir), sim_dt=visual_dt, max_writes=40)
@@ -569,13 +555,13 @@ checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir)
 checkpoint.add_tasks(solver.state, layout='g')
 
 re_ball = solver.evaluator.add_dictionary_handler(iter=10)
-re_ball.add_task(Re*(uB_squared)**(1/2), name='Re_avg_ball', layout='g', scales=dealias_tuple)
+re_ball.add_task(vol_avgB(Re*(uB_squared)**(1/2)), name='Re_avg_ball', layout='g')
 
 #CFL setup
 heaviside_cfl = dist.Field(name='heaviside_cfl', bases=basisB)
 heaviside_cfl['g'] = 1
-if np.sum(rB > float(args['--CFL_max_r'])) > 0:
-    heaviside_cfl['g'][:,:, r1B.flatten() > float(args['--CFL_max_r'])] = 0
+if np.sum(rB > CFL_max_r) > 0:
+    heaviside_cfl['g'][:,:, r1B.flatten() > CFL_max_r] = 0
 heaviside_cfl = d3.Grid(heaviside_cfl).evaluate()
 
 initial_max_dt = visual_dt
@@ -607,11 +593,11 @@ try:
         if just_wrote:
             just_wrote = False
             num_steps = np.ceil(slice_cadence / dt)
-            dt = current_max_dt = CFL.stored_dt = slice_cadence/num_steps
+            dt = current_max_dt = my_cfl.stored_dt = slice_cadence/num_steps
         elif max_dt_check:
             dt = np.min((dt, current_max_dt))
         else:
-            CFL.stored_dt = dt = current_max_dt
+            my_cfl.stored_dt = dt = current_max_dt
 
         t_future = solver.sim_time + dt
         if t_future >= slice_time*(1-1e-8):
@@ -624,7 +610,12 @@ try:
         solver.step(dt)
 
         if solver.iteration % 10 == 0:
-            Re0 = vol_averagerB(re_ball.fields['Re_avg_ball'], comm=True)
+            Re_avg = re_ball.fields['Re_avg_ball']
+            if dist.comm_cart.rank == 0:
+                Re0 = Re_avg['g'].min()
+            else:
+                Re0 = None
+            Re0 = dist.comm_cart.bcast(Re0, root=0)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
         if max_dt_check and dt < slice_cadence:
             my_cfl.max_dt = max_dt
@@ -659,13 +650,9 @@ finally:
 
     #TODO: Make the end-of-sim report better
     n_coeffs = np.prod(resolutionB) + np.prod(resolutionS)
-    n_cpu    = d.comm_cart.size
+    n_cpu    = dist.comm_cart.size
     dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
     logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
     logger.info('Run iterations: {:e}'.format(n_iter))
     logger.info('Sim end time: {:e}'.format(solver.sim_time))
     logger.info('Run time: {}'.format(cpu_sec))
-
-from d3_outputs import post
-for t in analysis_tasks:
-    post.merge_analysis(t.base_path)
