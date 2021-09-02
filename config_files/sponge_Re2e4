@@ -1,0 +1,10 @@
+[parameters]
+L = 512
+NB = 512
+NS = 256
+Re = 2e4
+buoy_end_time = 40
+mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B512_S256_Re2e4_de1.5.h5
+sponge = True
+wall_hours = 47.5
+CFL_max_r = 1.05

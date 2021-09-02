@@ -1,10 +1,10 @@
 [parameters]
-L = 62
-NB = 95
-NS = 95
+L = 32
+NB = 96
+NS = 96
 Re = 1e3
-mesh = 8,8
-buoy_end_time = 60
-mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B95_S95_Re1e3.h5
+buoy_end_time = 40
+mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5
 sponge = True
 CFL_max_r = 1.05
+wall_hours = 7.5
