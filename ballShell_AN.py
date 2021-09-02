@@ -251,11 +251,17 @@ ezS['g'][2] =  np.cos(θ1S)
 exB, eyB, ezB, exS, eyS, ezS = [d3.Grid(f).evaluate() for f in [exB, eyB, ezB, exS, eyS, ezS]]
 
 # Load MESA NCC file or setup NCCs using polytrope
-grid_slicesB  = dist.layouts[-1].slices(uB.domain, 1)
-grid_slicesS  = dist.layouts[-1].slices(uS.domain, 1)
+grid_slicesB  = dist.layouts[-1].slices(uB.domain, N_dealias)
+grid_slicesS  = dist.layouts[-1].slices(uS.domain, N_dealias)
+grad_s0B.require_scales(basisB.dealias)
+grad_s0S.require_scales(basisS.dealias)
 local_vncc_shapeB = grad_s0B['g'].shape
 local_vncc_shapeS = grad_s0S['g'].shape
 if mesa_file is not None:
+    for field in [grad_s0B, grad_ln_ρB, grad_ln_TB, grad_TB, grad_inv_PeB, HB, ln_ρB, ln_TB, inv_PeB, ρB, TB, inv_TB]:
+        field.require_scales(basisB.dealias)
+    for field in [grad_s0S, grad_ln_ρS, grad_ln_TS, grad_TS, grad_inv_PeS, HS, ln_ρS, ln_TS, inv_PeS, ρS, TS, inv_TS]:
+        field.require_scales(basisS.dealias)
     with h5py.File(mesa_file, 'r') as f:
         if np.prod(local_vncc_shapeB) > 0:
             grad_s0B['g']      = f['grad_s0B'][:,0,0,grid_slicesB[-1]][:,None,None,:]

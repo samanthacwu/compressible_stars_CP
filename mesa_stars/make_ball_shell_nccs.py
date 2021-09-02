@@ -6,10 +6,13 @@ Usage:
 
 Options:
     --Re=<R>        simulation reynolds/peclet number [default: 1e4]
-    --NB=<N>        Maximum radial coefficients (ball) [default: 95]
-    --NS=<N>        Maximum radial coefficients (shell) [default: 95]
+    --NB=<N>        Maximum radial degrees of freedom (ball) [default: 96]
+    --NS=<N>        Maximum radial degrees of freedom (shell) [default: 96]
     --file=<f>      Path to MESA log file [default: MESA_Models_Dedalus_Full_Sphere/LOGS/6.data]
     --pre_log_folder=<f>  Folder name in which 'LOGS' sits [default: ]
+    --dealias=<n>   Radial dealiasing factor of simulation [default: 1.5]
+
+    --no_plot       If flagged, don't output plots
 """
 import os
 import time
@@ -19,7 +22,7 @@ import h5py
 from mpi4py import MPI
 import mesa_reader as mr
 import matplotlib.pyplot as plt
-from dedalus.core import coords, distributor, basis, field, operators, arithmetic
+import dedalus.public as d3
 from docopt import docopt
 
 from astropy import units as u
@@ -29,8 +32,10 @@ from scipy.interpolate import interp1d
 from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
-plot=True
 
+plot=not(args['--no_plot'])
+
+### Function definitions
 from scipy.special import erf
 def one_to_zero(x, x0, width=0.1):
     return (1 - erf( (x - x0)/width))/2
@@ -39,6 +44,7 @@ def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
 
 def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False, r_int=None, ylim=None):
+    """ Plots up a figure to compare a dedalus field to the MESA field it's based on. """
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
     if zero_line:
@@ -76,9 +82,10 @@ def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_n
             ax.axvline(r_int, c='k')
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
-### Read in command line args
-true_NmaxB = NmaxB = int(args['--NB'])
-true_NmaxS = NmaxS = int(args['--NS'])
+### Read in command line args & generate output path & file
+nrB = NmaxB = int(args['--NB'])
+nrS = NmaxS = int(args['--NS'])
+dealias = float(args['--dealias'])
 simulation_Re = float(args['--Re'])
 read_file = args['--file']
 filename = read_file.split('/LOGS/')[-1]
@@ -86,7 +93,7 @@ out_dir  = read_file.replace('/LOGS/', '_').replace('.data', '_ballShell')
 if args['--pre_log_folder'] != '':
     out_dir = '{:s}_{:s}'.format(args['--pre_log_folder'], out_dir)
 print('saving files to {}'.format(out_dir))
-out_file = '{:s}/ballShell_nccs_B{}_S{}_Re{}.h5'.format(out_dir, NmaxB, NmaxS, args['--Re'])
+out_file = '{:s}/ballShell_nccs_B{}_S{}_Re{}_de{}.h5'.format(out_dir, nrB, nrS, args['--Re'], args['--dealias'])
 if not os.path.exists('{:s}'.format(out_dir)):
     os.mkdir('{:s}'.format(out_dir))
 
@@ -113,15 +120,6 @@ Luminosity     = p.luminosity[::-1] * u.L_sun
 conv_L_div_L   = p.conv_L_div_L[::-1]
 csound         = p.csound[::-1] * u.cm / u.s
 
-plt.figure()
-plt.plot(r, cv, c='orange', label='cv')
-plt.plot(r, cp, c='purple', label='cp')
-plt.legend()
-plt.xlabel('r')
-plt.ylabel('specific heat')
-plt.ylim(0, 2e9)
-plt.savefig('cv_cp_vs_r.png', dpi=300, bbox_inches='tight')
-
 #secondary MESA fields
 mass            = mass.cgs
 r               = r.cgs
@@ -139,13 +137,13 @@ N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
 grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
 H_eff           = (np.gradient(L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
 
-#Find edge of core cz
+# Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
 core_cz_mass_bound = mass[cz_bool][-1]
 core_cz_r          = r[cz_bool][-1]
 core_cz_bound_ind  = np.argmin(np.abs(mass - core_cz_mass_bound))
 
-#Find bottom edge of FeCZ
+# Find bottom edge of FeCZ
 fracStar    = 0.95 #Simulate this much of the star, from r = 0 to r = base_FeCZ
 fe_cz_bool  = (mass > 1.1*mass[core_cz_bound_ind])*(L_conv.value > 1)
 bot_fe_cz_r = fracStar*r[fe_cz_bool][0]
@@ -194,15 +192,10 @@ inv_Pe_rad = 1/Pe_rad
 cp_surf = cp[shell_bool][-1]
 print("L CZ:", L_CZ)
 
-
-sim_L_conv          = np.copy(L_conv)*one_to_zero(r/L, 0.95, width=0.05) #smooth out CZ boundary (essentially make conductivity a bit steeper there)
+#construct internal heating field
+sim_L_conv          = np.copy(L_conv)
 sim_H_eff           = (np.gradient(sim_L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
 sim_H_eff[0]        = sim_H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
-
-#plt.figure()
-#plt.plot(r/L, H_eff)
-#plt.plot(r/L, sim_H_eff)
-#plt.show()
 
 #MESA radial values, in simulation units
 r_ball = r[ball_bool]/L
@@ -230,47 +223,35 @@ print('one length unit is {:.2e}'.format(L))
 print('output cadence is {} s / {} % of a heating time'.format(max_dt*tau, max_dt*100))
 #
 ### Make dedalus domain
-c = coords.SphericalCoordinates('φ', 'θ', 'r')
-d = distributor.Distributor((c,), mesh=None)
-bB = basis.BallBasis(c, (4, 2, NmaxB+1), radius=r_inner.value, dtype=np.float64)
-bS = basis.SphericalShellBasis(c, (4, 2, NmaxS+1), radii=(r_inner.value, r_outer.value), dtype=np.float64)
-φB, θB, rB = bB.global_grids((1, 1, 1))
-φS, θS, rS = bS.global_grids((1, 1, 1))
+c = d3.SphericalCoordinates('φ', 'θ', 'r')
+d = d3.Distributor((c,), mesh=None, dtype=np.float64)
+bB = d3.BallBasis(c, (4, 2, nrB), radius=r_inner.value, dtype=np.float64, dealias=(1,1,dealias))
+bS = d3.ShellBasis(c, (4, 2, nrS), radii=(r_inner.value, r_outer.value), dtype=np.float64, dealias=(1,1,dealias))
+φB, θB, rB = bB.global_grids((1, 1, dealias))
+φS, θS, rS = bS.global_grids((1, 1, dealias))
 
-radComp   = lambda A: operators.RadialComponent(A)
-grad = lambda A: operators.Gradient(A, c)
-dot  = lambda A, B: arithmetic.DotProduct(A, B)
+radComp   = d3.RadialComponent
+grad = lambda A: d3.Gradient(A, c)
+dot  = d3.DotProduct
 
-def make_NCC(basis, interp_args, Nmax=32, vector=False):
+def make_NCC(basis, interp_args, Nmax=32, vector=False, grid_only=False):
     interp = np.interp(*interp_args)
     if vector:
-        this_field = field.Field(dist=d, bases=(basis,), tensorsig=(c,), dtype=np.float64)
+        this_field = d.VectorField(c, bases=basis)
+        this_field.require_scales(basis.dealias)
         this_field['g'][2] = interp
-        this_field['c'][:, :, :, Nmax:] = 0
+        if not grid_only:
+            this_field['c'][:, :, :, Nmax:] = 0
     else:
-        this_field = field.Field(dist=d, bases=(basis,), dtype=np.float64)
+        this_field = d.Field(bases=basis)
+        this_field.require_scales(basis.dealias)
         this_field['g'] = interp
-        this_field['c'][:, :, Nmax:] = 0
+        if not grid_only:
+            this_field['c'][:, :, Nmax:] = 0
     return this_field, interp
 
-def match_boundary(fB, fS, adjust_ball=False):
-    if len(fB.tensorsig) == 1:
-        fB_interface = radComp(fB(r=r_inner.value)).evaluate()['g'].max()
-        fS_interface = radComp(fS(r=r_inner.value)).evaluate()['g'].max()
-        if adjust_ball:
-            fB['g'][2,:] -= (fB_interface - fS_interface)
-        else:
-            fS['g'][2,:] -= (fS_interface - fB_interface)
-    else:
-        fB_interface = fB(r=r_inner.value).evaluate()['g'].max()
-        fS_interface = fS(r=r_inner.value).evaluate()['g'].max()
-        if adjust_ball:
-            fB['g'][:] -= (fB_interface - fS_interface)
-        else:
-            fS['g'][:] -= (fS_interface - fB_interface)
-
 ### Radiative diffusivity
-NmaxB, NmaxS = 8, 90#np.min((true_NmaxS - 1, 126))
+NmaxB, NmaxS = 8, 90#np.min((nrS - 1, 126))
 transition = (r/L)[inv_Pe_rad > 1/simulation_Re][0].value
 gradPe_B_cutoff = 10
 gradPe_S_cutoff = 93
@@ -278,9 +259,6 @@ inv_Pe_rad_fieldB, inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  inv_Pe_rad[ba
 inv_Pe_rad_fieldS, inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, inv_Pe_rad[shell_bool]), Nmax=NmaxS)
 inv_Pe_rad_fieldB['g'] += 1/simulation_Re
 inv_Pe_rad_fieldS['g'] = (1/simulation_Re) + zero_to_one(rS, transition-0.05, width=0.05) * (inv_Pe_rad_fieldS['g'] - 1/simulation_Re)
-
-#match_boundary(inv_Pe_rad_fieldB, inv_Pe_rad_fieldS)
-
 
 grad_inv_Pe_B = grad(inv_Pe_rad_fieldB).evaluate()
 grad_inv_Pe_B['c'][:,:,:,gradPe_B_cutoff:] = 0
@@ -291,10 +269,6 @@ grad_inv_Pe_S['c'][:,:,:,int(NmaxS*1/3):] = 0
 grad_inv_Pe_S['g'][2] *= zero_to_one(rS, transition-0.05, width=0.05)
 grad_inv_Pe_S['c'][:,:,:,gradPe_S_cutoff:] = 0
 
-#match_boundary(grad_inv_Pe_B, grad_inv_Pe_S)
-
-#grad_inv_Pe_rad_fieldB, grad_inv_Pe_rad_interpB = make_NCC(bB, (rB, r_ball,  np.gradient(inv_Pe_rad, r/L)[ball_bool]), Nmax=NmaxB)
-#grad_inv_Pe_rad_fieldS, grad_inv_Pe_rad_interpS = make_NCC(bS, (rS, r_shell, np.gradient(inv_Pe_rad, r/L)[shell_bool]), Nmax=NmaxS)
 grad_inv_Pe_rad = np.gradient(inv_Pe_rad, r)
 if plot:
     plot_ncc_figure(r[sim_bool]/L, inv_Pe_rad[sim_bool], (rB.flatten(), rS.flatten()), (inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner.value)
@@ -308,9 +282,6 @@ grad_ln_rho_fieldB, grad_ln_rho_interpB = make_NCC(bB, (rB, r_ball, dlogrhodr[ba
 ln_rho_fieldS, ln_rho_interpS = make_NCC(bS, (rS, r_shell, np.log(rho/rho0)[shell_bool]), Nmax=NmaxS)
 grad_ln_rho_fieldS, grad_ln_rho_interpS = make_NCC(bS, (rS, r_shell, dlogrhodr[shell_bool]*L), Nmax=NmaxS, vector=True)
 
-#match_boundary(ln_rho_fieldB, ln_rho_fieldS)
-#match_boundary(grad_ln_rho_fieldB, grad_ln_rho_fieldS)
-
 if plot:
     plot_ncc_figure(r[sim_bool]/L, np.log(rho/rho0)[sim_bool], (rB.flatten(), rS.flatten()), (ln_rho_fieldB['g'][:1,:1,:].flatten(), ln_rho_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln\rho$", fig_name="ln_rho", out_dir=out_dir, log=False, r_int=r_inner.value)
     plot_ncc_figure(r[sim_bool]/L, (dlogrhodr*L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_rho_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_rho_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir, log=False, r_int=r_inner.value)
@@ -322,9 +293,6 @@ grad_ln_T_fieldB, grad_ln_T_interpB  = make_NCC(bB, (rB, r_ball, dlogTdr[ball_bo
 ln_T_fieldS, ln_T_interpS  = make_NCC(bS, (rS, r_shell, np.log(T/T0)[shell_bool]), Nmax=NmaxS)
 grad_ln_T_fieldS, grad_ln_T_interpS  = make_NCC(bS, (rS, r_shell, dlogTdr[shell_bool]*L), Nmax=NmaxS, vector=True)
 
-#match_boundary(ln_T_fieldB, ln_T_fieldS)
-#match_boundary(grad_ln_T_fieldB, grad_ln_T_fieldS)
-
 if plot:
     plot_ncc_figure(r[sim_bool]/L, np.log(T/T0)[sim_bool], (rB.flatten(), rS.flatten()), (ln_T_fieldB['g'][:1,:1,:].flatten(), ln_T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln T$", fig_name="ln_T", out_dir=out_dir, log=False, r_int=r_inner.value)
     plot_ncc_figure(r[sim_bool]/L, (dlogTdr*L)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_T_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln T$", fig_name="grad_ln_T", out_dir=out_dir, log=False, r_int=r_inner.value)
@@ -333,8 +301,6 @@ if plot:
 NmaxB, NmaxS = 32, 32
 T_fieldB, T_interpB = make_NCC(bB, (rB, r_ball, (T/T0)[ball_bool]), Nmax=NmaxB)
 T_fieldS, T_interpS = make_NCC(bS, (rS, r_shell, (T/T0)[shell_bool]), Nmax=NmaxS)
-
-#match_boundary(T_fieldB, T_fieldS)
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, (T/T0)[sim_bool], (rB.flatten(), rS.flatten()), (T_fieldB['g'][:1,:1,:].flatten(), T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$T$", fig_name="T", out_dir=out_dir, log=True, r_int=r_inner.value)
@@ -345,8 +311,6 @@ NmaxB, NmaxS = 32, 32
 grad_T_fieldB, grad_T_interpB = make_NCC(bB, (rB, r_ball,  grad_T[ball_bool]), Nmax=NmaxB, vector=True)
 grad_T_fieldS, grad_T_interpS = make_NCC(bS, (rS, r_shell, grad_T[shell_bool]), Nmax=NmaxS, vector=True)
 
-#match_boundary(grad_T_fieldB, grad_T_fieldS)
-
 if plot:
     plot_ncc_figure(r[sim_bool]/L, -grad_T[sim_bool], (rB.flatten(), rS.flatten()), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(), -grad_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=r_inner.value)
 
@@ -354,23 +318,12 @@ if plot:
 
 ### effective heating / (rho * T)
 #Logic for smoothing heating profile at outer edge of CZ. Adjust outer edge of heating
-#Since this is grid-locked, this isn't really needed.
-#heat_erf_width  = 0.04
-#heat_erf_center = 0.9891
-#amount_to_adjust = 0.95
-#full_lum_above = np.sum((4*np.pi*r_ball**2*H_NCC[ball_bool]*np.gradient(r_ball))[r_ball > amount_to_adjust][:1,:1,:].flatten())
-#approx_H = H_NCC[ball_bool][r_ball <= amount_to_adjust][:1,:1,:].flatten()[-1]*one_to_zero(r_ball, heat_erf_center, heat_erf_width)
-#full_lum_approx = np.sum((4*np.pi*r_ball**2*approx_H*np.gradient(r_ball))[r_ball > amount_to_adjust][:1,:1,:].flatten())
-#H_NCC_ball = H_NCC[ball_bool]
-#H_NCC_ball[r_ball > amount_to_adjust] = approx_H[r_ball > amount_to_adjust]
-#print('outer', full_lum_above, full_lum_approx)
 H_NCC = ((sim_H_eff)  / H0) * (rho0*T0/rho/T)
 NmaxB, NmaxS = 60, 10
-H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball, H_NCC[ball_bool]), Nmax=NmaxB)
-H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell, H_NCC[shell_bool]), Nmax=NmaxS)
+H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball, H_NCC[ball_bool]), Nmax=NmaxB, grid_only=True)
+H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell, H_NCC[shell_bool]), Nmax=NmaxS, grid_only=True)
 if plot:
     plot_ncc_figure(r[sim_bool]/L, H_NCC[sim_bool], (rB.flatten(), rS.flatten()), (H_fieldB['g'][:1,:1,:].flatten(), H_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=r_inner.value)
-
 
 ### entropy gradient
 transition_point = 1.03
@@ -385,26 +338,19 @@ flat_value  = np.interp(transition_point, r/L, grad_s)
 grad_s_smooth[r/L < transition_point] = flat_value
 
 NmaxB, NmaxS = 31, 62
-NmaxB_after = true_NmaxB - 1
+NmaxB_after = nrB - 1
 grad_s_fieldB, grad_s_interpB = make_NCC(bB, (rB, r_ball, (grad_s_smooth*L/s_c)[ball_bool]), Nmax=NmaxB, vector=True)
 grad_s_interpB = np.interp(rB, r_ball, (grad_s*L/s_c)[ball_bool])
 grad_s_fieldS, grad_s_interpS = make_NCC(bS, (rS, r_shell, (grad_s*L/s_c)[shell_bool]), Nmax=NmaxS, vector=True)
-#match_boundary(grad_s_fieldB, grad_s_fieldS, adjust_ball=True)
 grad_s_fieldB['g'][2] *= zero_to_one(rB, center, width=width)
 grad_s_fieldB['c'][:,:,:,NmaxB_after:] = 0
-
-
-#plt.figure()
-#plt.plot(rB.flatten(), grad_s_fieldB['g'][2,0,0,:])
-#plt.plot(rS.flatten(), grad_s_fieldS['g'][2,0,0,:])
-#plt.yscale('log')
-#plt.show()
 
 if plot:
     plot_ncc_figure(r[sim_bool]/L, (grad_s*L/s_c)[sim_bool], (rB.flatten(), rS.flatten()), (grad_s_fieldB['g'][2][:1,:1,:].flatten(), grad_s_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB_after, NmaxS), ylabel=r"$\nabla s$", fig_name="grad_s", out_dir=out_dir, log=True, r_int=r_inner.value)
 
 with h5py.File('{:s}'.format(out_file), 'w') as f:
-    #slicing preserves dimensionality.
+    # Save output fields.
+    # slicing preserves dimensionality
     f['rB']          = rB
     f['TB']          = T_fieldB['g'][:1,:1,:]
     f['grad_TB']     = grad_T_fieldB['g'][:,:1,:1,:]
@@ -429,26 +375,48 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['inv_Pe_radS'] = inv_Pe_rad_fieldS['g'][:1,:1,:]
     f['grad_inv_Pe_radS'] = grad_inv_Pe_S['g'][:,:1,:1,:]
 
+    #Save properties of the star, with units.
+    f['L']   = L
+    f['L'].attrs['units'] = str(L.unit)
+    f['g0']  = g0
+    f['g0'].attrs['units']  = str(g0.unit)
+    f['ρ0']  = rho0
+    f['ρ0'].attrs['units']  = str(rho0.unit)
+    f['P0']  = P0
+    f['P0'].attrs['units']  = str(P0.unit)
+    f['T0']  = T0
+    f['T0'].attrs['units']  = str(T0.unit)
+    f['H0']  = H0
+    f['H0'].attrs['units']  = str(H0.unit)
+    f['tau'] = tau 
+    f['tau'].attrs['units'] = str(tau.unit)
+    f['s_c'] = s_c
+    f['s_c'].attrs['units'] = str(s_c.unit)
+    f['N2max_ball'] = N2max_ball
+    f['N2max_ball'].attrs['units'] = str(N2max_ball.unit)
+    f['N2max_shell'] = N2max_shell
+    f['N2max_shell'].attrs['units'] = str(N2max_shell.unit)
+    f['N2max'] = np.max((N2max_ball.value, N2max_shell.value))
+    f['N2max'].attrs['units'] = str(N2max_ball.unit)
+    f['N2plateau'] = N2plateau
+    f['N2plateau'].attrs['units'] = str(N2plateau.unit)
+    f['cp_surf'] = cp_surf
+    f['cp_surf'].attrs['units'] = str(cp_surf.unit)
+    f['r_mesa'] = r
+    f['r_mesa'].attrs['units'] = str(r.unit)
+    f['N2_mesa'] = N2
+    f['N2_mesa'].attrs['units'] = str(N2.unit)
+    f['S1_mesa'] = lamb_freq(1)
+    f['S1_mesa'].attrs['units'] = str(lamb_freq(1).unit)
+    f['g_mesa'] = g 
+    f['g_mesa'].attrs['units'] = str(g.unit)
+    f['cp_mesa'] = cp
+    f['cp_mesa'].attrs['units'] = str(cp.unit)
+
     f['r_inner']   = r_inner
     f['r_outer']   = r_outer
-    f['L']   = L
-    f['g0']  = g0
-    f['ρ0']  = rho0
-    f['P0']  = P0
-    f['T0']  = T0
-    f['H0']  = H0
-    f['tau'] = tau 
-    f['Ma2'] = tau 
     f['max_dt'] = max_dt
-    f['s_c'] = s_c
-    f['N2max_ball'] = N2max_ball
-    f['N2max_shell'] = N2max_shell
-    f['N2max'] = np.max((N2max_ball.value, N2max_shell.value))
-    f['N2plateau'] = N2plateau
-    f['cp_surf'] = cp_surf
-    f['r_mesa'] = r
-    f['N2_mesa'] = N2
-    f['S1_mesa'] = lamb_freq(1)
-    f['g_mesa'] = g 
-    f['cp_mesa'] = cp
-print(tau, tau/60/60/24)
+    f['Ma2'] = Ma2
+    for k in ['r_inner', 'r_outer', 'max_dt', 'Ma2']:
+        f[k].attrs['units'] = 'dimensionless'
+print('finished saving NCCs to {}'.format(out_file))

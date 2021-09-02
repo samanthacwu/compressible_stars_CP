@@ -174,9 +174,12 @@ u_perp_bc = radComp(angComp(E(r=radius), index=1))
 therm_bc  = s1(r=radius)
 
 # Load MESA NCC file or setup NCCs using polytrope.
-grid_slices = dist.layouts[-1].slices(u.domain, 1)
+grid_slices = dist.layouts[-1].slices(u.domain, N_dealias)
+grad_s0.require_scales(basis.dealias)
 local_vncc_shape = grad_s0['g'].shape
 if mesa_file is not None:
+    for field in [grad_s0, grad_ln_ρ, grad_ln_T, grad_T, grad_inv_Pe, H, ln_ρ, ln_T, inv_Pe, ρ, T, inv_T]:
+        field.require_scales(basis.dealias)
     with h5py.File(mesa_file, 'r') as f:
         if np.prod(local_vncc_shape) > 0:
             grad_s0['g']         = f['grad_s0B'][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape)
@@ -260,7 +263,6 @@ if restart is not None:
     write_mode = 'append'
 else:
     # Initial conditions
-    A0   = float(args['--A0'])
     seed = 42 + dist.comm_cart.rank
     rand = np.random.RandomState(seed=seed)
     filter_scale = 0.25
