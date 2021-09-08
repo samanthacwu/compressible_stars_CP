@@ -305,13 +305,14 @@ else:
         T_func = interp1d(f['r'][()], f['T'][()])
         ρ_func = interp1d(f['r'][()], f['ρ'][()])
         grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-        H_eff_func   = interp1d(f['r'][()], f['H_eff'][()])
+        H_func   = interp1d(f['r'][()], f['H_eff'][()])
     max_grad_s0 = grad_s0_func(r_outer)
     max_dt = 2/np.sqrt(max_grad_s0)
     t_buoy      = 1
 
-    for r1, basis_fields in zip((r1B, r1S), ((TB, ρB, HB, inv_TB, ln_TB, ln_ρB, inv_PeB, grad_ln_TB, grad_ln_ρB, grad_TB, grad_s0B, grad_inv_PeB), \
-                                             (TS, ρS, HS, inv_TS, ln_TS, ln_ρS, inv_PeS, grad_ln_TS, grad_ln_ρS, grad_TS, grad_s0S, grad_inv_PeS))):
+    for r1, basis_fields, local_vncc_shape, basis  in zip((r1B, r1S), ((TB, ρB, HB, inv_TB, ln_TB, ln_ρB, inv_PeB, grad_ln_TB, grad_ln_ρB, grad_TB, grad_s0B, grad_inv_PeB), \
+                                             (TS, ρS, HS, inv_TS, ln_TS, ln_ρS, inv_PeS, grad_ln_TS, grad_ln_ρS, grad_TS, grad_s0S, grad_inv_PeS)), \
+                                             (local_vncc_shapeB, local_vncc_shapeS), (basisB, basisS)):
         T, ρ, H, inv_T, ln_T, ln_ρ, inv_Pe, grad_ln_T, grad_ln_ρ, grad_T, grad_s0, grad_inv_Pe = basis_fields
 
         T['g']       = T_func(r1)
@@ -323,6 +324,7 @@ else:
         grad_T_full = grad(T).evaluate()
         grad_ln_T_full = (grad_T_full/T).evaluate()
         if np.prod(local_vncc_shape) > 0:
+            grad_s0.require_scales(1)
             grad_s0['g'][2]  = grad_s0_func(r1)
             for f in [grad_ln_ρ, grad_ln_T, grad_T]: f.require_scales(basis.dealias)
             grad_ln_ρ['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
@@ -359,57 +361,57 @@ grad_s1S = grad(s1S)
 u_match_bc      = uB(r=r_inner) - uS(r=r_inner)
 p_match_bc      = pB(r=r_inner) - pS(r=r_inner)
 stress_match_bc = angComp(radComp(σB(r=r_inner) - σS(r=r_inner)), index=0)
+stress_match_bc.name = 'stress_match_bc'
 #stress_match_bc = angComp(radComp(σB(r=r_inner)), index=0) - angComp(radComp(σS(r=r_inner)), index=0)
 s_match_bc      = s1B(r=r_inner) - s1S(r=r_inner)
 grad_s_match_bc = radComp(grad_s1B(r=r_inner) - grad_s1S(r=r_inner))
 #grad_s_match_bc = radComp(grad_s1B(r=r_inner)) - radComp(grad_s1S(r=r_inner))
 # Surface: Impenetrable, stress-free, no entropy gradient
 impenetrable = radComp(uS(r=r_outer))
-stress_free  = radComp(angComp(ES(r=r_outer), index=1))
+stress_free  = angComp(radComp(ES(r=r_outer)), index=0)
+stress_free.name = 'stress_free'
 grad_s_surface = radComp(grad_s1S(r=r_outer))
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top])
+problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], namespace=locals())
 
 # Equations
 ### Ball momentum
-problem.add_equation(eq_eval("div(uB) + dot(uB, grad_ln_ρB) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB))"), condition = "nθ != 0")
+problem.add_equation("div(uB) + dot(uB, grad_ln_ρB) = 0", condition="nθ != 0")
+problem.add_equation("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB))", condition = "nθ != 0")
 ### Shell momentum
-problem.add_equation(eq_eval("div(uS) + dot(uS, grad_ln_ρS) = 0"), condition="nθ != 0")
+problem.add_equation("div(uS) + dot(uS, grad_ln_ρS) = 0", condition="nθ != 0")
 if args['--sponge']:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))"), condition = "nθ != 0")
+    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))", condition = "nθ != 0")
 else:
-    problem.add_equation(eq_eval("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))"), condition = "nθ != 0")
+    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))", condition = "nθ != 0")
 ## ell == 0 momentum
-problem.add_equation(eq_eval("pB = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("uB = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("pS = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("uS = 0"), condition="nθ == 0")
+problem.add_equation("pB = 0", condition="nθ == 0")
+problem.add_equation("uB = 0", condition="nθ == 0")
+problem.add_equation("pS = 0", condition="nθ == 0")
+problem.add_equation("uS = 0", condition="nθ == 0")
 
 ### Ball energy
-problem.add_equation(eq_eval("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + liftB(tB) = - dot(uB, grad_s1B) + HB + (1/Re)*inv_TB*VHB "))
+problem.add_equation("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + liftB(tB) = - dot(uB, grad_s1B) + HB + (1/Re)*inv_TB*VHB ")
 ### Shell energy
-problem.add_equation(eq_eval("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + liftS(tS_bot, -1) + liftS(tS_top, -2)  = - dot(uS, grad_s1S) + HS + (1/Re)*inv_TS*VHS "))
+problem.add_equation("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + liftS(tS_bot, -1) + liftS(tS_top, -2)  = - dot(uS, grad_s1S) + HS + (1/Re)*inv_TS*VHS ")
 
 # Boundary Conditions
 # Velocity BCs ell != 0
-problem.add_equation(eq_eval("u_match_bc = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("p_match_bc = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("stress_match_bc = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("impenetrable = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("stress_free = 0"), condition="nθ != 0")
+problem.add_equation("u_match_bc = 0", condition="nθ != 0")
+problem.add_equation("p_match_bc = 0", condition="nθ != 0")
+problem.add_equation("stress_match_bc = 0", condition="nθ != 0")
+problem.add_equation("impenetrable = 0", condition="nθ != 0")
+problem.add_equation("stress_free = 0", condition="nθ != 0")
 # velocity BCs ell == 0
-problem.add_equation(eq_eval("tBt = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_bot = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("tSt_top = 0"), condition="nθ == 0")
+problem.add_equation("tBt = 0", condition="nθ == 0")
+problem.add_equation("tSt_bot = 0", condition="nθ == 0")
+problem.add_equation("tSt_top = 0", condition="nθ == 0")
 
 # Entropy BCs
-problem.add_equation(eq_eval("s_match_bc = 0"))
-problem.add_equation(eq_eval("grad_s_match_bc = 0"))
-problem.add_equation(eq_eval("grad_s_surface = 0"))
+problem.add_equation("s_match_bc = 0")
+problem.add_equation("grad_s_match_bc = 0")
+problem.add_equation("grad_s_surface = 0")
 
 logger.info("Problem built")
 # Solver

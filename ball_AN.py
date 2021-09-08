@@ -170,7 +170,8 @@ VH  = 2*(trace(dot(E, E)) - (1/3)*divU**2)
 
 # Impenetrable, stress-free boundary conditions
 u_r_bc    = radComp(u(r=radius))
-u_perp_bc = radComp(angComp(E(r=radius), index=1))
+u_perp_bc = angComp(radComp(E(r=radius)), index=0)
+u_perp_bc.name = 'stress_free'
 therm_bc  = s1(r=radius)
 
 # Load MESA NCC file or setup NCCs using polytrope.
@@ -215,6 +216,7 @@ else:
     grad_T_full = grad(T).evaluate()
     grad_ln_T_full = (grad_T_full/T).evaluate()
     if np.prod(local_vncc_shape) > 0:
+        grad_s0.require_scales(1)
         grad_s0['g'][2]  = grad_s0_func(r1)
         for f in [grad_ln_ρ, grad_ln_T, grad_T]: f.require_scales(basis.dealias)
         grad_ln_ρ['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
@@ -227,26 +229,24 @@ else:
 
     t_buoy      = 1
 
-# Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([p, u, s1, tau_u, tau_T])
-
 # Grid-lock / define extra operators
 H = d3.Grid(H).evaluate()
 inv_T = d3.Grid(inv_T).evaluate()
 grad_s1 = grad(s1)
 
+# Problem
+problem = d3.IVP([p, u, s1, tau_u, tau_T], namespace=locals())
+
 # Equations / Problem
-problem.add_equation(eq_eval("div(u) + dot(u, grad_ln_ρ) = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("p = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))"), condition = "nθ != 0")
-problem.add_equation(eq_eval("u = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("ddt(s1) + dot(u, grad_s0) - inv_Pe*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe) + lift(tau_T) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH "))
-problem.add_equation(eq_eval("u_r_bc    = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("u_perp_bc = 0"), condition="nθ != 0")
-problem.add_equation(eq_eval("tau_u     = 0"), condition="nθ == 0")
-problem.add_equation(eq_eval("therm_bc  = 0"))
+problem.add_equation("div(u) + dot(u, grad_ln_ρ) = 0", condition="nθ != 0")
+problem.add_equation("p = 0", condition="nθ == 0")
+problem.add_equation("ddt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))", condition = "nθ != 0")
+problem.add_equation("u = 0", condition="nθ == 0")
+problem.add_equation("ddt(s1) + dot(u, grad_s0) - inv_Pe*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe) + lift(tau_T) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
+problem.add_equation("u_r_bc    = 0", condition="nθ != 0")
+problem.add_equation("u_perp_bc = 0", condition="nθ != 0")
+problem.add_equation("tau_u     = 0", condition="nθ == 0")
+problem.add_equation("therm_bc  = 0")
 logger.info("Problem built")
 
 # Solver
