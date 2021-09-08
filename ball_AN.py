@@ -351,8 +351,13 @@ try:
         dt = my_cfl.compute_timestep()
 
         if solver.iteration % 10 == 0:
-            Re0 = re_ball.fields['Re_avg']['g']
-            logger.info("t = {:f}, dt = {:f}, Re = {:e}".format(solver.sim_time, dt, Re0.min()))
+            Re_avg = re_ball.fields['Re_avg']
+            if dist.comm_cart.rank == 0:
+                Re0 = Re_avg['g'].min()
+            else:
+                Re0 = None
+            Re0 = dist.comm_cart.bcast(Re0, root=0)
+            logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
 
         if solver.iteration % hermitian_cadence in timestepper_history:
             for f in solver.state:
