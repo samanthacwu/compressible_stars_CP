@@ -33,7 +33,7 @@ from configparser import ConfigParser
 from scipy import sparse
 from scipy.interpolate import interp1d
 
-from plotpal.file_reader import SingleFiletypePlotter as SFP
+from plotpal.file_reader import SingleTypeReader as SR
 import matplotlib.pyplot as plt
 
 import logging
@@ -61,7 +61,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B63_S63_Re1e4.h5'
+star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
 with h5py.File(star_file, 'r') as f:
     rB = f['rB'][()]
     rS = f['rS'][()]
@@ -80,8 +80,8 @@ with h5py.File(star_file, 'r') as f:
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'.format(data_dir)
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
-plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
-with h5py.File(plotter.files[0], 'r') as f:
+reader = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
+with h5py.File(reader.files[0], 'r') as f:
     fields = list(f['tasks'].keys())
 radii = []
 for f in fields:
@@ -90,20 +90,18 @@ for f in fields:
         if radius not in radii:
             radii.append(radius)
 if not args['--no_ft']:
-
     times = []
     print('getting times...')
-    while plotter.files_remain([], fields):
-        print('reading file {}...'.format(plotter.current_filenum+1))
-        file_name = plotter.files[plotter.current_filenum]
-        with h5py.File('{}'.format(file_name), 'r') as f:
-            if plotter.current_filenum == 0:
-                ells = f['ells'][()]
-                ms = f['ms'][()]
-            times.append(f['time'][()])
-        plotter.current_filenum += 1
+    first = True
+    while reader.writes_remain():
+        dsets, ni = reader.get_dsets([])
+        times.append(reader.current_file_handle['time'][ni])
+        if first:
+            ells = reader.current_file_handle['ells'][()]
+            ms = reader.current_file_handle['ms'][()]
+            first = False
 
-    times = np.concatenate(times)
+    times = np.array(times)
 
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
@@ -115,14 +113,12 @@ if not args['--no_ft']:
 
         print('filling datacube...')
         writes = 0
-        while plotter.files_remain([], [f,]):
-            print('reading file {}...'.format(plotter.current_filenum+1))
-            file_name = plotter.files[plotter.current_filenum]
-            with h5py.File('{}'.format(file_name), 'r') as rf:
-                this_file_writes = len(rf['time'][()])
-                data_cube[writes:writes+this_file_writes,:] = rf['tasks'][f][:,:,:].squeeze()
-                writes += this_file_writes
-            plotter.current_filenum += 1
+        while reader.writes_remain():
+            print('reading file {}...'.format(reader.current_file_number+1))
+            dsets, ni = reader.get_dsets([])
+            rf = reader.current_file_handle
+            data_cube[writes,:] = rf['tasks'][f][ni,:].squeeze()
+            writes += 1
 
         print('taking transform')
         transform = np.zeros(data_cube.shape, dtype=np.complex128)
