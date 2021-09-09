@@ -7,6 +7,7 @@ Usage:
 Options:
     --data_dir=<dir>     Name of data handler directory [default: slices]
     --r_outer=<r>        Value of r at outer boundary [default: 2.59]
+    --scale=<s>          resolution scale factor [default: 1]
 """
 from collections import OrderedDict
 
@@ -179,5 +180,5 @@ if not plotter.idle:
             fig.update_layout(title=title_text)
             fig.update_annotations(y=0.85, selector={'text':title_text})
             figname = '{:s}/plotly3Dplot/plotly3Dplot_{:06d}.png'.format(root_dir, n)
-            pio.write_image(fig, figname, format='png', engine='kaleido')
+            pio.write_image(fig, figname, format='png', engine='kaleido', scale=float(args['--scale']))
             fig.data = []

@@ -23,16 +23,14 @@ import cartopy.crs as ccrs
 
 import h5py
 
-with h5py.File('../mesa_stars/MESA_Models_Dedalus_Full_Sphere_6_ballShell/ballShell_nccs_B255_S127.h5', 'r') as f:
+with h5py.File('../mesa_stars/nccs_40msol/ballShell_nccs_B255_S127_Re1e4.h5', 'r') as f:
     tau = f['tau'][()]
     time_day = tau/60/60/24
 
 
 # Read in master output directory
-root_dir    = args['<root_dir>']
-data_dir1    = 'shell_slice'
-data_dir2    = 'eq_sliceB'
-data_dir3    = 'eq_sliceS'
+root_dir = args['<root_dir>']
+data_dir = 'slices'
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
     import sys
@@ -44,9 +42,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-plotter    = SFP(root_dir, file_dir=data_dir1, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
-plotterEqB = SFP(root_dir, file_dir=data_dir2, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
-plotterEqS = SFP(root_dir, file_dir=data_dir3, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
+plotter    = SFP(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
 
 shell_field_keys = ['s1_r0.5', 's1_r1', 's1_r_near_surf']
 shell_bases_keys  = ['φ', 'θ']
@@ -128,11 +124,11 @@ with plotter.my_sync:
                 shi_minmax = 2*np.std(entropy_shell_int)
                 shs_minmax = 2*np.std(entropy_shell_surf)
 
-                p1B = ax1.pcolormesh(phisB, rrB,   entropy_eqB,    cmap='RdBu_r', vmin=-eq_minmax, vmax=eq_minmax)
-                p1S = ax1.pcolormesh(phisS, rrS,   entropy_eqS,    cmap='RdBu_r', vmin=-eq_minmax, vmax=eq_minmax)
-                p2 = ax2.pcolormesh(lons, lats, entropy_shell_cz,   cmap='RdBu_r', vmin=-shc_minmax, vmax=shc_minmax, transform=ccrs.PlateCarree())
-                p3 = ax3.pcolormesh(lons, lats, entropy_shell_int,  cmap='RdBu_r', vmin=-shi_minmax, vmax=shi_minmax, transform=ccrs.PlateCarree())
-                p4 = ax4.pcolormesh(lons, lats, entropy_shell_surf, cmap='RdBu_r', vmin=-shs_minmax, vmax=shs_minmax, transform=ccrs.PlateCarree())
+                p1B = ax1.pcolormesh(phisB, rrB,   entropy_eqB,    cmap='RdBu_r', vmin=-eq_minmax, vmax=eq_minmax, rasterize=True)
+                p1S = ax1.pcolormesh(phisS, rrS,   entropy_eqS,    cmap='RdBu_r', vmin=-eq_minmax, vmax=eq_minmax, rasterize=True)
+                p2 = ax2.pcolormesh(lons, lats, entropy_shell_cz,   cmap='RdBu_r', vmin=-shc_minmax, vmax=shc_minmax, transform=ccrs.PlateCarree(), rasterize=True)
+                p3 = ax3.pcolormesh(lons, lats, entropy_shell_int,  cmap='RdBu_r', vmin=-shi_minmax, vmax=shi_minmax, transform=ccrs.PlateCarree(), rasterize=True)
+                p4 = ax4.pcolormesh(lons, lats, entropy_shell_surf, cmap='RdBu_r', vmin=-shs_minmax, vmax=shs_minmax, transform=ccrs.PlateCarree(), rasterize=True)
 
 #                ax1.plot(phi_plot[0]*np.ones(1000), np.linspace(0, 1, 1000))
 
