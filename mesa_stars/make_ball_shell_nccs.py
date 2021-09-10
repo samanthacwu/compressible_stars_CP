@@ -135,13 +135,18 @@ dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
 dlogTdr         = dlogPdr*(nablaT)
 N2_therm_approx = g*(dlogPdr/gamma1 - dlogrhodr)
 grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
-H_eff           = (np.gradient(L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
 
 # Find edge of core cz
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
 core_cz_mass_bound = mass[cz_bool][-1]
 core_cz_r          = r[cz_bool][-1]
 core_cz_bound_ind  = np.argmin(np.abs(mass - core_cz_mass_bound))
+
+#smooth transition from some L_conv -> zero L_conv.
+L_conv_smooth = np.copy(L_conv)
+L_conv_smooth   *= one_to_zero(r, core_cz_r*0.95, 0.04*core_cz_r)
+H_eff           = (np.gradient(L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
+H_eff_smooth           = (np.gradient(L_conv_smooth,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
 
 # Find bottom edge of FeCZ
 fracStar    = 0.95 #Simulate this much of the star, from r = 0 to r = base_FeCZ
@@ -194,7 +199,7 @@ print("L CZ:", L_CZ)
 
 #construct internal heating field
 sim_L_conv          = np.copy(L_conv)
-sim_H_eff           = (np.gradient(sim_L_conv,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
+sim_H_eff           = H_eff_smooth
 sim_H_eff[0]        = sim_H_eff[1] #make gradient 0 at core, remove weird artifacts from gradient near r = 0.
 
 #MESA radial values, in simulation units
@@ -319,11 +324,12 @@ if plot:
 ### effective heating / (rho * T)
 #Logic for smoothing heating profile at outer edge of CZ. Adjust outer edge of heating
 H_NCC = ((sim_H_eff)  / H0) * (rho0*T0/rho/T)
+H_NCC_true = ((H_eff)  / H0) * (rho0*T0/rho/T)
 NmaxB, NmaxS = 60, 10
 H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball, H_NCC[ball_bool]), Nmax=NmaxB, grid_only=True)
 H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell, H_NCC[shell_bool]), Nmax=NmaxS, grid_only=True)
 if plot:
-    plot_ncc_figure(r[sim_bool]/L, H_NCC[sim_bool], (rB.flatten(), rS.flatten()), (H_fieldB['g'][:1,:1,:].flatten(), H_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=r_inner.value)
+    plot_ncc_figure(r[sim_bool]/L, H_NCC_true[sim_bool], (rB.flatten(), rS.flatten()), (H_fieldB['g'][:1,:1,:].flatten(), H_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=r_inner.value)
 
 ### entropy gradient
 transition_point = 1.03
