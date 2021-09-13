@@ -1,9 +1,9 @@
 [parameters]
-L = 62
-NB = 95
-NS = 95
+L = 64
+NB = 96
+NS = 96
 Re = 1e3
-mesh = 1,1
-buoy_end_time = 100
-mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B95_S95_Re1e3.h5
-wall_hours = 47.5
+buoy_end_time = 1000
+mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5
+wall_hours = 23.5
+CFL_max_r = 1.05
