@@ -433,11 +433,13 @@ else:
     filter_scale = 0.25
 
     # Generate noise & filter it
-    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(r1B, 0.9*r_inner, width=0.05*r_inner)
+#    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(r1B, 0.9*r_inner, width=0.05*r_inner)
+    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)
     s1B.require_scales(filter_scale)
     s1B['c']
     s1B['g']
     s1B.require_scales(basisB.dealias)
+    s1B['g'] *= one_to_zero(rB, 0.9*r_inner, width=0.04*r_inner)
 
 ## Analysis Setup
 # Cadence
