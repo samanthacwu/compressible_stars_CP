@@ -157,6 +157,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
                 wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
                 wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
     with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'w') as of:
+        print('saving wave flux at r={}'.format(radii[1]))
         of['wave_flux'] = wf['wave_flux(r={})'.format(radii[1])][()]
         of['real_freqs'] = wf['real_freqs'][()]
         of['real_freqs_inv_day'] = wf['real_freqs_inv_day'][()]
@@ -164,17 +165,18 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         
 
 fig = plt.figure()
-freqs_for_dfdell = [0.2, 0.5, 1]
+freqs_for_dfdell = [1, 5, 8]
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-    freqs = rf['real_freqs_inv_day'][()]
+    freqs = rf['real_freqs'][()]
     ells = rf['ells'][()].flatten()
     for f in freqs_for_dfdell:
         print('plotting f = {}'.format(f))
         f_ind = np.argmin(np.abs(freqs - f))
         for radius in radii:
+            if radius < 1: continue
             wave_flux = rf['wave_flux(r={})'.format(radius)][f_ind, :]
             plt.loglog(ells, ells*wave_flux, label='r={}'.format(radius))
-            if radius == np.min(np.array(radii)):
+            if radius == radii[1]:
                 shift = (ells*wave_flux)[ells == 2]
         plt.loglog(ells, shift*(ells/2)**4, c='k', label=r'$\ell^4$')
         plt.legend(loc='best')
@@ -183,7 +185,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
         plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
         plt.ylim(1e-25, 1e-9)
         plt.xlim(1, ells.max())
-        fig.savefig('{}/ell_spectrum_freq{}_invday.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
+        fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
         plt.clf()
     
  
@@ -191,17 +193,17 @@ for ell in range(11):
     if ell == 0: continue
     print('plotting ell = {}'.format(ell))
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-        freqs = rf['real_freqs_inv_day'][()]
+        freqs = rf['real_freqs'][()]
         for radius in radii:
+            if radius < 1: continue
             wave_flux = rf['wave_flux(r={})'.format(radius)][:,ell]
             plt.loglog(freqs, freqs*wave_flux, label='r={}'.format(radius))
-            if radius == np.min(np.array(radii)):
-                shift = (freqs*wave_flux)[freqs > 0.1][0]
-    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
-    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-2), c='grey', label=r'$f^{-2}$')
+            if radius == radii[1]:
+                shift = (freqs*wave_flux)[freqs > 1][0]
+    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 1][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
     plt.legend(loc='best')
     plt.title('ell={}'.format(ell))
-    plt.xlabel('freqs (1/day)')
+    plt.xlabel('freqs (sim units)')
     plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
     plt.ylim(1e-25, 1e-9)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
