@@ -32,6 +32,8 @@ Options:
     --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
 
     --label=<label>      A label to add to the end of the output directory
+
+    --rotation_time=<t>  Rotation timescale, in days (for MESA file) or sim units (for polytrope)
 """
 import os
 import time
@@ -86,6 +88,12 @@ wall_hours = float(args['--wall_hours'])
 buoy_end_time = float(args['--buoy_end_time'])
 sponge = args['--sponge']
 
+# rotation
+rotation_time = args['--rotation_time']
+if rotation_time is not None:
+    rotation_time = float(rotation_time)
+    dimensional_Ω = 2*np.pi / rotation_time  #radians / day [in MESA units]
+
 # Initial conditions
 restart = args['--restart']
 A0 = float(args['--A0'])
@@ -126,6 +134,9 @@ if sponge:
     out_dir += '_sponge'
 if mesa_file is None:
     out_dir += '_polytrope'
+if rotation_time is not None:
+    out_dir += '_rotation{}'.format(rotation_time)
+
 out_dir += '_Re{}_{}x{}x{}+{}'.format(args['--Re'], nφ, nθ, nrB, nrS)
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
@@ -208,20 +219,20 @@ if sponge:
     spongeS['g'] = zero_to_one(r1S, r_inner + 2*L_shell/3, 0.1*L_shell)
 
 # Fields - unit vectors & (NCC) identity matrix
-eφB, eθB, erB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['eφ', 'eθ', 'er']]
-eφS, eθS, erS = [dist.VectorField(coords, name=n+'S', bases=basisS) for n in ['eφ', 'eθ', 'er']]
-I_matrixB = dist.TensorField(coords, name='I_matrixB', bases=radial_basisB)
-I_matrixS = dist.TensorField(coords, name='I_matrixS', bases=radial_basisS)
+eφB, eθB, erB = [dist.VectorField(coords, name=n+'B') for n in ['eφ', 'eθ', 'er']]
+eφS, eθS, erS = [dist.VectorField(coords, name=n+'S') for n in ['eφ', 'eθ', 'er']]
+I_matrixB = dist.TensorField(coords, name='I_matrixB')
+I_matrixS = dist.TensorField(coords, name='I_matrixS')
 for f in [eφB, eθB, erB, I_matrixB, eφS, eθS, erS, I_matrixS]: f['g'] = 0
-eφB['g'][0,:] = 1
-eθB['g'][1,:] = 1
-erB['g'][2,:] = 1
-eφS['g'][0,:] = 1
-eθS['g'][1,:] = 1
-erS['g'][2,:] = 1
+eφB['g'][0] = 1
+eθB['g'][1] = 1
+erB['g'][2] = 1
+eφS['g'][0] = 1
+eθS['g'][1] = 1
+erS['g'][2] = 1
 for i in range(3):
-    I_matrixB['g'][i,i,:] = 1
-    I_matrixS['g'][i,i,:] = 1
+    I_matrixB['g'][i,i] = 1
+    I_matrixS['g'][i,i] = 1
 
 # Cartesian unit vectors for post
 exB, eyB, ezB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['ex', 'ey', 'ez']]
@@ -294,6 +305,14 @@ if mesa_file is not None:
         max_dt = f['max_dt'][()]
         t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
 
+        if rotation_time is not None:
+            sim_tau_sec = f['tau'][()]
+            sim_tau_day = sim_tau_sec / (60*60*24)
+            Ω = sim_tau_day * dimensional_Ω 
+            t_rot = 1/(2*Ω)
+        else:
+            t_rot = np.inf
+
         if sponge:
             f_brunt = f['tau'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
             spongeS['g'] *= f_brunt
@@ -309,6 +328,12 @@ else:
     max_grad_s0 = grad_s0_func(r_outer)
     max_dt = 2/np.sqrt(max_grad_s0)
     t_buoy      = 1
+    if rotation_time is not None:
+        Ω = dimensional_Ω 
+        t_rot = 1/(2*Ω)
+    else:
+        t_rot = np.inf
+        
 
     for r1, basis_fields, local_vncc_shape, basis  in zip((r1B, r1S), ((TB, ρB, HB, inv_TB, ln_TB, ln_ρB, inv_PeB, grad_ln_TB, grad_ln_ρB, grad_TB, grad_s0B, grad_inv_PeB), \
                                              (TS, ρS, HS, inv_TS, ln_TS, ln_ρS, inv_PeS, grad_ln_TS, grad_ln_ρS, grad_TS, grad_s0S, grad_inv_PeS)), \
@@ -334,6 +359,9 @@ else:
         ln_T['g']        = np.log(T_func(r1))
         ln_ρ['g']        = np.log(ρ_func(r1))
         inv_Pe['g']      = 1/Pe
+
+if rotation_time is not None:
+    logger.info("Running with Coriolis Omega = {:.3e}".format(Ω))
 
 #Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
 divUB = div(uB)
@@ -372,19 +400,32 @@ stress_free  = angComp(radComp(ES(r=r_outer)), index=0)
 stress_free.name = 'stress_free'
 grad_s_surface = radComp(grad_s1S(r=r_outer))
 
+if rotation_time is not None:
+    rotation_termB = -2*Ω*cross(ezB, uB)
+    rotation_termS = -2*Ω*cross(ezS, uS)
+else:
+    rotation_termB = 0
+    rotation_termS = 0
+
+if args['--sponge']:
+    sponge_termS = spongeS*uS
+else:
+    sponge_termS = 0
+
 # Problem
 problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], namespace=locals())
 
 # Equations
 ### Ball momentum
 problem.add_equation("div(uB) + dot(uB, grad_ln_ρB) = 0", condition="nθ != 0")
-problem.add_equation("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB))", condition = "nθ != 0")
+problem.add_equation("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB)) + rotation_termB", condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation("div(uS) + dot(uS, grad_ln_ρS) = 0", condition="nθ != 0")
-if args['--sponge']:
-    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))", condition = "nθ != 0")
-else:
-    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))", condition = "nθ != 0")
+problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + sponge_termS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS)) + rotation_termS", condition = "nθ != 0")
+#if args['--sponge']:
+#    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))", condition = "nθ != 0")
+#else:
+#    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))", condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation("pB = 0", condition="nθ == 0")
 problem.add_equation("uB = 0", condition="nθ == 0")
@@ -574,7 +615,9 @@ if np.sum(rB > CFL_max_r) > 0:
     heaviside_cfl['g'][:,:, r1B.flatten() > CFL_max_r] = 0
 heaviside_cfl = d3.Grid(heaviside_cfl).evaluate()
 
-initial_max_dt = visual_dt
+initial_max_dt = np.min((visual_dt, t_rot*0.5))
+while initial_max_dt < max_dt:
+    max_dt /= 2
 if dt is None:
     dt = initial_max_dt
 my_cfl = d3.CFL(solver, dt, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
@@ -591,7 +634,6 @@ start_time = time.time()
 start_iter = solver.iteration
 max_dt_check = True
 current_max_dt = my_cfl.max_dt
-slice_cadence = max_dt
 slice_process = False
 just_wrote    = False
 slice_time = np.inf
@@ -602,8 +644,8 @@ try:
 
         if just_wrote:
             just_wrote = False
-            num_steps = np.ceil(slice_cadence / dt)
-            dt = current_max_dt = my_cfl.stored_dt = slice_cadence/num_steps
+            num_steps = np.ceil(outer_shell_dt / dt)
+            dt = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
         elif max_dt_check:
             dt = np.min((dt, current_max_dt))
         else:
@@ -627,17 +669,17 @@ try:
                 Re0 = None
             Re0 = dist.comm_cart.bcast(Re0, root=0)
             logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
-        if max_dt_check and dt < slice_cadence:
+        if max_dt_check and dt < outer_shell_dt:
             my_cfl.max_dt = max_dt
             max_dt_check = False
             just_wrote = True
-            slice_time = solver.sim_time + slice_cadence
+            slice_time = solver.sim_time + outer_shell_dt
 
         if slice_process:
             slice_process = False
             wall_time = time.time() - solver.start_time
             solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=dt)
-            slice_time = solver.sim_time + slice_cadence
+            slice_time = solver.sim_time + outer_shell_dt
             just_wrote = True
 
         if np.isnan(Re0):
