@@ -32,6 +32,8 @@ Options:
     --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
 
     --label=<label>      A label to add to the end of the output directory
+
+    --rotation_time=<t>  Rotation timescale, in days (for MESA file) or sim units (for polytrope)
 """
 import os
 import time
@@ -86,6 +88,12 @@ wall_hours = float(args['--wall_hours'])
 buoy_end_time = float(args['--buoy_end_time'])
 sponge = args['--sponge']
 
+# rotation
+rotation_time = args['--rotation_time']
+if rotation_time is not None:
+    rotation_time = float(rotation_time)
+    dimensional_Ω = 2*np.pi / rotation_time  #radians / day [in MESA units]
+
 # Initial conditions
 restart = args['--restart']
 A0 = float(args['--A0'])
@@ -126,6 +134,9 @@ if sponge:
     out_dir += '_sponge'
 if mesa_file is None:
     out_dir += '_polytrope'
+if rotation_time is not None:
+    out_dir += '_rotation{}'.format(rotation_time)
+
 out_dir += '_Re{}_{}x{}x{}+{}'.format(args['--Re'], nφ, nθ, nrB, nrS)
 if args['--label'] is not None:
     out_dir += '_{:s}'.format(args['--label'])
@@ -161,23 +172,6 @@ b_topS = basisS.S2_basis(radius=r_outer)
 φ1S,  θ1S,  r1S  = basisS.local_grids((1,1,1))
 φSg, θSg, rSg = basisS.global_grids(basisS.dealias)
 
-# Operators
-angComp   = lambda A, index=1: d3.AngularComponent(A, index=index)
-cross = d3.CrossProduct
-curl = d3.Curl
-ddt  = d3.TimeDerivative
-div  = d3.Divergence
-dot = d3.DotProduct
-grad      = lambda A: d3.Gradient(A, coords)
-lap       = lambda A: d3.Laplacian(A, coords)
-lift_basisB = basisB.clone_with(k=0)
-liftB   = lambda A: d3.LiftTau(A, lift_basisB, -1)
-lift_basisS = basisS.clone_with(k=2)
-liftS   = lambda A, n: d3.LiftTau(A, lift_basisS, n)
-trace = d3.Trace
-transpose = d3.TransposeComponents
-radComp = d3.RadialComponent
-
 # Fields - taus
 tB      = dist.Field(name='tau_s1B', bases=b_midB)
 tBt     = dist.VectorField(coords, name='tau_uB',  bases=b_midB)
@@ -208,20 +202,20 @@ if sponge:
     spongeS['g'] = zero_to_one(r1S, r_inner + 2*L_shell/3, 0.1*L_shell)
 
 # Fields - unit vectors & (NCC) identity matrix
-eφB, eθB, erB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['eφ', 'eθ', 'er']]
-eφS, eθS, erS = [dist.VectorField(coords, name=n+'S', bases=basisS) for n in ['eφ', 'eθ', 'er']]
-I_matrixB = dist.TensorField(coords, name='I_matrixB', bases=radial_basisB)
-I_matrixS = dist.TensorField(coords, name='I_matrixS', bases=radial_basisS)
+eφB, eθB, erB = [dist.VectorField(coords, name=n+'B') for n in ['eφ', 'eθ', 'er']]
+eφS, eθS, erS = [dist.VectorField(coords, name=n+'S') for n in ['eφ', 'eθ', 'er']]
+I_matrixB = dist.TensorField(coords, name='I_matrixB')
+I_matrixS = dist.TensorField(coords, name='I_matrixS')
 for f in [eφB, eθB, erB, I_matrixB, eφS, eθS, erS, I_matrixS]: f['g'] = 0
-eφB['g'][0,:] = 1
-eθB['g'][1,:] = 1
-erB['g'][2,:] = 1
-eφS['g'][0,:] = 1
-eθS['g'][1,:] = 1
-erS['g'][2,:] = 1
+eφB['g'][0] = 1
+eθB['g'][1] = 1
+erB['g'][2] = 1
+eφS['g'][0] = 1
+eθS['g'][1] = 1
+erS['g'][2] = 1
 for i in range(3):
-    I_matrixB['g'][i,i,:] = 1
-    I_matrixS['g'][i,i,:] = 1
+    I_matrixB['g'][i,i] = 1
+    I_matrixS['g'][i,i] = 1
 
 # Cartesian unit vectors for post
 exB, eyB, ezB = [dist.VectorField(coords, name=n+'B', bases=basisB) for n in ['ex', 'ey', 'ez']]
@@ -294,6 +288,14 @@ if mesa_file is not None:
         max_dt = f['max_dt'][()]
         t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
 
+        if rotation_time is not None:
+            sim_tau_sec = f['tau'][()]
+            sim_tau_day = sim_tau_sec / (60*60*24)
+            Ω = sim_tau_day * dimensional_Ω 
+            t_rot = 1/(2*Ω)
+        else:
+            t_rot = np.inf
+
         if sponge:
             f_brunt = f['tau'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
             spongeS['g'] *= f_brunt
@@ -309,6 +311,12 @@ else:
     max_grad_s0 = grad_s0_func(r_outer)
     max_dt = 2/np.sqrt(max_grad_s0)
     t_buoy      = 1
+    if rotation_time is not None:
+        Ω = dimensional_Ω 
+        t_rot = 1/(2*Ω)
+    else:
+        t_rot = np.inf
+        
 
     for r1, basis_fields, local_vncc_shape, basis  in zip((r1B, r1S), ((TB, ρB, HB, inv_TB, ln_TB, ln_ρB, inv_PeB, grad_ln_TB, grad_ln_ρB, grad_TB, grad_s0B, grad_inv_PeB), \
                                              (TS, ρS, HS, inv_TS, ln_TS, ln_ρS, inv_PeS, grad_ln_TS, grad_ln_ρS, grad_TS, grad_s0S, grad_inv_PeS)), \
@@ -320,8 +328,8 @@ else:
         H['g']       = H_func(r1)
         inv_T['g']   = 1/T_func(r1)
 
-        grad_ln_ρ_full = (grad(ρ)/ρ).evaluate()
-        grad_T_full = grad(T).evaluate()
+        grad_ln_ρ_full = (d3.grad(ρ)/ρ).evaluate()
+        grad_T_full = d3.grad(T).evaluate()
         grad_ln_T_full = (grad_T_full/T).evaluate()
         if np.prod(local_vncc_shape) > 0:
             grad_s0.require_scales(1)
@@ -335,42 +343,69 @@ else:
         ln_ρ['g']        = np.log(ρ_func(r1))
         inv_Pe['g']      = 1/Pe
 
-#Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
-divUB = div(uB)
-EB = 0.5*(grad(uB) + transpose(grad(uB)))
-σB = 2*(EB - (1/3)*divUB*I_matrixB)
-visc_div_stressB = div(σB) + dot(σB, grad_ln_ρB)
-VHB  = 2*(trace(dot(EB, EB)) - (1/3)*divUB*divUB)
+if rotation_time is not None:
+    logger.info("Running with Coriolis Omega = {:.3e}".format(Ω))
 
-divUS = div(uS)
-ES = 0.5*(grad(uS) + transpose(grad(uS)))
+#Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
+divUB = d3.div(uB)
+EB = 0.5*(d3.grad(uB) + d3.transpose(d3.grad(uB)))
+σB = 2*(EB - (1/3)*divUB*I_matrixB)
+visc_div_stressB = d3.div(σB) + d3.dot(σB, grad_ln_ρB)
+VHB  = 2*(d3.trace(d3.dot(EB, EB)) - (1/3)*divUB*divUB)
+
+divUS = d3.div(uS)
+ES = 0.5*(d3.grad(uS) + d3.transpose(d3.grad(uS)))
 σS = 2*(ES - (1/3)*divUS*I_matrixS)
-visc_div_stressS = div(σS) + dot(σS, grad_ln_ρS)
-VHS  = 2*(trace(dot(ES, ES)) - (1/3)*divUS*divUS)
+visc_div_stressS = d3.div(σS) + d3.dot(σS, grad_ln_ρS)
+VHS  = 2*(d3.trace(d3.dot(ES, ES)) - (1/3)*divUS*divUS)
 
 # Grid-lock some operators / define grad's
 HB = d3.Grid(HB).evaluate()
 HS = d3.Grid(HS).evaluate()
 inv_TB = d3.Grid(inv_TB).evaluate()
 inv_TS = d3.Grid(inv_TS).evaluate()
-grad_s1B = grad(s1B)
-grad_s1S = grad(s1S)
+grad_s1B = d3.grad(s1B)
+grad_s1S = d3.grad(s1S)
 
 ## Boundary conditions
 # Matching boundary conditions at ball-shell
 u_match_bc      = uB(r=r_inner) - uS(r=r_inner)
 p_match_bc      = pB(r=r_inner) - pS(r=r_inner)
-stress_match_bc = angComp(radComp(σB(r=r_inner) - σS(r=r_inner)), index=0)
+stress_match_bc = d3.angular(d3.radial(σB(r=r_inner) - σS(r=r_inner)), index=0)
 stress_match_bc.name = 'stress_match_bc'
-#stress_match_bc = angComp(radComp(σB(r=r_inner)), index=0) - angComp(radComp(σS(r=r_inner)), index=0)
+#stress_match_bc = d3.angular(d3.radial(σB(r=r_inner)), index=0) - d3.angular(d3.radial(σS(r=r_inner)), index=0)
 s_match_bc      = s1B(r=r_inner) - s1S(r=r_inner)
-grad_s_match_bc = radComp(grad_s1B(r=r_inner) - grad_s1S(r=r_inner))
-#grad_s_match_bc = radComp(grad_s1B(r=r_inner)) - radComp(grad_s1S(r=r_inner))
+grad_s_match_bc = d3.radial(grad_s1B(r=r_inner) - grad_s1S(r=r_inner))
+#grad_s_match_bc = d3.radial(grad_s1B(r=r_inner)) - d3.radial(grad_s1S(r=r_inner))
 # Surface: Impenetrable, stress-free, no entropy gradient
-impenetrable = radComp(uS(r=r_outer))
-stress_free  = angComp(radComp(ES(r=r_outer)), index=0)
+impenetrable = d3.radial(uS(r=r_outer))
+stress_free  = d3.angular(d3.radial(ES(r=r_outer)), index=0)
 stress_free.name = 'stress_free'
-grad_s_surface = radComp(grad_s1S(r=r_outer))
+grad_s_surface = d3.radial(grad_s1S(r=r_outer))
+
+# Rotation and damping terms
+if rotation_time is not None:
+    rotation_termB = -2*Ω*d3.cross(ezB, uB)
+    rotation_termS = -2*Ω*d3.cross(ezS, uS)
+else:
+    rotation_termB = 0
+    rotation_termS = 0
+
+if args['--sponge']:
+    sponge_termS = spongeS*uS
+else:
+    sponge_termS = 0
+
+# Lift operators for boundary conditions
+lift_basisB = basisB.clone_with(k=0)
+lift_basisS = basisS.clone_with(k=2)
+liftB   = lambda A: d3.LiftTau(A, lift_basisB, -1)
+liftS   = lambda A, n: d3.LiftTau(A, lift_basisS, n)
+BC_uB = liftB(tBt)
+BC_uS = liftS(tSt_bot, -1) + liftS(tSt_top, -2)
+BC_s1B = liftB(tB)
+BC_s1S = liftS(tS_bot, -1) + liftS(tS_top, -2)
+
 
 # Problem
 problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, tS_top], namespace=locals())
@@ -378,23 +413,19 @@ problem = d3.IVP([pB, uB, pS, uS, s1B, s1S, tBt, tSt_bot, tSt_top, tB, tS_bot, t
 # Equations
 ### Ball momentum
 problem.add_equation("div(uB) + dot(uB, grad_ln_ρB) = 0", condition="nθ != 0")
-problem.add_equation("ddt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB + liftB(tBt) = cross(uB, curl(uB))", condition = "nθ != 0")
+problem.add_equation("dt(uB) + grad(pB) + grad_TB*s1B - (1/Re)*visc_div_stressB                + BC_uB = cross(uB, curl(uB)) + rotation_termB", condition = "nθ != 0")
 ### Shell momentum
 problem.add_equation("div(uS) + dot(uS, grad_ln_ρS) = 0", condition="nθ != 0")
-if args['--sponge']:
-    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + spongeS*uS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) =  cross(uS, curl(uS))", condition = "nθ != 0")
-else:
-    problem.add_equation("ddt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + liftS(tSt_bot, -1) + liftS(tSt_top, -2) = cross(uS, curl(uS))", condition = "nθ != 0")
+problem.add_equation("dt(uS) + grad(pS) + grad_TS*s1S - (1/Re)*visc_div_stressS + sponge_termS + BC_uS = cross(uS, curl(uS)) + rotation_termS", condition = "nθ != 0")
 ## ell == 0 momentum
 problem.add_equation("pB = 0", condition="nθ == 0")
 problem.add_equation("uB = 0", condition="nθ == 0")
 problem.add_equation("pS = 0", condition="nθ == 0")
 problem.add_equation("uS = 0", condition="nθ == 0")
-
 ### Ball energy
-problem.add_equation("ddt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + liftB(tB) = - dot(uB, grad_s1B) + HB + (1/Re)*inv_TB*VHB ")
+problem.add_equation("dt(s1B) + dot(uB, grad_s0B) - (inv_PeB)*(lap(s1B) + dot(grad_s1B, (grad_ln_ρB + grad_ln_TB))) - dot(grad_s1B, grad_inv_PeB) + BC_s1B = - dot(uB, grad_s1B) + HB + (1/Re)*inv_TB*VHB ")
 ### Shell energy
-problem.add_equation("ddt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + liftS(tS_bot, -1) + liftS(tS_top, -2)  = - dot(uS, grad_s1S) + HS + (1/Re)*inv_TS*VHS ")
+problem.add_equation("dt(s1S) + dot(uS, grad_s0S) - (inv_PeS)*(lap(s1S) + dot(grad_s1S, (grad_ln_ρS + grad_ln_TS))) - dot(grad_s1S, grad_inv_PeS) + BC_s1S = - dot(uS, grad_s1S) + HS + (1/Re)*inv_TS*VHS ")
 
 # Boundary Conditions
 # Velocity BCs ell != 0
@@ -422,9 +453,9 @@ logger.info("solver built")
 
 # Initial conditions / Checkpoint
 write_mode = 'overwrite'
-dt = None
+timestep = None
 if restart is not None:
-    write, dt = solver.load_state(restart)
+    write, timestep = solver.load_state(restart)
     write_mode = 'append'
 else:
     # Initial conditions
@@ -433,11 +464,13 @@ else:
     filter_scale = 0.25
 
     # Generate noise & filter it
-    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(r1B, 0.9*r_inner, width=0.05*r_inner)
+#    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)*one_to_zero(r1B, 0.9*r_inner, width=0.05*r_inner)
+    s1B['g'] = A0*rand.standard_normal(s1B['g'].shape)
     s1B.require_scales(filter_scale)
     s1B['c']
     s1B['g']
     s1B.require_scales(basisB.dealias)
+    s1B['g'] *= one_to_zero(rB, 0.9*r_inner, width=0.04*r_inner)
 
 ## Analysis Setup
 # Cadence
@@ -455,32 +488,32 @@ erB = d3.Grid(erB).evaluate()
 erS = d3.Grid(erS).evaluate()
 r_valsB = d3.Grid(r_valsB).evaluate()
 r_valsS = d3.Grid(r_valsS).evaluate()
-uB_squared = dot(uB, uB)
-uS_squared = dot(uS, uS)
-urB = dot(erB, uB)
-urS = dot(erS, uS)
+uB_squared = d3.dot(uB, uB)
+uS_squared = d3.dot(uS, uS)
+urB = d3.dot(erB, uB)
+urS = d3.dot(erS, uS)
 hB = pB - 0.5*uB_squared + TB*s1B
 hS = pS - 0.5*uS_squared + TS*s1S
 pomega_hat_B = pB - 0.5*uB_squared
 pomega_hat_S = pS - 0.5*uS_squared
 
-visc_fluxB_r = 2*dot(erB, dot(uB, EB) - (1/3) * uB * divUB)
-visc_fluxS_r = 2*dot(erS, dot(uS, ES) - (1/3) * uS * divUS)
+visc_fluxB_r = 2*d3.dot(erB, d3.dot(uB, EB) - (1/3) * uB * divUB)
+visc_fluxS_r = 2*d3.dot(erS, d3.dot(uS, ES) - (1/3) * uS * divUS)
 
 # Angular momentum
 rB_vec_post = dist.VectorField(coords, name='rB_vec_post', bases=basisB)
 rB_vec_post['g'][2] = r1B
-L_AMB = cross(rB_vec_post, ρB*uB)
-Lx_AMB = dot(exB, L_AMB)
-Ly_AMB = dot(eyB, L_AMB)
-Lz_AMB = dot(ezB, L_AMB)
+L_AMB = d3.cross(rB_vec_post, ρB*uB)
+Lx_AMB = d3.dot(exB, L_AMB)
+Ly_AMB = d3.dot(eyB, L_AMB)
+Lz_AMB = d3.dot(ezB, L_AMB)
 
 rS_vec_post = dist.VectorField(coords, name='rS_vec_post', bases=basisS)
 rS_vec_post['g'][2] = r1S
-L_AMS = cross(rS_vec_post, ρS*uS)
-Lx_AMS = dot(exS, L_AMS)
-Ly_AMS = dot(eyS, L_AMS)
-Lz_AMS = dot(ezS, L_AMS)
+L_AMS = d3.cross(rS_vec_post, ρS*uS)
+Lx_AMS = d3.dot(exS, L_AMS)
+Ly_AMS = d3.dot(eyS, L_AMS)
+Lz_AMS = d3.dot(ezS, L_AMS)
 
 # Averaging Operations
 volume  = (4/3)*np.pi*r_outer**3
@@ -539,8 +572,8 @@ profiles.add_task(luminosityB(ρB*urB*hB),                   name='enth_lumB', l
 profiles.add_task(luminosityS(ρS*urS*hS),                   name='enth_lumS', layout='g')
 profiles.add_task(luminosityB(-ρB*visc_fluxB_r/Re),         name='visc_lumB', layout='g')
 profiles.add_task(luminosityS(-ρS*visc_fluxS_r/Re),         name='visc_lumS', layout='g')
-profiles.add_task(luminosityB(-ρB*TB*dot(erB, grad_s1B)/Pe), name='cond_lumB', layout='g')
-profiles.add_task(luminosityS(-ρS*TS*dot(erS, grad_s1S)/Pe), name='cond_lumS', layout='g')
+profiles.add_task(luminosityB(-ρB*TB*d3.dot(erB, grad_s1B)/Pe), name='cond_lumB', layout='g')
+profiles.add_task(luminosityS(-ρS*TS*d3.dot(erS, grad_s1S)/Pe), name='cond_lumS', layout='g')
 profiles.add_task(luminosityB(0.5*ρB*urB*uB_squared),       name='KE_lumB',   layout='g')
 profiles.add_task(luminosityS(0.5*ρS*urS*uS_squared),       name='KE_lumS',   layout='g')
 analysis_tasks.append(profiles)
@@ -548,10 +581,10 @@ analysis_tasks.append(profiles)
 if args['--sponge']:
     surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
     for rval in [0.90, 1.05]:
-        surface_shell_slices.add_task(radComp(uB(r=rval)), name='u(r={})'.format(rval), layout='g')
+        surface_shell_slices.add_task(d3.radial(uB(r=rval)), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_B(r=rval), name='pomega(r={})'.format(rval),    layout='g')
     for rval in [1.15, 1.60]:
-        surface_shell_slices.add_task(radComp(uS(r=rval)), name='u(r={})'.format(rval), layout='g')
+        surface_shell_slices.add_task(d3.radial(uS(r=rval)), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_S(r=rval), name='pomega(r={})'.format(rval),    layout='g')
     analysis_tasks.append(surface_shell_slices)
 else:
@@ -572,42 +605,43 @@ if np.sum(rB > CFL_max_r) > 0:
     heaviside_cfl['g'][:,:, r1B.flatten() > CFL_max_r] = 0
 heaviside_cfl = d3.Grid(heaviside_cfl).evaluate()
 
-initial_max_dt = visual_dt
-if dt is None:
-    dt = initial_max_dt
-my_cfl = d3.CFL(solver, dt, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
+initial_max_dt = np.min((visual_dt, t_rot*0.5))
+while initial_max_dt < max_dt:
+    max_dt /= 2
+if timestep is None:
+    timestep = initial_max_dt
+my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*uB)
 
 #startup iterations
 for i in range(10):
-    solver.step(dt)
-    logger.info("startup iteration %d, t = %f, dt = %f" %(i, solver.sim_time, dt))
-    dt = my_cfl.compute_dt()
+    solver.step(timestep)
+    logger.info("startup iteration %d, t = %f, timestep = %f" %(i, solver.sim_time, timestep))
+    timestep = my_cfl.compute_timestep()
 
 # Main loop
 start_time = time.time()
 start_iter = solver.iteration
 max_dt_check = True
 current_max_dt = my_cfl.max_dt
-slice_cadence = max_dt
 slice_process = False
 just_wrote    = False
 slice_time = np.inf
 Re0 = 0
 try:
     while solver.ok:
-        dt = my_cfl.compute_timestep()
+        timestep = my_cfl.compute_timestep()
 
         if just_wrote:
             just_wrote = False
-            num_steps = np.ceil(slice_cadence / dt)
-            dt = current_max_dt = my_cfl.stored_dt = slice_cadence/num_steps
+            num_steps = np.ceil(outer_shell_dt / timestep)
+            timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
         elif max_dt_check:
-            dt = np.min((dt, current_max_dt))
+            timestep = np.min((timestep, current_max_dt))
         else:
-            my_cfl.stored_dt = dt = current_max_dt
+            my_cfl.stored_dt = timestep = current_max_dt
 
-        t_future = solver.sim_time + dt
+        t_future = solver.sim_time + timestep
         if t_future >= slice_time*(1-1e-8):
            slice_process = True
 
@@ -615,7 +649,7 @@ try:
             for f in solver.state:
                 f.require_grid_space()
 
-        solver.step(dt)
+        solver.step(timestep)
 
         if solver.iteration % 10 == 0:
             Re_avg = re_ball.fields['Re_avg_ball']
@@ -624,18 +658,18 @@ try:
             else:
                 Re0 = None
             Re0 = dist.comm_cart.bcast(Re0, root=0)
-            logger.info("t = %f, dt = %f, Re = %e" %(solver.sim_time, dt, Re0))
-        if max_dt_check and dt < slice_cadence:
+            logger.info("t = %f, timestep = %f, Re = %e" %(solver.sim_time, timestep, Re0))
+        if max_dt_check and timestep < outer_shell_dt:
             my_cfl.max_dt = max_dt
             max_dt_check = False
             just_wrote = True
-            slice_time = solver.sim_time + slice_cadence
+            slice_time = solver.sim_time + outer_shell_dt
 
         if slice_process:
             slice_process = False
             wall_time = time.time() - solver.start_time
-            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=dt)
-            slice_time = solver.sim_time + slice_cadence
+            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
+            slice_time = solver.sim_time + outer_shell_dt
             just_wrote = True
 
         if np.isnan(Re0):
@@ -654,7 +688,7 @@ finally:
 
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
     fcheckpoint.add_tasks(solver.state, layout='g')
-    solver.step(dt)
+    solver.step(timestep)
 
     #TODO: Make the end-of-sim report better
     n_coeffs = np.prod(resolutionB) + np.prod(resolutionS)
