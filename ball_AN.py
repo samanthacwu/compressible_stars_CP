@@ -262,17 +262,8 @@ if restart is not None:
     write, dt = solver.load_state(restart)
     write_mode = 'append'
 else:
-    # Initial conditions
-    seed = 42 + dist.comm_cart.rank
-    rand = np.random.RandomState(seed=seed)
-    filter_scale = 0.25
-
-    # Generate noise & filter it
-    s1['g'] = A0*rand.standard_normal(s1['g'].shape)*(1 - (r1/radius)**2)
-    s1.require_scales(filter_scale)
-    s1['c']
-    s1['g']
-    s1.require_scales(dealias)
+    s1.fill_random(layout='g', seed=42, distribution='normal', scale=A0)
+    s1.low_pass_filter(scales=0.25)
 
 ## Analysis Setup
 # Cadence
