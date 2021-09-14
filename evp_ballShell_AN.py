@@ -197,20 +197,20 @@ def build_solver(resolutionB, resolutionS, r_inner, r_outer,  mesa_file, dtype=n
             grad_ln_TS['g']   = f['grad_ln_TS'][:,0,0,:][:,None,None,:]
             grad_TS['g']      = f['grad_TS'][:,0,0,:][:,None,None,:]   
             grad_inv_PeS['g'] = f['grad_inv_Pe_radS'][:,0,0,:][:,None,None,:]
-            inv_PeB['g']= f['inv_Pe_radB'][:,0,0,:][:,None,None,:]
-            ln_ρB['g']      = f['ln_ρB'][:,0,0,:][:,None,None,:]  
-            ln_TB['g']      = f['ln_TB'][:,0,0,:][:,None,None,:]  
-            HB['g']         = f['H_effB'][:,0,0,:][:,None,None,:] 
-            ρB['g']         = np.exp(f['ln_ρB'][:,0,0,:][:,None,None,:])
-            TB['g']         = f['TB'][:,0,0,:][:,None,None,:]
-            inv_TB['g']     = 1/TB['g']
 
-            inv_PeS['g']  = f['inv_Pe_radS'][:,0,0,:][:,None,None,:] 
-            ln_ρS['g']      = f['ln_ρS'][:,0,0,:][:,None,None,:]
-            ln_TS['g']      = f['ln_TS'][:,0,0,:][:,None,None,:]
-            HS['g']          = f['H_effS'][:,0,0,:][:,None,None,:]
-            ρS['g']         = np.exp(f['ln_ρS'][:,0,0,:][:,None,None,:])
-            TS['g']         = f['TS'][:,0,0,:][:,None,None,:]
+            inv_PeB['g']= f['inv_Pe_radB'][0,0,:][None,None,:]
+            ln_ρB['g']      = f['ln_ρB'][0,0,:][None,None,:]  
+            ln_TB['g']      = f['ln_TB'][0,0,:][None,None,:]  
+            HB['g']         = f['H_effB'][0,0,:][None,None,:] 
+            ρB['g']         = np.exp(f['ln_ρB'][0,0,:][None,None,:])
+            TB['g']         = f['TB'][0,0,:][None,None,:]
+            inv_TB['g']     = 1/TB['g']
+            inv_PeS['g']  = f['inv_Pe_radS'][0,0,:][None,None,:] 
+            ln_ρS['g']      = f['ln_ρS'][0,0,:][None,None,:]
+            ln_TS['g']      = f['ln_TS'][0,0,:][None,None,:]
+            HS['g']          = f['H_effS'][0,0,:][None,None,:]
+            ρS['g']         = np.exp(f['ln_ρS'][0,0,:][None,None,:])
+            TS['g']         = f['TS'][0,0,:][None,None,:]
             inv_TS['g']     = 1/TS['g']
 
         #Revert to scales=1
@@ -510,9 +510,7 @@ if nrB_hi is not None and nrS_hi is not None:
 #
 #    return vel_dual
 
-#only solve ell = 1 one right now.
 from scipy.interpolate import interp1d
-
 for i in range(Lmax):
     ell = i + 1
     logger.info('solving lores eigenvalue with nr = ({}, {})'.format(nrB, nrS))
@@ -523,7 +521,6 @@ for i in range(Lmax):
         if ss_ell == ell and ss_m == 1:
             subsystem1 = sbsys
             break
-    print(solver1.eigenvalues)
 
 
     if nrB_hi is not None and nrS_hi is not None:
@@ -536,134 +533,123 @@ for i in range(Lmax):
                 subsystems2.append(subsystem)
                 break
         logger.info('cleaning bad eigenvalues')
+        #TODO: fix check_eigen
         solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
 
-#TODO: fix old post-evp processing so it works in modern-d3
-#    depths = []
-#    for om in solver1.eigenvalues.real:
-#        Lambda = np.sqrt(ell*(ell+1))
-#        kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_s))
-#        v_group = (om/tau_s) / kr_cm
-#        inv_Pe = np.ones_like(r_mesa) / Pe
-#        inv_Pe[r_mesa/L_mesa > 1.1] = interp1d(namespace1['rS'].flatten(), namespace1['inv_PeS']['g'][0,0,:], bounds_error=False, fill_value='extrapolate')(r_mesa[r_mesa/L_mesa > 1.1]/L_mesa)
-#        k_rad = (L_mesa**2 / tau_s) * inv_Pe
-#        gamma_rad = k_rad * kr_cm**2
-#        depth_integrand = np.gradient(r_mesa) * gamma_rad/v_group
-#
-#        opt_depth = 0
-#        for i, rv in enumerate(r_mesa):
-#            if rv/L_mesa > 1.0 and rv/L_mesa < r_outer:
-#                opt_depth += depth_integrand[i]
-#        depths.append(opt_depth)
-#
-#        
-#
-#    bS = namespace1['bS']
-#    bB = namespace1['bB']
-#    ρS = namespace1['ρS']
-#    ρB = namespace1['ρB']
-#    ρ  = np.concatenate((ρB['g'][0,0,:], ρS['g'][0,0,:]))
-#    pS = namespace1['pS']
-#    pB = namespace1['pB']
-#    uS = namespace1['uS']
-#    uB = namespace1['uB']
-#    s1S = namespace1['s1S']
-#    s1B = namespace1['s1B']
-#    for f in [ρS, ρB, uB, uS, s1S, s1B]:
-#        f.require_scales((1,1,1))
-#    pomega_hat_B = pB - 0.5*dot(uB,uB)
-#    pomega_hat_S = pS - 0.5*dot(uS,uS)
-#
-#    ball_avg = BallVolumeAverager(s1B)
-#    shell_avg = ShellVolumeAverager(s1S)
-#    s1_surf = s1S(r=r_outer)
-#
-#    KEB  = field.Field(dist=d, bases=(bB,), dtype=dtype)
-#    KES  = field.Field(dist=d, bases=(bS,), dtype=dtype)
-#
-#    integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
-#    s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
-#    velocity_eigenfunctions = []
-#    entropy_eigenfunctions = []
-#    wave_flux_eigenfunctions = []
-#
-#    subsystem = subsystem1
-#    print('using subsystem ', subsystem.group, ' for eigenvectors')
-#    for i, e in enumerate(solver1.eigenvalues):
-#        good = (shell_ell1 == ell)*(shell_m1 == subsystem.group[0])
-#        solver1.set_state(i, subsystem)
-#
-#        #Get eigenvectors
-#        pomB = pomega_hat_B.evaluate()
-#        pomS = pomega_hat_S.evaluate()
-#        for f in [uB, uS, s1B, s1S, pomB, pomS]:
-#            f['c']
-#            f.towards_grid_space()
-#        ef_uB_pm = uB.data[:,good,:].squeeze()
-#        ef_uS_pm = uS.data[:,good,:].squeeze()
-#        ef_s1B = s1B.data[good,:].squeeze()
-#        ef_s1S = s1S.data[good,:].squeeze()
-#        ef_pomB = s1B.data[good,:].squeeze()
-#        ef_pomS = s1S.data[good,:].squeeze()
-#
-#        #normalize & store eigenvectors
-#        shift = np.max((np.abs(ef_uB_pm[2,:]).max(), np.abs(ef_uS_pm[2,:]).max()))
-#        for data in [ef_uB_pm, ef_uS_pm, ef_s1B, ef_s1S, ef_pomB, ef_pomS]:
-#            data /= shift
-#
-#        ef_uB = np.zeros_like(ef_uB_pm)
-#        ef_uS = np.zeros_like(ef_uS_pm)
-#        for u, u_pm in zip((ef_uB, ef_uS), (ef_uB_pm, ef_uS_pm)):
-#            u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
-#            u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
-#            u[2,:] = u_pm[2,:]
-#
-#        full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
-#        full_ef_s1 = np.concatenate((ef_s1B, ef_s1S), axis=-1)
-#        velocity_eigenfunctions.append(full_ef_u)
-#        entropy_eigenfunctions.append(full_ef_s1)
-#
-#        #Wave flux
-#        wave_fluxB = (ρB['g'][0,0,:]*ef_uB[2,:]*np.conj(ef_pomB)).squeeze()
-#        wave_fluxS = (ρS['g'][0,0,:]*ef_uS[2,:]*np.conj(ef_pomS)).squeeze()
-#        wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
-#        wave_flux_eigenfunctions.append(wave_flux_eig)
-#
-#        #Kinetic energy
-#        KES['g'] = (ρS['g'][0,0,:]*np.sum(ef_uS*np.conj(ef_uS), axis=0)).real/2
-#        KEB['g'] = (ρB['g'][0,0,:]*np.sum(ef_uB*np.conj(ef_uB), axis=0)).real/2
-#        integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
-#        integ_energies[i] = integ_energy.real / 2 #factor of 2 accounts for spherical harmonic integration
-##        KES['g'] = (ρS['g'][0,0,:]*np.sum(uS['g']*np.conj(uS['g']), axis=0)).real/2/shift**2
-##        KEB['g'] = (ρB['g'][0,0,:]*np.sum(uB['g']*np.conj(uB['g']), axis=0)).real/2/shift**2
-##        old_integ_energy = ball_avg(KEB)[0]*ball_avg.volume + shell_avg(KES)[0]*shell_avg.volume
-#
-#        #Surface entropy perturbations
-##        s1_surf_value = np.sqrt(np.sum(np.abs(s1_surf.evaluate()['g']/shift)**2*weight1)/np.sum(weight1))
-##        old_s1_amplitudes = s1_surf_value.real
-#        s1S['g'] = 0
-#        s1S['c']
-#        s1S['g'] = ef_s1S
-#        s1_surf_vals = s1_surf.evaluate()['g'] / np.sqrt(2) #sqrt(2) accounts for spherical harmonic integration
-#        s1_amplitudes[i] = np.abs(s1_surf_vals.max())
-##        print(subsystem.group, s1_amplitudes[i], old_s1_amplitudes, integ_energies[i], old_integ_energy, s1_amplitudes[i]/old_s1_amplitudes, integ_energies[i]/old_integ_energy)
-#
-#    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-#        f['good_evalues'] = solver1.eigenvalues
-#        f['good_omegas']  = solver1.eigenvalues.real
-#        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
-#        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
-#        f['s1_amplitudes']  = s1_amplitudes
-#        f['integ_energies'] = integ_energies
-#        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
-#        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
-#        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
-#        f['rB'] = namespace1['rB']
-#        f['rS'] = namespace1['rS']
-#        f['ρB'] = namespace1['ρB']['g']
-#        f['ρS'] = namespace1['ρS']['g']
-#        f['depths'] = np.array(depths)
-#
+    #Calculate 'optical depths' of each mode.
+    depths = []
+    for om in solver1.eigenvalues.real:
+        Lambda = np.sqrt(ell*(ell+1))
+        kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_s))
+        v_group = (om/tau_s) / kr_cm
+        inv_Pe = np.ones_like(r_mesa) / Pe
+        inv_Pe[r_mesa/L_mesa > 1.1] = interp1d(namespace1['rS'].flatten(), namespace1['inv_PeS']['g'][0,0,:], bounds_error=False, fill_value='extrapolate')(r_mesa[r_mesa/L_mesa > 1.1]/L_mesa)
+        k_rad = (L_mesa**2 / tau_s) * inv_Pe
+        gamma_rad = k_rad * kr_cm**2
+        depth_integrand = np.gradient(r_mesa) * gamma_rad/v_group
+
+        opt_depth = 0
+        for i, rv in enumerate(r_mesa):
+            if rv/L_mesa > 1.0 and rv/L_mesa < r_outer:
+                opt_depth += depth_integrand[i]
+        depths.append(opt_depth)
+
+    needed_fields = ['ρ', 'u', 'p', 's1']
+    ρB, uB, pB, s1B = [namespace1[f + 'B'] for f in needed_fields]
+    ρS, uS, pS, s1S = [namespace1[f + 'S'] for f in needed_fields]
+    pomega_hat_B = pB - 0.5*d3.dot(uB,uB)
+    pomega_hat_S = pS - 0.5*d3.dot(uS,uS)
+
+    basisB, basisS = namespace1['basisB'], namespace1['basisS']
+    dist, coords = namespace1['dist'], namespace1['coords']
+    shell_ell, shell_m = namespace1['shell_ell'], namespace1['shell_m']
+
+    vol_int = lambda A: d3.Integrate(A, coords)
+    s1_surf = s1S(r=r_outer)
+    KEB  = dist.Field(bases=basisB, name="KEB")
+    KES  = dist.Field(bases=basisS, name="KES")
+    integ_energy_op = vol_int(KEB) + vol_int(KES)
+
+    ρ  = np.concatenate((ρB['g'][0,0,:], ρS['g'][0,0,:]))
+
+    integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
+    s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
+    velocity_eigenfunctions = []
+    entropy_eigenfunctions = []
+    wave_flux_eigenfunctions = []
+
+    subsystem = subsystem1
+    print('using subsystem ', subsystem.group, ' for eigenvectors')
+    for i, e in enumerate(solver1.eigenvalues):
+        good = (shell_ell == ell)*(shell_m == subsystem.group[0])
+        solver1.set_state(i, subsystem)
+
+        #Get eigenvectors
+        pomB = pomega_hat_B.evaluate()
+        pomS = pomega_hat_S.evaluate()
+        for f in [uB, uS, s1B, s1S, pomB, pomS]:
+            f['c']
+            f.towards_grid_space()
+        ef_uB_pm = uB.data[:,good,:].squeeze()
+        ef_uS_pm = uS.data[:,good,:].squeeze()
+        ef_s1B = s1B.data[good,:].squeeze()
+        ef_s1S = s1S.data[good,:].squeeze()
+        ef_pomB = s1B.data[good,:].squeeze()
+        ef_pomS = s1S.data[good,:].squeeze()
+
+        #normalize & store eigenvectors
+        shift = np.max((np.abs(ef_uB_pm[2,:]).max(), np.abs(ef_uS_pm[2,:]).max()))
+        for data in [ef_uB_pm, ef_uS_pm, ef_s1B, ef_s1S, ef_pomB, ef_pomS]:
+            data /= shift
+
+        ef_uB = np.zeros_like(ef_uB_pm)
+        ef_uS = np.zeros_like(ef_uS_pm)
+        for u, u_pm in zip((ef_uB, ef_uS), (ef_uB_pm, ef_uS_pm)):
+            u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+            u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
+            u[2,:] = u_pm[2,:]
+
+        full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
+        full_ef_s1 = np.concatenate((ef_s1B, ef_s1S), axis=-1)
+        velocity_eigenfunctions.append(full_ef_u)
+        entropy_eigenfunctions.append(full_ef_s1)
+
+        #Wave flux
+        wave_fluxB = (ρB['g'][0,0,:]*ef_uB[2,:]*np.conj(ef_pomB)).squeeze()
+        wave_fluxS = (ρS['g'][0,0,:]*ef_uS[2,:]*np.conj(ef_pomS)).squeeze()
+        wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
+        wave_flux_eigenfunctions.append(wave_flux_eig)
+
+        #Kinetic energy
+        KES['g'] = (ρS['g'][0,0,:]*np.sum(ef_uS*np.conj(ef_uS), axis=0)).real/2
+        KEB['g'] = (ρB['g'][0,0,:]*np.sum(ef_uB*np.conj(ef_uB), axis=0)).real/2
+        integ_energy = integ_energy_op.evaluate()
+        integ_energies[i] = integ_energy['g'].min().real / 2 #factor of 2 accounts for spherical harmonic integration (we're treating the field like an ell = 0 one)
+
+        #Surface entropy perturbations
+        s1S['g'] = 0
+        s1S['c']
+        s1S['g'] = ef_s1S
+        s1_surf_vals = s1_surf.evaluate()['g'] / np.sqrt(2) #sqrt(2) accounts for spherical harmonic integration
+        s1_amplitudes[i] = np.abs(s1_surf_vals.max())
+
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['good_evalues'] = solver1.eigenvalues
+        f['good_omegas']  = solver1.eigenvalues.real
+        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
+        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
+        f['s1_amplitudes']  = s1_amplitudes
+        f['integ_energies'] = integ_energies
+        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
+        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
+        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
+        f['rB'] = namespace1['rB']
+        f['rS'] = namespace1['rS']
+        f['ρB'] = namespace1['ρB']['g']
+        f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
+
+    #TODO: Fix dual calculation
 #    velocity_duals = calculate_duals(velocity_eigenfunctions, ρ)
 #    with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
 #        f['good_evalues'] = solver1.eigenvalues
@@ -681,6 +667,5 @@ for i in range(Lmax):
 #        f['ρB'] = namespace1['ρB']['g']
 #        f['ρS'] = namespace1['ρS']['g']
 #        f['depths'] = np.array(depths)
-#
-#
-#    gc.collect()
+
+    gc.collect()
