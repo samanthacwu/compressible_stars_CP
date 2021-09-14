@@ -36,7 +36,7 @@ from scipy import sparse
 from mpi4py import MPI
 from scipy.interpolate import interp1d
 
-from plotpal.file_reader import SingleFiletypePlotter as SFP
+from plotpal.file_reader import SingleTypeReader as SR
 import matplotlib.pyplot as plt
 
 import logging
@@ -47,8 +47,8 @@ from dedalus.tools.config import config
 from power_spectrum_functions import clean_cfft, normalize_cfft_power
 
 args = docopt(__doc__)
-res = re.compile('(.*)\(r=(.*)\)')
-resolution = re.compile('(.*)x(.*)')
+task_str = re.compile('(.*)\(r=(.*)\)')
+resolution = re.compile('(.*)x(.*)x(.*)')
 
 # Read in master output directory
 root_dirs    = args['<root_dirs>']
@@ -60,7 +60,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B63_S63_Re1e4.h5'
+star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
 with h5py.File(star_file, 'r') as f:
     rB = f['rB'][()]
     rS = f['rS'][()]
@@ -69,84 +69,101 @@ with h5py.File(star_file, 'r') as f:
     r = np.concatenate((rB.flatten(), rS.flatten()))
     ρ = np.concatenate((ρB.flatten(), ρS.flatten()))
     rho_func = interp1d(r,ρ)
-    tau = f['tau'][()]/(60*60*24)
+    tau_sec= f['tau'][()]
+    tau = tau_sec/(60*60*24)
     r_outer = f['r_outer'][()]
     radius = r_outer * f['L'][()]
     #Entropy units are erg/K/g
     s_c = f['s_c'][()]
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
+    N2max_shell = f['N2max_shell'][()]
+    ρ_rcb = rho_func(1)
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'
 plotters = []
 full_out_dirs = []
-L_res = []
+res = []
+Re = []
+wave_fluxes = []
+ells_list = []
+freqs = []
+rotation = []
 for root_dir in root_dirs:
     for piece in root_dir.split('_'):
         if resolution.match(piece):
-            L_res.append(int(piece.split('x')[0]))
+            res.append(piece)
             break
+        if 'Re' in piece:
+            Re.append(float(piece.split('Re')[-1]))
+        if 'rotation' in piece:
+                rotation.append(piece.split('rotation')[-1])
+    if len(rotation) < len(Re):
+            rotation.append(None)
     full_out_dir = '{}/{}'.format(root_dir, out_dir)
-    plotter = SFP(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
+    plotter = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
     with h5py.File(plotter.files[0], 'r') as f:
-        fields = list(f.keys())
-    fields.remove('time')
-    fields.remove('ells')
-    fields.remove('ms')
+        fields = list(f['tasks'].keys())
     radii = []
     for f in fields:
-        if res.match(f):
+        if task_str.match(f):
             radius = float(f.split('r=')[-1].split(')')[0])
             if radius not in radii:
                 radii.append(radius)
     plotters.append(plotter)
     full_out_dirs.append(full_out_dir)
+    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+        freqs.append(rf['real_freqs'][()])
+#        freqs_inv_day.append(rf['real_freqs_inv_day'][()])
+        ells_list.append(rf['ells'][:,:,0])
+        wave_fluxes.append(rf['wave_flux(r=1.05)'][()])
+
+u_r = []
+for i in range(len(ells_list)):
+    u_r.append(np.sqrt(2*np.sqrt(ells_list[i]*(ells_list[i]+1)) * wave_fluxes[i] / (1 * ρ_rcb * np.sqrt(N2plateau))))
+print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2plateau)))
+
 
 fig = plt.figure()
-freqs_for_dfdell = [0.2, 0.5, 1]
+freqs_for_dfdell = [1, 5, 8]
 for f in freqs_for_dfdell:
+    print('plotting f = {}'.format(f))
     for i, full_out_dir in enumerate(full_out_dirs):
-        with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-            freqs = rf['real_freqs_inv_day'][()]
-            ells = rf['ells'][()].flatten()
-            print('plotting f = {}'.format(f))
-            f_ind = np.argmin(np.abs(freqs - f))
-            for radius in radii:
-                if radius != 1.15: continue
-                wave_flux = rf['wave_flux(r={})'.format(radius)][f_ind, :]
-                plt.loglog(ells, ells*wave_flux, label='r={}, Lmax={}'.format(radius, L_res[i]))
-                shift = (ells*wave_flux)[ells == 2]
-            if i == 0:
-                plt.loglog(ells, shift*(ells/2)**4, c='k', label=r'$\ell^4$')
-            plt.legend(loc='best')
-            plt.title('f = {} 1/day'.format(f))
-            plt.xlabel(r'$\ell$')
-            plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
-            plt.ylim(1e-25, 1e-9)
-            plt.xlim(1, ells.max())
-    fig.savefig('./scratch/comparison_ell_spectrum_freq{}_invday.png'.format(f), dpi=300, bbox_inches='tight')
+        f_ind = np.argmin(np.abs(freqs[i] - f))
+        wave_flux = wave_fluxes[i][f_ind, :]
+        ells = ells_list[i].flatten()
+        plt.loglog(ells, ells*wave_flux/ells**5, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        shift = (ells*wave_flux)[ells == 2]
+        plt.legend(loc='best')
+        plt.title('f = {} 1/day'.format(f))
+        plt.xlabel(r'$\ell$')
+        plt.ylabel(r'$\ell^{-5}\,\frac{\partial^2 F}{\partial\ln\ell}$')
+        plt.ylim(1e-20, 1e-11)
+#        plt.ylim(1e-25, 1e-9)
+        plt.xlim(1, ells.max())
+    fig.savefig('./scratch/comparison_ell_spectrum_freq{}.png'.format(f), dpi=300, bbox_inches='tight')
     plt.clf()
     
  
 for ell in range(11):
+    print('plotting ell = {}'.format(ell))
     for i, full_out_dir in enumerate(full_out_dirs):
         if ell == 0: continue
-        print('plotting ell = {}'.format(ell))
-        with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-            freqs = rf['real_freqs_inv_day'][()]
-            for radius in radii:
-                if radius != 1.15: continue
-                wave_flux = rf['wave_flux(r={})'.format(radius)][:,ell]
-                plt.loglog(freqs, freqs*wave_flux, label='r={}, Lmax={}'.format(radius, L_res[i]))
-                shift = (freqs*wave_flux)[freqs > 0.1][0]
-        if i == 0:
-            plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
-            plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 0.1][0])**(-2), c='grey', label=r'$f^{-2}$')
+        wave_flux = wave_fluxes[i][:,ell]
+        freq = freqs[i]
+        plot = plt.loglog(freq, freq*wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+#        plt.loglog(freq, freq*wave_flux/(freq**(-13/2)), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        shift = (freq*wave_flux)[freq > 1][0]
+        if rotation[i] is not None:
+                Ω = tau * 2*np.pi / float(rotation[i])
+                plt.axvline(Ω / (2*np.pi), color=plot[-1]._color, ls='--')
+                plt.axvline(tau_sec*np.sqrt(N2max_shell) / (2*np.pi), color=plot[-1]._color)
         plt.legend(loc='best')
         plt.title('ell={}'.format(ell))
-        plt.xlabel('freqs (1/day)')
+        plt.xlabel('freq (sim units)')
         plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
-        plt.ylim(1e-25, 1e-9)
+#        plt.ylabel(r'$f^{-13/2}\frac{\partial^2 F}{\partial \ln f}$')
+        plt.ylim(1e-14, 1e-7)
     fig.savefig('./scratch/freq_spectrum_ell{}.png'.format(ell), dpi=300, bbox_inches='tight')
     plt.clf()
     
