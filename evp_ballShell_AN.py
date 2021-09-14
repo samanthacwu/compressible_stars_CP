@@ -386,102 +386,87 @@ solver1, namespace1 = build_solver(resolutionB, resolutionS, r_inner, r_outer, m
 if nrB_hi is not None and nrS_hi is not None:
     solver2, namespace2 = build_solver(resolutionB_hi, resolutionS_hi, r_inner, r_outer, mesa_file_hi)
 
-#def check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2, cutoff=1e-2):
-#    """
-#    Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
-#    Only keep the solutions that match to within the specified cutoff between the two cases.
-#    """
-#    good_values1 = []
-#    good_values2 = []
-#    cutoff2 = np.sqrt(cutoff)
-#
-#    ρB2 = namespace2['ρB']
-#    ρS2 = namespace2['ρS']
-#    bB1 = namespace1['bB']
-#    bS1 = namespace1['bS']
-#    bB2 = namespace2['bB']
-#    bS2 = namespace2['bS']
-#    uB1 = namespace1['uB']
-#    uS1 = namespace1['uS']
-#    uB2 = namespace2['uB']
-#    uS2 = namespace2['uS']
-##    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, 1))
-#    φB1,  θB1,  rB1  = bB1.local_grids((1, 1, (NmaxB_hires)/(NmaxB)))
-#    φB2,  θB2,  rB2  = bB2.local_grids((1, 1, 1))
-#    φS1_0,  θS1_0,  rS1_0  = bS1.local_grids((1, 1, 1))
-#    φS1,  θS1,  rS1  = bS1.local_grids((1, 1, (NmaxS_hires)/(NmaxS)))
-#    φS2,  θS2,  rS2  = bS2.local_grids((1, 1, 1))
-#    weight_rB2 = bB2.radial_basis.local_weights(dealias)
-#    weight_rS2 = bS2.radial_basis.local_weights(dealias)*rS2**2
-#
-#    radial_weights_2 = np.concatenate((weight_rB2.flatten(), weight_rS2.flatten()), axis=-1)
-#    ρ2 = np.concatenate((ρB2['g'][0,0,:].flatten(), ρS2['g'][0,0,:].flatten()))
-#    r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
-#    r2 = np.concatenate((rB2.flatten(), rS2.flatten()))
-#    good1 = (shell_ell1 == subsystems1[0].group[1])*(shell_m1 == subsystems1[0].group[0])
-#    good2 = (shell_ell2 == subsystems2[0].group[1])*(shell_m2 == subsystems2[0].group[0])
-#
-#    for i, v1 in enumerate(solver1.eigenvalues):
-#        for j, v2 in enumerate(solver2.eigenvalues):
-#            real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
-#            goodness = np.abs(v1 - v2)/np.abs(v1).min()
-#            if goodness < cutoff:# or (j == 0 and (i == 2 or i == 3)):# and (np.abs(v1.imag - v2.imag)/np.abs(v1.imag)).min() < 1e-1:
-#                print(v1/(2*np.pi), v2/(2*np.pi))
-#                
-##                print((np.abs(v1 - v2)/np.abs(v1)).min())
-#                solver1.set_state(i, subsystems1[0])
-#                solver2.set_state(j, subsystems2[0])
-#                uB1.require_scales((1, 1, (NmaxB_hires)/(NmaxB)))
-#                uS1.require_scales((1, 1, (NmaxS_hires)/(NmaxS)))
-#
-#                #Get eigenvectors
-#                for f in [uB1, uS1, uB2, uS2]:
-#                    f['c']
-#                    f.towards_grid_space()
-#                ef_uB1_pm = uB1.data[:,good1,:].squeeze()
-#                ef_uS1_pm = uS1.data[:,good1,:].squeeze()
-#                ef_uB2_pm = uB2.data[:,good2,:].squeeze()
-#                ef_uS2_pm = uS2.data[:,good2,:].squeeze()
-#
-#                ef_u1_pm = np.concatenate((ef_uB1_pm, ef_uS1_pm), axis=-1)
-#                ef_u2_pm = np.concatenate((ef_uB2_pm, ef_uS2_pm), axis=-1)
-#
-#                ix1 = np.argmax(np.abs(ef_u1_pm[2,:]))
-#                ef_u1_pm /= ef_u1_pm[2,ix1]
-#                ix1 = np.argmax(np.abs(ef_u2_pm[2,:]))
-#                ef_u2_pm /= ef_u2_pm[2,ix1]
-#
-#                ef_u1 = np.zeros_like(ef_u1_pm)
-#                ef_u2 = np.zeros_like(ef_u2_pm)
-#                for u, u_pm in zip((ef_u1, ef_u2), (ef_u1_pm, ef_u2_pm)):
-#                    u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
-#                    u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
-#                    u[2,:] = u_pm[2,:]
-#
-#                #If mode KE is inside of the convection zone then it's a bad mode.
-#                mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
-#                cz_KE = np.sum((mode_KE*radial_weights_2)[r2 <= 1])
-#                tot_KE = np.sum((mode_KE*radial_weights_2))
-##                plt.plot(r1, ef_u1[0,:].real, c='k')
-##                plt.plot(r2, ef_u2[0,:].real, c='k', ls='--')
-##                plt.plot(r1, ef_u1[0,:].imag, c='r')
-##                plt.plot(r2, ef_u2[0,:].imag, c='r', ls='--')
-##                plt.show()
-#
-#                cz_KE_frac = cz_KE/tot_KE
-#                vector_diff = np.max(np.abs(ef_u1 - ef_u2))
-#                print('vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
-#                if vector_diff < cutoff2 and cz_KE_frac < 0.5:
-#                    good_values1.append(i)
-#                    good_values2.append(j)
-#
-#
-#    solver1.eigenvalues = solver1.eigenvalues[good_values1]
-#    solver2.eigenvalues = solver2.eigenvalues[good_values2]
-#    solver1.eigenvectors = solver1.eigenvectors[:, good_values1]
-#    solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
-#    return solver1, solver2
-#
+def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2, cutoff=1e-2):
+    """
+    Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
+    Only keep the solutions that match to within the specified cutoff between the two cases.
+    """
+    good_values1 = []
+    good_values2 = []
+    cutoff2 = np.sqrt(cutoff)
+
+    needed_vars = ['ρ', 'basis', 'u', 'r']
+    ρB1, basisB1, uB1, rB1 = [namespace1[v+'B'] for v in needed_vars]
+    ρS1, basisS1, uS1, rS1 = [namespace1[v+'S'] for v in needed_vars]
+    ρB2, basisB2, uB2, rB2 = [namespace2[v+'B'] for v in needed_vars]
+    ρS2, basisS2, uS2, rS2 = [namespace2[v+'S'] for v in needed_vars]
+
+    shell_ell1, shell_m1 = namespace1['shell_ell'], namespace1['shell_m']
+    shell_ell2, shell_m2 = namespace2['shell_ell'], namespace2['shell_m']
+
+    ρ2 = np.concatenate((ρB2['g'][0,0,:].flatten(), ρS2['g'][0,0,:].flatten()))
+    r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
+    r2 = np.concatenate((rB2.flatten(), rS2.flatten()))
+    good1 = (shell_ell1 == subsystem1.group[1])*(shell_m1 == subsystem1.group[0])
+    good2 = (shell_ell2 == subsystem2.group[1])*(shell_m2 == subsystem2.group[0])
+
+    rough_dr2 = np.gradient(r2, edge_order=2)
+
+    for i, v1 in enumerate(solver1.eigenvalues):
+        for j, v2 in enumerate(solver2.eigenvalues):
+            real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
+            goodness = np.abs(v1 - v2)/np.abs(v1).min()
+            if goodness < cutoff:# or (j == 0 and (i == 2 or i == 3)):# and (np.abs(v1.imag - v2.imag)/np.abs(v1.imag)).min() < 1e-1:
+                print(v1/(2*np.pi), v2/(2*np.pi))
+                
+#                print((np.abs(v1 - v2)/np.abs(v1)).min())
+                solver1.set_state(i, subsystem1)
+                solver2.set_state(j, subsystem2)
+                uB1.require_scales((1, 1, (nrB_hi)/(nrB)))
+                uS1.require_scales((1, 1, (nrS_hi)/(nrS)))
+
+                #Get eigenvectors
+                for f in [uB1, uS1, uB2, uS2]:
+                    f['c']
+                    f.towards_grid_space()
+                ef_uB1_pm = uB1.data[:,good1,:].squeeze()
+                ef_uS1_pm = uS1.data[:,good1,:].squeeze()
+                ef_uB2_pm = uB2.data[:,good2,:].squeeze()
+                ef_uS2_pm = uS2.data[:,good2,:].squeeze()
+
+                ef_u1_pm = np.concatenate((ef_uB1_pm, ef_uS1_pm), axis=-1)
+                ef_u2_pm = np.concatenate((ef_uB2_pm, ef_uS2_pm), axis=-1)
+
+                ix1 = np.argmax(np.abs(ef_u1_pm[2,:]))
+                ef_u1_pm /= ef_u1_pm[2,ix1]
+                ix1 = np.argmax(np.abs(ef_u2_pm[2,:]))
+                ef_u2_pm /= ef_u2_pm[2,ix1]
+
+                ef_u1 = np.zeros_like(ef_u1_pm)
+                ef_u2 = np.zeros_like(ef_u2_pm)
+                for u, u_pm in zip((ef_u1, ef_u2), (ef_u1_pm, ef_u2_pm)):
+                    u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
+                    u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
+                    u[2,:] = u_pm[2,:]
+
+                #If mode KE is inside of the convection zone then it's a bad mode.
+                mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
+                cz_KE = np.sum((mode_KE*4*np.pi*r2**2*rough_dr2)[r2 <= 1])
+                tot_KE = np.sum((mode_KE*4*np.pi*r2**2*rough_dr2))
+                cz_KE_frac = cz_KE/tot_KE
+                vector_diff = np.max(np.abs(ef_u1 - ef_u2))
+                print('vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
+                if vector_diff < cutoff2 and cz_KE_frac < 0.5:
+                    good_values1.append(i)
+                    good_values2.append(j)
+
+
+    solver1.eigenvalues = solver1.eigenvalues[good_values1]
+    solver2.eigenvalues = solver2.eigenvalues[good_values2]
+    solver1.eigenvectors = solver1.eigenvectors[:, good_values1]
+    solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
+    return solver1, solver2
+
 #r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
 #radial_weights_1 = np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()), axis=-1)
 #def IP(velocity1, velocity2, density):
@@ -522,19 +507,17 @@ for i in range(Lmax):
             subsystem1 = sbsys
             break
 
-
     if nrB_hi is not None and nrS_hi is not None:
         logger.info('solving hires eigenvalue with nr ({}, {})'.format(nrB_hi, nrS_hi))
         solver2 = solve_dense(solver2, ell)
-        subsystems2 = []
-        for subsystem in solver2.eigenvalue_subproblem.subsystems:
-            ss_m, ss_ell, r_couple = subsystem.group
+        subsystem2 = None
+        for sbsys in solver2.eigenvalue_subproblem.subsystems:
+            ss_m, ss_ell, r_couple = sbsys.group
             if ss_ell == ell and ss_m == 1:
-                subsystems2.append(subsystem)
+                subsystem2 = sbsys
                 break
         logger.info('cleaning bad eigenvalues')
-        #TODO: fix check_eigen
-        solver1, solver2 = check_eigen(solver1, solver2, subsystems1, subsystems2, namespace1, namespace2)
+        solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
 
     #Calculate 'optical depths' of each mode.
     depths = []
