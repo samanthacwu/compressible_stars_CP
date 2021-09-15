@@ -467,33 +467,37 @@ def check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2
     solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
     return solver1, solver2
 
-#r1 = np.concatenate((rB1.flatten(), rS1.flatten()))
-#radial_weights_1 = np.concatenate((weight_rB1.flatten(), weight_rS1.flatten()), axis=-1)
-#def IP(velocity1, velocity2, density):
-#    """ Integrate the bra-ket of two eigenfunctions of velocity. """
-#    int_field = np.sum(velocity1*np.conj(velocity2), axis=0)
-#    return np.sum(density*int_field*full_weight_1)
-#
-#def calculate_duals(velocity_list, density):
-#    """
-#    Calculate the dual basis of the velocity eigenvectors.
-#    """
-#    velocity_list = np.array(velocity_list)
-#    n_modes = velocity_list.shape[0]
-#    IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
-#    for i in range(n_modes):
-#        if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
-#        for j in range(n_modes):
-#            IP_matrix[i,j] = IP(velocity_list[i], velocity_list[j], density)
-#    
-#    print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
-#    IP_inv = np.linalg.inv(IP_matrix)
-#
-#    vel_dual = np.zeros_like(velocity_list)
-#    for i in range(3):
-#        vel_dual[:,i,:] = np.einsum('ij,ik->kj', velocity_list[:,i,:], np.conj(IP_inv))
-#
-#    return vel_dual
+def calculate_duals(velocity_listB, velocity_listS, rhoB, rhoS, work_fieldB, work_fieldS, coord):
+    """
+    Calculate the dual basis of the velocity eigenvectors.
+    """
+    int_field = d3.Integrate(rhoB*work_fieldB, coord) + d3.Integrate(rhoS*work_fieldS, coord)
+    def IP(velocities1, velocities2):
+        """ Integrate the bra-ket of two eigenfunctions of velocity. """
+        work_fieldB['g'] = np.sum(velocities1[0]*np.conj(velocities2[0]), axis=0)
+        work_fieldS['g'] = np.sum(velocities1[1]*np.conj(velocities2[1]), axis=0)
+        return int_field.evaluate()['g'].min()
+
+
+    velocity_listB = np.array(velocity_listB)
+    velocity_listS = np.array(velocity_listS)
+    n_modes = velocity_listB.shape[0]
+    IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+    for i in range(n_modes):
+        if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
+        for j in range(n_modes):
+            IP_matrix[i,j] = IP((velocity_listB[i], velocity_listS[i]), (velocity_listB[j], velocity_listS[j]))
+    
+    print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
+    IP_inv = np.linalg.inv(IP_matrix)
+
+    vel_dualB = np.zeros_like(velocity_listB)
+    vel_dualS = np.zeros_like(velocity_listS)
+    for i in range(3):
+        vel_dualB[:,i,:] = np.einsum('ij,ik->kj', velocity_listB[:,i,:], np.conj(IP_inv))
+        vel_dualS[:,i,:] = np.einsum('ij,ik->kj', velocity_listS[:,i,:], np.conj(IP_inv))
+
+    return np.concatenate((vel_dualB, vel_dualS), axis=-1)
 
 from scipy.interpolate import interp1d
 for i in range(Lmax):
@@ -553,11 +557,11 @@ for i in range(Lmax):
     KES  = dist.Field(bases=basisS, name="KES")
     integ_energy_op = vol_int(KEB) + vol_int(KES)
 
-    ρ  = np.concatenate((ρB['g'][0,0,:], ρS['g'][0,0,:]))
-
     integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
     s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
     velocity_eigenfunctions = []
+    velocity_eigenfunctionsB = []
+    velocity_eigenfunctionsS = []
     entropy_eigenfunctions = []
     wave_flux_eigenfunctions = []
 
@@ -595,6 +599,8 @@ for i in range(Lmax):
         full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
         full_ef_s1 = np.concatenate((ef_s1B, ef_s1S), axis=-1)
         velocity_eigenfunctions.append(full_ef_u)
+        velocity_eigenfunctionsB.append(ef_uB)
+        velocity_eigenfunctionsS.append(ef_uS)
         entropy_eigenfunctions.append(full_ef_s1)
 
         #Wave flux
@@ -633,22 +639,24 @@ for i in range(Lmax):
         f['depths'] = np.array(depths)
 
     #TODO: Fix dual calculation
-#    velocity_duals = calculate_duals(velocity_eigenfunctions, ρ)
-#    with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
-#        f['good_evalues'] = solver1.eigenvalues
-#        f['good_omegas']  = solver1.eigenvalues.real
-#        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
-#        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
-#        f['s1_amplitudes']  = s1_amplitudes
-#        f['integ_energies'] = integ_energies
-#        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
-#        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
-#        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
-#        f['velocity_duals'] = velocity_duals
-#        f['rB'] = namespace1['rB']
-#        f['rS'] = namespace1['rS']
-#        f['ρB'] = namespace1['ρB']['g']
-#        f['ρS'] = namespace1['ρS']['g']
-#        f['depths'] = np.array(depths)
+    work_fieldB = dist.Field(name='workB', bases=basisB)
+    work_fieldS = dist.Field(name='workB', bases=basisS)
+    velocity_duals = calculate_duals(velocity_eigenfunctionsB, velocity_eigenfunctionsS, ρB, ρS, work_fieldB, work_fieldS, coords)
+    with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['good_evalues'] = solver1.eigenvalues
+        f['good_omegas']  = solver1.eigenvalues.real
+        f['good_evalues_inv_day'] = solver1.eigenvalues/tau
+        f['good_omegas_inv_day']  = solver1.eigenvalues.real/tau
+        f['s1_amplitudes']  = s1_amplitudes
+        f['integ_energies'] = integ_energies
+        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
+        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
+        f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
+        f['velocity_duals'] = velocity_duals
+        f['rB'] = namespace1['rB']
+        f['rS'] = namespace1['rS']
+        f['ρB'] = namespace1['ρB']['g']
+        f['ρS'] = namespace1['ρS']['g']
+        f['depths'] = np.array(depths)
 
     gc.collect()
