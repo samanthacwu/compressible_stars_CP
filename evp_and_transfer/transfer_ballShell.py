@@ -3,6 +3,7 @@ Calculate transfer function to get horizontal velocities at the top of the simul
 
 Usage:
     transfer_ballShell.py <root_dir> [options]
+    transfer_ballShell.py <root_dir> <config>
 
 Options:
     --Lmax=<L>      Maximum L value to calculate [default: 1]
@@ -14,20 +15,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 from scipy import interpolate
+from pathlib import Path
 
 from docopt import docopt
+from configparser import ConfigParser
 args = docopt(__doc__)
+
+# Read in parameters and create output directory
+args   = docopt(__doc__)
+if args['<config>'] is not None: 
+    config_file = Path(args['<config>'])
+    config = ConfigParser()
+    config.read(str(config_file))
+    for n, v in config.items('parameters'):
+        for k in args.keys():
+            if k.split('--')[-1].lower() == n:
+                if v == 'true': v = True
+                args[k] = v
 
 #TODO: fix rho
 if args['--mesa_file'] is not None:
     with h5py.File(args['--mesa_file'], 'r') as mf:
-#        r_mesa = mf['r_mesa'][()]/mf['L'][()]
-#        N2_mesa = mf['N2_mesa'][()]*((60*60*24)/(2*np.pi))**2
-#        S1_mesa = mf['S1_mesa'][()]*(60*60*24)/(2*np.pi)
-#        N2_mesa_full = mf['N2_mesa'][()]
-#        g_mesa  = mf['g_mesa'][()]
-#        cp_mesa = mf['cp_mesa'][()]
-#        pre_PE = g_mesa**2/cp_mesa**2/N2_mesa_full * (mf['tau'][()]*mf['s_c'][()]/mf['L'][()])**2
         tau_s = mf['tau'][()]
         tau = tau_s/(60*60*24)
         rB = mf['rB']
@@ -87,7 +95,7 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 1, 0.1, 0.01]
+    depth_list = [10, 1, 0.1, 0.05, 0.01]
     for j, d_filter in enumerate(depth_list):
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
@@ -111,8 +119,8 @@ for ell in ell_list:
         om1 = 1.1*values.real[0]
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-        r0 = 1.1
-        r1 = r0 + 0.05*r.max()
+        r0 = 1.025
+        r1 = r0 + 0.05#*r.max()
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
 
@@ -146,7 +154,7 @@ for ell in ell_list:
         f['om'] = good_om
         f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
-    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
+#    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
     plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
     plt.xlabel('frequency (sim units)')
     plt.legend()

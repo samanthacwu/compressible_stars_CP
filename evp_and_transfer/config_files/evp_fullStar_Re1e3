@@ -1,0 +1,9 @@
+[parameters]
+L = 1
+NB = 96
+NB_hi = 128
+NS = 96
+NS_hi = 128
+Re = 1e3
+mesa_file = ../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5
+mesa_file_hi = ../mesa_stars/nccs_40msol/ballShell_nccs_B128_S128_Re1e3_de1.5.h5
