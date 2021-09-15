@@ -87,7 +87,8 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    for j, d_filter in enumerate([10, 1, 0.1]):
+    depth_list = [10, 1, 0.1, 0.01]
+    for j, d_filter in enumerate(depth_list):
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
             values = f['good_evalues'][()]
@@ -123,7 +124,7 @@ for ell in ell_list:
 
 
     #    plt.loglog(om, T)
-        plt.loglog(om/(2*np.pi) / tau, np.abs(T)**2*om**(-13/2), lw=3-j, label='depth filter = {}'.format(d_filter))
+        plt.loglog(om/(2*np.pi), np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
         oms.append(om)
         transfers.append(T)
 
@@ -146,8 +147,8 @@ for ell in ell_list:
         f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
     print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
-    plt.loglog(good_om/(2*np.pi) / tau, np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
-    plt.xlabel('frequency 1/day')
+    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+    plt.xlabel('frequency (sim units)')
     plt.legend()
     plt.title("ell = %i" % ell)
 plt.show()
