@@ -127,6 +127,7 @@ if not args['--no_ft']:
             for m in range(data_cube.shape[2]):
                 if m > ell: continue
                 freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
+        transform -= np.mean(transform, axis=0) #remove the temporal average; don't care about it.
         del data_cube
         gc.collect()
 
