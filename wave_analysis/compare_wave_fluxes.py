@@ -81,7 +81,6 @@ with h5py.File(star_file, 'r') as f:
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'
-plotters = []
 full_out_dirs = []
 res = []
 Re = []
@@ -90,6 +89,7 @@ ells_list = []
 freqs = []
 rotation = []
 for root_dir in root_dirs:
+    print('reading {}'.format(root_dir))
     for piece in root_dir.split('_'):
         if resolution.match(piece):
             res.append(piece)
@@ -101,22 +101,12 @@ for root_dir in root_dirs:
     if len(rotation) < len(Re):
             rotation.append(None)
     full_out_dir = '{}/{}'.format(root_dir, out_dir)
-    plotter = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
-    with h5py.File(plotter.files[0], 'r') as f:
-        fields = list(f['tasks'].keys())
-    radii = []
-    for f in fields:
-        if task_str.match(f):
-            radius = float(f.split('r=')[-1].split(')')[0])
-            if radius not in radii:
-                radii.append(radius)
-    plotters.append(plotter)
     full_out_dirs.append(full_out_dir)
-    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+    with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'r') as rf:
         freqs.append(rf['real_freqs'][()])
 #        freqs_inv_day.append(rf['real_freqs_inv_day'][()])
         ells_list.append(rf['ells'][:,:,0])
-        wave_fluxes.append(rf['wave_flux(r=1.05)'][()])
+        wave_fluxes.append(rf['wave_flux'][()])
 
 u_r = []
 for i in range(len(ells_list)):
@@ -125,20 +115,22 @@ print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2plateau)))
 
 
 fig = plt.figure()
-freqs_for_dfdell = [1, 5, 8]
+freqs_for_dfdell = [2, 5, 8]
 for f in freqs_for_dfdell:
     print('plotting f = {}'.format(f))
     for i, full_out_dir in enumerate(full_out_dirs):
         f_ind = np.argmin(np.abs(freqs[i] - f))
         wave_flux = wave_fluxes[i][f_ind, :]
         ells = ells_list[i].flatten()
-        plt.loglog(ells, ells*wave_flux/ells**5, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-        shift = (ells*wave_flux)[ells == 2]
+#        plt.loglog(ells, ells*wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        plt.loglog(ells, wave_flux/ells**4/f**(-13/2), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        shift = (wave_flux)[ells == 2]
         plt.legend(loc='best')
-        plt.title('f = {} 1/day'.format(f))
+        plt.title('f = {} sim units'.format(f))
         plt.xlabel(r'$\ell$')
-        plt.ylabel(r'$\ell^{-5}\,\frac{\partial^2 F}{\partial\ln\ell}$')
-        plt.ylim(1e-20, 1e-11)
+#        plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
+        plt.ylabel(r'$f^{13/2}\ell^{-4}\,F(\omega,\ell)|_\omega$')
+        plt.ylim(1e-16, 1e-11)
 #        plt.ylim(1e-25, 1e-9)
         plt.xlim(1, ells.max())
     fig.savefig('./scratch/comparison_ell_spectrum_freq{}.png'.format(f), dpi=300, bbox_inches='tight')
@@ -151,19 +143,21 @@ for ell in range(11):
         if ell == 0: continue
         wave_flux = wave_fluxes[i][:,ell]
         freq = freqs[i]
-        plot = plt.loglog(freq, freq*wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        plot = plt.loglog(freq, wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        if Re[i] == np.max(Re):
+            shift = (wave_flux)[freq > 2][0] / 2**(-13/2)
+            plt.loglog(freq, shift*freq**(-13/2), c='k', label='({:.3e})'.format(shift) + r'$f^{-13/2}$')
 #        plt.loglog(freq, freq*wave_flux/(freq**(-13/2)), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-        shift = (freq*wave_flux)[freq > 1][0]
         if rotation[i] is not None:
                 Ω = tau * 2*np.pi / float(rotation[i])
                 plt.axvline(Ω / (2*np.pi), color=plot[-1]._color, ls='--')
                 plt.axvline(tau_sec*np.sqrt(N2max_shell) / (2*np.pi), color=plot[-1]._color)
-        plt.legend(loc='best')
+        plt.legend(loc='lower left', fontsize=8)
         plt.title('ell={}'.format(ell))
         plt.xlabel('freq (sim units)')
-        plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
+        plt.ylabel(r'$F(\omega,\ell)|_\ell$')
 #        plt.ylabel(r'$f^{-13/2}\frac{\partial^2 F}{\partial \ln f}$')
-        plt.ylim(1e-14, 1e-7)
+        plt.ylim(1e-20, 1e-7)
     fig.savefig('./scratch/freq_spectrum_ell{}.png'.format(ell), dpi=300, bbox_inches='tight')
     plt.clf()
     

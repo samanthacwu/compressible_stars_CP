@@ -8,7 +8,7 @@ Usage:
     spherical_harmonic_transform.py <root_dir> [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: surface_shell_slices]
+    --data_dir=<dir>                    Name of data handler directory [default: wave_shell_slices]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot

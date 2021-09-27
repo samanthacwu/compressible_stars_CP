@@ -83,7 +83,7 @@ else:
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
 reader = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
 if args['--field'] is None:
-    with h5py.File(plotter.files[0], 'r') as f:
+    with h5py.File(reader.files[0], 'r') as f:
         fields = list(f['tasks'].keys())
 else:
     fields = [args['--field'],]
@@ -134,7 +134,7 @@ if not args['--plot_only']:
         freqs, full_power = normalize_cfft_power(freqs0, transform)
         power_per_ell = np.sum(full_power, axis=2) #sum over m's
         with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r+') as wf:
-            tasks['{}_power_per_ell'.format(f)] = power_per_ell
+            wf['{}_power_per_ell'.format(f)] = power_per_ell
             if i == 0:
                 wf['freqs'] = freqs 
                 wf['freqs_inv_day'] = freqs/tau
