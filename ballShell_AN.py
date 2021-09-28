@@ -515,8 +515,8 @@ az_avg = lambda A: d3.Average(A, coords.coords[0])
 s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
 vol_avgB = lambda A: d3.Integrate(A/volumeB, coords)
 vol_avgS = lambda A: d3.Integrate(A/volumeS, coords)
-luminosityB = lambda A: (4*np.pi*r_valsB**2) * s2_avg(A)
-luminosityS = lambda A: (4*np.pi*r_valsS**2) * s2_avg(A)
+luminosityB = lambda A: s2_avg((4*np.pi*r_valsB**2) * A)
+luminosityS = lambda A: s2_avg((4*np.pi*r_valsS**2) * A)
 
 analysis_tasks = []
 
