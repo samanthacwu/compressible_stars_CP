@@ -114,6 +114,21 @@ for i in range(len(ells_list)):
 print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2plateau)))
 
 
+f_norm_pow = -17/2
+ell_norm_pow = 4
+
+for i, full_out_dir in enumerate(full_out_dirs):
+    if Re[i] == np.max(Re):
+        ells = ells_list[i]
+        freq = freqs[i][:,None]
+        flux = wave_fluxes[i]
+        detrended = flux/(ells**ell_norm_pow * freq**f_norm_pow)
+        window = np.abs(detrended[(ells > 0)*(ells <= 10)*(freq > 2)*(freq <= 8)])
+        good = np.isfinite(np.log10(window))
+        fit = 10**(np.mean(np.log10(window[good])))
+print('best fit: {:.3e} f^{:.1f} ell^{:.1f}'.format(fit, f_norm_pow, ell_norm_pow))
+
+
 fig = plt.figure()
 freqs_for_dfdell = [2, 5, 8]
 for f in freqs_for_dfdell:
@@ -123,16 +138,18 @@ for f in freqs_for_dfdell:
         wave_flux = wave_fluxes[i][f_ind, :]
         ells = ells_list[i].flatten()
 #        plt.loglog(ells, ells*wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-        plt.loglog(ells, wave_flux/ells**4/f**(-13/2), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        plt.loglog(ells, wave_flux/ells**4/f**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
         shift = (wave_flux)[ells == 2]
-        plt.legend(loc='best')
         plt.title('f = {} sim units'.format(f))
         plt.xlabel(r'$\ell$')
 #        plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
-        plt.ylabel(r'$f^{13/2}\ell^{-4}\,F(\omega,\ell)|_\omega$')
-        plt.ylim(1e-16, 1e-11)
+        plt.ylabel(r'$f^{{{:.1f}}}$'.format(-f_norm_pow) + r'$\ell^{-4}\,F(\omega,\ell)|_\omega$')
+        plt.ylim(1e-13, 1e-10)
 #        plt.ylim(1e-25, 1e-9)
         plt.xlim(1, ells.max())
+    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(fit, f_norm_pow, ell_norm_pow)
+    plt.axhline(fit, label=fit_label, c='k')
+    plt.legend(loc='best')
     fig.savefig('./scratch/comparison_ell_spectrum_freq{}.png'.format(f), dpi=300, bbox_inches='tight')
     plt.clf()
     
@@ -143,21 +160,37 @@ for ell in range(11):
         if ell == 0: continue
         wave_flux = wave_fluxes[i][:,ell]
         freq = freqs[i]
-        plot = plt.loglog(freq, wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-        if Re[i] == np.max(Re):
-            shift = (wave_flux)[freq > 2][0] / 2**(-13/2)
-            plt.loglog(freq, shift*freq**(-13/2), c='k', label='({:.3e})'.format(shift) + r'$f^{-13/2}$')
+        plot = plt.loglog(freq, np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+#        if Re[i] == np.max(Re):
+##            for p in [-15/2]:
+##                shift = (wave_flux)[freq > 2][0] / 2**(p)
+##                plt.loglog(freq, shift*freq**(p), c='k', label='({:.3e})'.format(shift) + r'$f^{{{:.1f}}}$'.format(p))
+#
+#            for fmin, fmax in zip((0.8, 2), (2, 10)):
+#                try:
+#                    good = (freq > fmin)*(freq <= fmax)
+#                    x = np.log10(freq[good])
+#                    y = np.log10(np.abs(wave_flux)[good])
+#                    slope, intercept = np.polyfit(x, y, 1)
+#                    print('best fit {} < f <= {}: {:.3e} f ^ ( {:.1f} )'.format(fmin, fmax, 10**intercept, slope))
+#                    if fmin == 2 and fmax == 10:
+#                        line = 10**(intercept)*freq**slope
+#                        plt.loglog(freq, line, c='k', label='({:.3e})'.format(10**intercept) + r'$f^{{{:.1f}}}$'.format(slope))
+#                except:
+#                    print('no convergence for {} < f <= {}'.format(fmin, fmax))
 #        plt.loglog(freq, freq*wave_flux/(freq**(-13/2)), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
         if rotation[i] is not None:
                 Ω = tau * 2*np.pi / float(rotation[i])
                 plt.axvline(Ω / (2*np.pi), color=plot[-1]._color, ls='--')
                 plt.axvline(tau_sec*np.sqrt(N2max_shell) / (2*np.pi), color=plot[-1]._color)
-        plt.legend(loc='lower left', fontsize=8)
         plt.title('ell={}'.format(ell))
         plt.xlabel('freq (sim units)')
         plt.ylabel(r'$F(\omega,\ell)|_\ell$')
 #        plt.ylabel(r'$f^{-13/2}\frac{\partial^2 F}{\partial \ln f}$')
         plt.ylim(1e-20, 1e-7)
+    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(fit, f_norm_pow, ell_norm_pow)
+    plt.loglog(freq, fit*freq**(f_norm_pow)*ell**(ell_norm_pow), c='k', label=fit_label)
+    plt.legend(loc='lower left', fontsize=8)
     fig.savefig('./scratch/freq_spectrum_ell{}.png'.format(ell), dpi=300, bbox_inches='tight')
     plt.clf()
     
