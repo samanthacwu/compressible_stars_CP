@@ -72,12 +72,16 @@ with h5py.File(star_file, 'r') as f:
     tau_sec= f['tau'][()]
     tau = tau_sec/(60*60*24)
     r_outer = f['r_outer'][()]
-    radius = r_outer * f['L'][()]
+    L_sim = f['L'][()] #cm
+    radius = r_outer * L_sim
     #Entropy units are erg/K/g
     s_c = f['s_c'][()]
-    N2plateau = f['N2plateau'][()] * (60*60*24)**2
+    N2_plateau_sec = f['N2plateau'][()]
+    N2_plateau = N2_plateau_sec * (60*60*24)**2
     N2max_shell = f['N2max_shell'][()]
-    ρ_rcb = rho_func(1)
+    r_rcb = 1
+    ρ_rcb = rho_func(r_rcb)
+    N2_plateau_sim = N2_plateau_sec * tau_sec**2
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'
@@ -110,8 +114,8 @@ for root_dir in root_dirs:
 
 u_r = []
 for i in range(len(ells_list)):
-    u_r.append(np.sqrt(2*np.sqrt(ells_list[i]*(ells_list[i]+1)) * wave_fluxes[i] / (1 * ρ_rcb * np.sqrt(N2plateau))))
-print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2plateau)))
+    u_r.append(np.sqrt(2*np.sqrt(ells_list[i]*(ells_list[i]+1)) * wave_fluxes[i] / (1 * ρ_rcb * np.sqrt(N2_plateau))))
+print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2_plateau)))
 
 
 f_norm_pow = -17/2
@@ -125,8 +129,12 @@ for i, full_out_dir in enumerate(full_out_dirs):
         detrended = flux/(ells**ell_norm_pow * freq**f_norm_pow)
         window = np.abs(detrended[(ells > 0)*(ells <= 10)*(freq > 2)*(freq <= 8)])
         good = np.isfinite(np.log10(window))
-        fit = 10**(np.mean(np.log10(window[good])))
-print('best fit: {:.3e} f^{:.1f} ell^{:.1f}'.format(fit, f_norm_pow, ell_norm_pow))
+        A0 = 10**(np.mean(np.log10(window[good])))
+        f0_sec = 1/tau_sec
+        A0_ur2_sim = 2*A0/(r_rcb*ρ_rcb*np.sqrt(N2_plateau_sim))
+        A0_ur2_sec = A0_ur2_sim * f0_sec**(-f_norm_pow) * L_sim**2 / tau_sec**2 #cm^2/s^2
+print('best fit: {:.3e} f^{:.1f} ell^{:.1f}'.format(A0, f_norm_pow, ell_norm_pow))
+print('best fit ur^2 (cm^2/s^2; f in 1/s): {:.3e} f^{:.1f} ell^{:.1f} sqrt(1 + 1/ell)'.format(A0_ur2_sec, f_norm_pow, ell_norm_pow+1))
 
 
 fig = plt.figure()
@@ -147,8 +155,8 @@ for f in freqs_for_dfdell:
         plt.ylim(1e-13, 1e-10)
 #        plt.ylim(1e-25, 1e-9)
         plt.xlim(1, ells.max())
-    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(fit, f_norm_pow, ell_norm_pow)
-    plt.axhline(fit, label=fit_label, c='k')
+    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(A0, f_norm_pow, ell_norm_pow)
+    plt.axhline(A0, label=fit_label, c='k')
     plt.legend(loc='best')
     fig.savefig('./scratch/comparison_ell_spectrum_freq{}.png'.format(f), dpi=300, bbox_inches='tight')
     plt.clf()
@@ -188,8 +196,8 @@ for ell in range(11):
         plt.ylabel(r'$F(\omega,\ell)|_\ell$')
 #        plt.ylabel(r'$f^{-13/2}\frac{\partial^2 F}{\partial \ln f}$')
         plt.ylim(1e-20, 1e-7)
-    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(fit, f_norm_pow, ell_norm_pow)
-    plt.loglog(freq, fit*freq**(f_norm_pow)*ell**(ell_norm_pow), c='k', label=fit_label)
+    fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(A0, f_norm_pow, ell_norm_pow)
+    plt.loglog(freq, A0*freq**(f_norm_pow)*ell**(ell_norm_pow), c='k', label=fit_label)
     plt.legend(loc='lower left', fontsize=8)
     fig.savefig('./scratch/freq_spectrum_ell{}.png'.format(ell), dpi=300, bbox_inches='tight')
     plt.clf()

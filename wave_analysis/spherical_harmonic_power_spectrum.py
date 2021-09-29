@@ -73,6 +73,7 @@ with h5py.File(star_file, 'r') as f:
     radius = r_outer * f['L'][()]
     #Entropy units are erg/K/g
     s_c = f['s_c'][()]
+    N2plateau_sim = f['N2plateau'][()] * f['tau'][()]**2
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
@@ -174,10 +175,23 @@ for k, powspec in powers_per_ell.items():
     plt.xscale('log')
     plt.ylabel(r'Power ({})'.format(k))
     plt.xlabel(r'Frequency (sim units)')
-    plt.axvline(np.sqrt(N2plateau)/(2*np.pi), c='k')
+    plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
     plt.xlim(min_freq, max_freq)
     plt.ylim(ymin, ymax)
     plt.legend(loc='best')
     k_out = k.replace('(', '_').replace(')', '_').replace('=', '')
 
     plt.savefig('{}/{}_summed_power.png'.format(full_out_dir, k_out), dpi=600)
+
+    plt.clf()
+
+    for ell in range(1, 11):
+        plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
+        plt.xlim(min_freq, max_freq)
+        plt.ylim(ymin, ymax)
+        plt.title('ell={}'.format(ell))
+        plt.xlabel('frequency (sim units)')
+        plt.ylabel('Power')
+        plt.savefig('{}/{}_ell_{:03d}.png'.format(full_out_dir, k_out, ell), dpi=200, bbox_inches='tight')
+        plt.clf()
+
