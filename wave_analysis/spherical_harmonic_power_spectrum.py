@@ -82,7 +82,7 @@ if 'SH_transform' in data_dir:
 else:
     out_dir = 'SH_power_spectra'
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
-reader = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
+reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files, distribution='single')
 if args['--field'] is None:
     with h5py.File(reader.files[0], 'r') as f:
         fields = list(f['tasks'].keys())
@@ -105,37 +105,60 @@ if not args['--plot_only']:
 
     with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
+        wf['times']  = times
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
 
     #TODO: only load in one ell and m at a time, that'll save memory.
     for i, f in enumerate(fields):
         print('reading field {}'.format(f))
-        data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
 
         print('filling datacube...')
         writes = 0
+        first = True
         while reader.writes_remain():
             print('reading file {}...'.format(reader.current_file_number+1))
             dsets, ni = reader.get_dsets([f,])
+            if first:
+                shape = list(dsets[f][()].shape)[:-1]
+                shape[0] = times.shape[0]
+                shape[-1] = ms.shape[2]
+                shape[-2] = ells.shape[1]
+                data_cube = np.zeros(shape, dtype=np.complex128)
+                first = False
             data_cube[writes,:] = dsets[f][ni,:].squeeze()
             writes += 1
+        print(data_cube.shape)
 
         print('taking transform')
         transform = np.zeros(data_cube.shape, dtype=np.complex128)
         for ell in range(data_cube.shape[1]):
-            print('taking transforms {}/{}'.format(ell+1, data_cube.shape[1]))
+            print('taking transforms on {}: {}/{}'.format(f, ell+1, data_cube.shape[1]))
             for m in range(data_cube.shape[2]):
                 if m > ell: continue
-                freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
-        transform -= np.mean(transform, axis=0) #remove the temporal average; don't care about it.
-        del data_cube
+                if len(data_cube.shape) == 4:
+                    for v in range(data_cube.shape[1]):
+                        freqs, transform[:,v,ell,m] = clean_cfft(times, data_cube[:,v,ell,m])
+                else:
+                    freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
+#        transform -= np.mean(transform, axis=0) #remove the temporal average; don't care about it.
         gc.collect()
         freqs0 = freqs
-        freqs, full_power = normalize_cfft_power(freqs0, transform)
-        power_per_ell = np.sum(full_power, axis=2) #sum over m's
+        if len(data_cube.shape) == 4:
+            full_power = []
+            for v in range(data_cube.shape[1]):
+                freqs, this_power = normalize_cfft_power(freqs0, transform[:,v,:])
+                full_power.append(this_power)
+            full_power = np.array(full_power)
+        else:
+            freqs, full_power = normalize_cfft_power(freqs0, transform)
+        power_per_ell = np.sum(full_power, axis=-1) #sum over m's
         with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r+') as wf:
             wf['{}_power_per_ell'.format(f)] = power_per_ell
+            if len(data_cube.shape) == 4:
+                wf['{}_ell1_data'.format(f)] = data_cube[:, :, 1, :]
+            else:
+                wf['{}_ell1_data'.format(f)] = data_cube[:, 1, :]
             if i == 0:
                 wf['freqs'] = freqs 
                 wf['freqs_inv_day'] = freqs/tau
@@ -158,40 +181,50 @@ good = freqs >= 0
 min_freq = 3e-1
 max_freq = freqs.max()
 for k, powspec in powers_per_ell.items():
-    good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
-    print(good_axis, powspec.shape, len(ells.flatten()))
-    sum_power = np.sum(powspec, axis=good_axis).squeeze()
-        
-    ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
-    ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
+    if len(powspec.shape) != 3:
+        powspec = np.expand_dims(powspec, axis=0)
+    full_powspec = np.copy(powspec)
+    for v in range(full_powspec.shape[0]):
+        powspec = full_powspec[v,:]
+        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
+                
 
-    plt.figure()
-    if len(sum_power.shape) > 1:
-        for i in range(sum_power.shape[1]):
-            plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
-    else:
-        plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
-    plt.yscale('log')
-    plt.xscale('log')
-    plt.ylabel(r'Power ({})'.format(k))
-    plt.xlabel(r'Frequency (sim units)')
-    plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
-    plt.xlim(min_freq, max_freq)
-    plt.ylim(ymin, ymax)
-    plt.legend(loc='best')
-    k_out = k.replace('(', '_').replace(')', '_').replace('=', '')
+        print(k, good_axis, powspec.shape, len(ells.flatten()))
+        sum_power = np.sum(powspec, axis=good_axis).squeeze()
+        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
+            
+        ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
+        ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
 
-    plt.savefig('{}/{}_summed_power.png'.format(full_out_dir, k_out), dpi=600)
-
-    plt.clf()
-
-    for ell in range(1, 11):
-        plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
+        plt.figure()
+        if len(sum_power.shape) > 1:
+            for i in range(sum_power.shape[1]):
+                plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
+                plt.plot(freqs[good], sum_power_ell2[good, i], c = 'orange', label=r'axis {}, sum over $\ell$ values with $\ell^{-2}$'.format(i))
+        else:
+            plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
+            plt.plot(freqs[good], sum_power_ell2[good], c = 'orange', label=r'sum over $\ell$ values with $\ell^{-2}$')
+        plt.yscale('log')
+        plt.xscale('log')
+        plt.ylabel(r'Power ({})'.format(k))
+        plt.xlabel(r'Frequency (sim units)')
+        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
         plt.xlim(min_freq, max_freq)
         plt.ylim(ymin, ymax)
-        plt.title('ell={}'.format(ell))
-        plt.xlabel('frequency (sim units)')
-        plt.ylabel('Power')
-        plt.savefig('{}/{}_ell_{:03d}.png'.format(full_out_dir, k_out, ell), dpi=200, bbox_inches='tight')
+        plt.legend(loc='best')
+        k_out = k.replace('(', '_').replace(')', '_').replace('=', '')
+
+        plt.savefig('{}/{}_v{}_summed_power.png'.format(full_out_dir, k_out, v), dpi=600)
+
         plt.clf()
+
+        for ell in range(1, 11):
+            plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
+            plt.xlim(min_freq, max_freq)
+            plt.ylim(ymin, ymax)
+            plt.title('ell={}'.format(ell))
+            plt.xlabel('frequency (sim units)')
+            plt.ylabel('Power')
+            plt.savefig('{}/{}_v{}_ell_{:03d}.png'.format(full_out_dir, k_out, v, ell), dpi=200, bbox_inches='tight')
+            plt.clf()
 
