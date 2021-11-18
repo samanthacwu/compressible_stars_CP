@@ -69,7 +69,7 @@ if n_files is not None:
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_transform_{}'.format(data_dir)
-reader = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='even-file')
+reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files, distribution='even-file')
 
 bases = []
 if not reader.idle:
@@ -84,7 +84,7 @@ if not reader.idle:
     for str_bit in root_dir.split('_'):
         if resolution_regex.match(str_bit):
             res_strs = str_bit.split('x')
-            resolution = [int(res_strs[0]), int(res_strs[1]), 1]
+            resolution = (int(res_strs[0]), int(res_strs[1]), 1)
 
     # Parameters
     dtype = np.float64
@@ -96,13 +96,36 @@ if not reader.idle:
     basis = basis.ShellBasis(c, resolution, radii=((1-1e-6)*radius, radius), dtype=dtype, dealias=dealias_tuple)
     φg, θg, rg = basis.global_grids(basis.dealias)
 
-    ells = basis.local_ell
-    ms = basis.local_m
-    ell_values = np.unique(ells)
-    m_values = np.unique(ms)
-    ell_ms = np.zeros_like(ell_values)
-    for i, ell in enumerate(ell_values):
-        ell_ms[i] = int(np.sum(ells == ell)/2)
+    ell_maps = basis.ell_maps
+    m_maps   = basis.sphere_basis.m_maps
+
+    max_ell = 0
+    max_m = 0
+    for m, mg_slice, mc_slice, n_slice in m_maps:
+        if m > max_m:
+            max_m = m
+    for ell, m_ind, ell_ind in ell_maps:
+        if ell > max_ell:
+            max_ell = ell
+
+    ell_values = np.arange(max_ell+1).reshape((max_ell+1,1))
+    m_values = np.arange(max_m+1).reshape((1,max_m+1))
+
+    slices = dict()
+    domain = basis.domain
+    coeff_layout = dist.coeff_layout
+    group_coupling = [True] * domain.dist.dim
+    group_coupling[0] = False
+    group_coupling[1] = False
+    group_coupling = tuple(group_coupling)
+    groupsets = coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+    for ell_v in ell_values.squeeze():
+        if MPI.COMM_WORLD.rank == 0:
+            print('getting slices for ell = {}'.format(ell_v))
+        for m_v in m_values.squeeze():
+            if (m_v, ell_v, None) in groupsets:
+                groupset_slices = coeff_layout.local_groupset_slices((m_v, ell_v, None), domain, scales=domain.dealias, broadcast=True)
+                slices['{},{}'.format(ell_v,m_v)] = groupset_slices
 
     scalar_field = dist.Field(bases=basis)
     vector_field = dist.VectorField(bases=basis, coordsys=c)
@@ -137,11 +160,11 @@ if not reader.idle:
                 shape = list(task_data.shape)
                 if len(shape) == len(scalar_field['g'].shape):
                     shape[0] = ell_values.shape[0]
-                    shape[1] = m_values.shape[0]
+                    shape[1] = m_values.shape[1]
                     scalar = True
                 else:
                     shape[1] = ell_values.shape[0]
-                    shape[2] = m_values.shape[0]
+                    shape[2] = m_values.shape[1]
                     vector = True
                 out_field = np.zeros(shape, dtype=np.complex128)
                 if ni == 0:
@@ -151,16 +174,17 @@ if not reader.idle:
                     scalar_field['g'] = task_data.reshape(scalar_field['g'].shape)
                 elif vector:
                     vector_field['g'] = task_data.reshape(vector_field['g'].shape)
-                for j, ell in enumerate(ell_values):
-                    for k, m in enumerate(m_values):
-                        bool_map = (ell == ells)*(m == ms)
-                        if np.sum(bool_map) > 0:
+                for j, ell in enumerate(ell_values.squeeze()):
+                    for k, m in enumerate(m_values.squeeze()):
+                        if '{},{}'.format(ell,m) in slices.keys():
+                            sl = slices['{},{}'.format(ell,m)][0]
                             if scalar:
-                                values = scalar_field['c'][bool_map]
+                                values = scalar_field['c'][sl].squeeze()
                                 out_field[j,k] = values[0] + 1j*values[1]
                             elif vector:
                                 for v in range(shape[0]):
-                                    values = vector_field['c'][v, bool_map]
+                                    v_sl = tuple([v] + list(sl))
+                                    values = vector_field['c'][v_sl].squeeze()
                                     out_field[v,j,k] = values[0] + 1j*values[1]
 
                 if len(shape) == 3:
