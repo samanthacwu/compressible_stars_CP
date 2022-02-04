@@ -259,7 +259,7 @@ local_vncc_shape_B = ncc_dict['{}_{}'.format(vec_nccs[0], 'B')]['g'].shape
 local_vncc_shape_S = ncc_dict['{}_{}'.format(vec_nccs[0], 'S')]['g'].shape
 if ncc_file is not None:
     for basis, basis_name in zip((ball_basis, shell_basis), ['B', 'S']):
-        for k in [vec_nccs + scalar_nccs]:
+        for k in vec_nccs + scalar_nccs:
             ncc_dict['{}_{}'.format(k, basis_name)].require_scales(basis.dealias)
         for k in ['H', 'ρ', 'T', 'inv_T']:
             field_dict['{}_{}'.format(k, basis_name)].require_scales(basis.dealias)
@@ -272,16 +272,16 @@ if ncc_file is not None:
         for k in scalar_nccs:
             if '{}{}'.format(k, basis_name) not in f.keys():
                 continue
-            for basis_name in ['B', 'S']:
-                ncc_dict['{}_{}'.format(k, basis_name)]['g'] = f['{}{}'.format(k, basis_name)][:,:,grid_slicesB[-1]]
-        field_dict['H_B']['g']         = f['H_effB'][:,:,grid_slicesB[-1]]
-        field_dict['ρ_B']['g']         = np.exp(f['ln_ρB'][:,:,grid_slicesB[-1]])[None,None,:]
-        field_dict['T_B']['g']         = f['TB'][:,:,grid_slicesB[-1]][None,None,:]
+            for basis_name, grid_slices in zip(['B', 'S'], [grid_slices_B, grid_slices_S]):
+                ncc_dict['{}_{}'.format(k, basis_name)]['g'] = f['{}{}'.format(k, basis_name)][:,:,grid_slices[-1]]
+        field_dict['H_B']['g']         = f['H_effB'][:,:,grid_slices_B[-1]]
+        field_dict['ρ_B']['g']         = np.exp(f['ln_ρB'][:,:,grid_slices_B[-1]])[None,None,:]
+        field_dict['T_B']['g']         = f['TB'][:,:,grid_slices_B[-1]][None,None,:]
         field_dict['inv_T_B']['g']     = 1/field_dict['T_B']['g']
 
-        field_dict['H_S']['g']          = f['H_effS'][:,:,grid_slicesS[-1]]
-        field_dict['ρ_S']['g']         = np.exp(f['ln_ρS'][:,:,grid_slicesS[-1]])[None,None,:]
-        field_dict['T_S']['g']         = f['TS'][:,:,grid_slicesS[-1]][None,None,:]
+        field_dict['H_S']['g']          = f['H_effS'][:,:,grid_slices_S[-1]]
+        field_dict['ρ_S']['g']         = np.exp(f['ln_ρS'][:,:,grid_slices_S[-1]])[None,None,:]
+        field_dict['T_S']['g']         = f['TS'][:,:,grid_slices_S[-1]][None,None,:]
         field_dict['inv_T_S']['g']     = 1/field_dict['T_S']['g']
 
         max_dt = f['max_dt'][()]
@@ -375,7 +375,7 @@ else:
     rotation_term_S = 0
 
 if args['--sponge']:
-    sponge_term_S = spongeS*u_S
+    sponge_term_S = sponge_S*u_S
 else:
     sponge_term_S = 0
 sponge_term_B = 0
