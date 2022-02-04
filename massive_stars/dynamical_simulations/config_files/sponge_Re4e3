@@ -1,10 +1,10 @@
 [parameters]
-L = 128
-NB = 128
-NS = 96
+ntheta = 128
+nrB = 128
+nrS = 96
 Re = 4e3
 buoy_end_time = 40
-mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B128_S96_Re4e3_de1.5.h5
+ncc_file = ncc_creation/nccs_40msol/ballShell_nccs_B128_S96_Re4e3_de1.5.h5
 sponge = True
 wall_hours = 7.5
 CFL_max_r = 1.05
