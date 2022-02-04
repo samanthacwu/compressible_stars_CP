@@ -1,7 +1,8 @@
 """
-d3 script for anelastic convection in a massive star's core CZ.
+d3 script for anelastic convection in a fully-convective ball domain.
 
 A config file can be provided which overwrites any number of the options below, but command line flags can also be used if preferred.
+Note that options specified in a config file override command line arguments.
 
 Usage:
     ball_AN.py [options]
@@ -10,8 +11,8 @@ Usage:
 Options:
     --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 2e2]
     --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           Spherical harmonic degrees of freedom (Lmax+1)   [default: 16]
-    --N=<Nmax>           Radial degrees of freedom (Nmax+1)   [default: 32]
+    --ntheta=<res>       Number of theta grid points (Lmax+1)   [default: 16]
+    --nr=<res>           Number of radial grid points (Nmax+1)   [default: 32]
 
     --wall_hours=<t>     Max number of wall hours to run simulation for [default: 24]
     --buoy_end_time=<t>  Max number of buoyancy time units to simulate [default: 1e5]
@@ -24,7 +25,7 @@ Options:
     --SBDF4              Use SBDF4 (default: SBDF2)
     --safety=<s>         CFL safety factor for determining timestep size [default: 0.2]
 
-    --mesa_file=<f>      path to a .h5 file of ICCs, curated from a MESA model; if unspecified, uses a polytropic stratification.
+    --ncc_file=<f>      path to a .h5 file of NCCs, curated from a MESA model; if None, uses a polytropic stratification.
     --restart=<chk_f>    path to a checkpoint file to restart from
 """
 import os
@@ -55,8 +56,8 @@ if args['<config>'] is not None:
                 args[k] = v
 
 # Parameters
-nθ = int(args['--L'])
-nr = int(args['--N'])
+nθ = int(args['--ntheta'])
+nr = int(args['--nr'])
 nφ = int(2*nθ)
 resolution = (nφ, nθ, nr)
 L_dealias = N_dealias = dealias = 1.5
@@ -64,7 +65,7 @@ dtype = np.float64
 Re  = float(args['--Re'])
 Pr  = 1
 Pe  = Pr*Re
-mesa_file = args['--mesa_file']
+ncc_file = args['--ncc_file']
 wall_hours = float(args['--wall_hours'])
 buoy_end_time = float(args['--buoy_end_time'])
 
@@ -82,7 +83,6 @@ else:
 safety = float(args['--safety'])
 hermitian_cadence = 100
 
-
 # processor mesh
 mesh = args['--mesh']
 ncpu = MPI.COMM_WORLD.size
@@ -97,7 +97,7 @@ else:
 
 #output directory
 out_dir = './' + sys.argv[0].split('.py')[0]
-if mesa_file is None:
+if ncc_file is None:
     out_dir += '_polytrope'
 out_dir += '_Re{}_{}x{}x{}'.format(args['--Re'], *resolution)
 if args['--label'] is not None:
@@ -107,146 +107,146 @@ if MPI.COMM_WORLD.rank == 0:
     if not os.path.exists('{:s}/'.format(out_dir)):
         os.makedirs('{:s}/'.format(out_dir))
 
-
-if mesa_file is not None:
-    with h5py.File(mesa_file, 'r') as f:
+# Bases
+if ncc_file is not None:
+    with h5py.File(ncc_file, 'r') as f:
         radius = f['r_inner'][()]
 else:
     radius = 1.5
 
-# Bases
 coords = d3.SphericalCoordinates('φ', 'θ', 'r')
 dist   = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
 basis  = d3.BallBasis(coords, shape=resolution, radius=radius, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-s2_basis = basis.S2_basis()
-radial_basis = basis.radial_basis
 φ, θ, r = basis.local_grids(basis.dealias)
 φ1, θ1, r1 = basis.local_grids((1,1,1))
-φg, θg, rg = basis.global_grids(basis.dealias)
 
 #Operators
-ddt  = d3.TimeDerivative
-curl = d3.Curl
-div  = d3.Divergence
-trace = d3.Trace
-transpose = d3.TransposeComponents
-radComp = d3.RadialComponent
-cross = d3.CrossProduct
-dot = d3.DotProduct
-lap       = lambda A: d3.Laplacian(A, coords)
-grad      = lambda A: d3.Gradient(A, coords)
-angComp   = lambda A, index=1: d3.AngularComponent(A, index=index)
 lift_basis = basis.clone_with(k=0)
 lift      = lambda A: d3.LiftTau(A, lift_basis, -1)
+integ     = lambda A: d3.Integrate(A, coords)
 
 # Problem variables
-u = dist.VectorField(coords, name='u', bases=basis)
-p, s1 = [dist.Field(name=n, bases=basis) for n in ['p', 's1']]
-tau_u = dist.VectorField(coords, name='tau_u', bases=s2_basis)
-tau_T = dist.Field(name='tau_T', bases=s2_basis)
+vec_fields = ['u', 'eφ', 'eθ', 'er']
+scalar_fields = ['p', 's1', 'inv_T', 'H', 'ρ', 'T']
+vec_taus = ['tau_u']
+scalar_taus = ['tau_T']
+taus = ['tau_p']
+field_dict = OrderedDict()
+for fn in vec_fields:
+    field_dict[fn] = dist.VectorField(coords, name=fn, bases=basis)
+for fn in scalar_fields:
+    field_dict[fn] = dist.Field(name=fn, bases=basis)
+for fn in vec_taus:
+    field_dict[fn] = dist.VectorField(coords, name=fn, bases=basis.S2_basis())
+for fn in scalar_taus:
+    field_dict[fn] = dist.Field(name=fn, bases=basis.S2_basis())
+for fn in taus:
+    field_dict[fn] = dist.Field(name=fn)
 
-#nccs
-grad_ln_ρ, grad_ln_T, grad_s0, grad_T, grad_inv_Pe \
-            = [dist.VectorField(coords, name=n, bases=radial_basis) for n in ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe']]
-ln_ρ, ln_T, inv_Pe = [dist.Field(name=n, bases=radial_basis) for n in ['ln_ρ', 'ln_T', 'inv_Pe']]
-inv_T, H, ρ, T = [dist.Field(name=n, bases=basis) for n in ['inv_T', 'H', 'ρ', 'T']]
+for k in field_dict.keys():
+    field_dict[k]['g'][:] = 0
 
-#unit vectors & (NCC) identity matrix
-eφ, eθ, er = [dist.VectorField(coords, name=n, bases=basis) for n in ['eφ', 'eθ', 'er']]
-I_matrix = dist.TensorField(coords, name='I_matrix', bases=radial_basis)
-for f in [eφ, eθ, er, I_matrix]: f['g'] = 0
-eφ['g'][0,:] = 1
-eθ['g'][1,:] = 1
-er['g'][2,:] = 1
+field_dict['eφ']['g'][0,:] = 1
+field_dict['eθ']['g'][1,:] = 1
+field_dict['er']['g'][2,:] = 1
+
+# NCCs
+tensor_nccs = ['I_matrix']
+vec_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe_rad']
+scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe_rad']
+ncc_dict = OrderedDict()
+for fn in tensor_nccs:
+    ncc_dict[fn] = dist.TensorField(coords, name=fn, bases=basis.radial_basis)
+for fn in vec_nccs:
+    ncc_dict[fn] = dist.VectorField(coords, name=fn, bases=basis.radial_basis)
+for fn in scalar_nccs:
+    ncc_dict[fn] = dist.Field(name=fn, bases=basis.radial_basis)
+
+for k in ncc_dict.keys():
+    ncc_dict[k]['g'][:] = 0
+
 for i in range(3):
-    I_matrix['g'][i,i,:] = 1
-
-# Stress matrices & viscous terms (assumes uniform kinematic viscosity, so dynamic viscosity mu = const * rho)
-divU = div(u)
-E = 0.5*(grad(u) + transpose(grad(u)))
-σ = 2*(E - (1/3)*divU*I_matrix)
-visc_div_stress = div(σ) + dot(σ, grad_ln_ρ)
-VH  = 2*(trace(dot(E, E)) - (1/3)*divU**2)
-
-# Impenetrable, stress-free boundary conditions
-u_r_bc    = radComp(u(r=radius))
-u_perp_bc = angComp(radComp(E(r=radius)), index=0)
-u_perp_bc.name = 'stress_free'
-therm_bc  = s1(r=radius)
+    ncc_dict['I_matrix']['g'][i,i,:] = 1
 
 # Load MESA NCC file or setup NCCs using polytrope.
-grid_slices = dist.layouts[-1].slices(u.domain, N_dealias)
-grad_s0.require_scales(basis.dealias)
-local_vncc_shape = grad_s0['g'].shape
-if mesa_file is not None:
-    for field in [grad_s0, grad_ln_ρ, grad_ln_T, grad_T, grad_inv_Pe, H, ln_ρ, ln_T, inv_Pe, ρ, T, inv_T]:
-        field.require_scales(basis.dealias)
-    with h5py.File(mesa_file, 'r') as f:
-        if np.prod(local_vncc_shape) > 0:
-            grad_s0['g']         = f['grad_s0B'][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape)
-            grad_ln_ρ['g']       = f['grad_ln_ρB'][()][:,:,:,grid_slices[2]].reshape(local_vncc_shape)
-            grad_ln_T['g']       = f['grad_ln_TB'][()][:,:,:,grid_slices[2]].reshape(local_vncc_shape)
-            grad_T['g']          = f['grad_TB'][()][:,:,:,grid_slices[2]].reshape(local_vncc_shape)
-            grad_inv_Pe['g']     = f['grad_inv_Pe_radB'][()][:,:,:,grid_slices[2]].reshape(local_vncc_shape)
-        H['g']         = f['H_effB'][()][:,:,grid_slices[2]]
-        ln_ρ['g']      = f['ln_ρB'][()][:,:, grid_slices[2]]
-        ln_T['g']      = f['ln_TB'][()][:,:, grid_slices[2]]
-        inv_Pe['g']    = f['inv_Pe_radB'][()][:,:, grid_slices[2]]
-        ρ['g']         = np.exp(f['ln_ρB'][()][:,:,grid_slices[2]])
-        T['g']         = f['TB'][()][:,:,grid_slices[2]]
-        inv_T['g']     = 1/T['g']
+grid_slices = dist.layouts[-1].slices(field_dict[vec_fields[0]].domain, N_dealias)
+ncc_dict[vec_nccs[0]].require_scales(basis.dealias)
+local_vncc_shape = ncc_dict[vec_nccs[0]]['g'].shape
+if ncc_file is not None:
+    for k in [vec_nccs + scalar_nccs]:
+        ncc_dict[k].require_scales(basis.dealias)
+    for k in ['H', 'ρ', 'T', 'inv_T']:
+        field_dict[k].require_scales(basis.dealias)
+    with h5py.File(ncc_file, 'r') as f:
+        for k in vec_nccs:
+            ncc_dict[k]['g'] = f[k][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape) 
+        for k in scalar_nccs:
+            ncc_dict[k]['g'] = f[k][()][:,:,grid_slices[2]]
+        field_dict['H']['g'] = f['H_effB'][()][:,:,grid_slices[2]]
+        field_dict['ρ']['g'] = np.exp(f['ln_ρB'][()][:,:,grid_slices[2]])
+        field_dict['T']['g'] = f['TB'][()][:,:,grid_slices[2]]
+        field_dict['inv_T']['g'] = 1/field_dict['T']['g']
 
         max_dt = f['max_dt'][()]
         t_buoy = 1 #Assume nondimensionalization on heating ~ buoyancy time
 else:
     logger.info("Using polytropic initial conditions")
     from scipy.interpolate import interp1d
-    with h5py.File('polytropes/poly_nOuter1.6.h5', 'r') as f:
+    with h5py.File('benchmark/poly_nOuter1.6.h5', 'r') as f:
         T_func = interp1d(f['r'][()], f['T'][()])
         ρ_func = interp1d(f['r'][()], f['ρ'][()])
         grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
         H_func   = interp1d(f['r'][()], f['H_eff'][()])
 
-    T['g']       = T_func(r1)
-    ρ['g']       = ρ_func(r1)
-    H['g']       = H_func(r1)
-    inv_T['g']   = 1/T_func(r1)
+    field_dict['T']['g']       = T_func(r1)
+    field_dict['ρ']['g']       = ρ_func(r1)
+    field_dict['H']['g']       = H_func(r1)
+    field_dict['inv_T']['g']   = 1/T_func(r1)
 
-    grad_ln_ρ_full = (grad(ρ)/ρ).evaluate()
-    grad_T_full = grad(T).evaluate()
-    grad_ln_T_full = (grad_T_full/T).evaluate()
+    grad_ln_ρ_full = (d3.grad(field_dict['ρ'])/field_dict['ρ']).evaluate()
+    grad_T_full = d3.grad(field_dict['T']).evaluate()
+    grad_ln_T_full = (grad_T_full/field_dict['T']).evaluate()
     if np.prod(local_vncc_shape) > 0:
-        grad_s0.require_scales(1)
-        grad_s0['g'][2]  = grad_s0_func(r1)
-        for f in [grad_ln_ρ, grad_ln_T, grad_T]: f.require_scales(basis.dealias)
-        grad_ln_ρ['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
-        grad_ln_T['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
-        grad_T['g']      = grad_T_full['g'][:,0,0,None,None,:]
-        grad_inv_Pe['g'] = 0
-    ln_T['g']        = np.log(T_func(r1))
-    ln_ρ['g']        = np.log(ρ_func(r1))
-    inv_Pe['g']      = 1/Pe
+        ncc_dict['grad_s0'].require_scales(1)
+        ncc_dict['grad_s0']['g'][2]  = grad_s0_func(r1)
+        for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict[f].require_scales(basis.dealias)
+        ncc_dict['grad_ln_ρ']['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
+        ncc_dict['grad_ln_T']['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
+        ncc_dict['grad_T']['g']      = grad_T_full['g'][:,0,0,None,None,:]
+        ncc_dict['grad_inv_Pe_rad']['g'] = 0
+    ncc_dict['ln_T']['g']        = np.log(T_func(r1))
+    ncc_dict['ln_ρ']['g']        = np.log(ρ_func(r1))
+    ncc_dict['inv_Pe_rad']['g']      = 1/Pe
 
     t_buoy      = 1
+
+# Put nccs and fields into locals()
+locals().update(ncc_dict)
+locals().update(field_dict)
+
+# Stress matrices & viscous terms (assumes uniform kinematic viscosity, so dynamic viscosity mu = const * rho)
+divU = d3.div(u)
+E = 0.5*(d3.grad(u) + d3.transpose(d3.grad(u)))
+σ = 2*(E - (1/3)*divU*I_matrix)
+visc_div_stress = d3.div(σ) + d3.dot(σ, grad_ln_ρ)
+VH  = 2*(d3.trace(d3.dot(E, E)) - (1/3)*divU**2)
 
 # Grid-lock / define extra operators
 H = d3.Grid(H).evaluate()
 inv_T = d3.Grid(inv_T).evaluate()
-grad_s1 = grad(s1)
+grad_s1 = d3.grad(s1)
 
 # Problem
-problem = d3.IVP([p, u, s1, tau_u, tau_T], namespace=locals())
+problem = d3.IVP([p, u, s1, tau_p, tau_u, tau_T], namespace=locals())
 
 # Equations / Problem
-problem.add_equation("div(u) + dot(u, grad_ln_ρ) = 0", condition="nθ != 0")
-problem.add_equation("p = 0", condition="nθ == 0")
-problem.add_equation("ddt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))", condition = "nθ != 0")
-problem.add_equation("u = 0", condition="nθ == 0")
-problem.add_equation("ddt(s1) + dot(u, grad_s0) - inv_Pe*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe) + lift(tau_T) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
-problem.add_equation("u_r_bc    = 0", condition="nθ != 0")
-problem.add_equation("u_perp_bc = 0", condition="nθ != 0")
-problem.add_equation("tau_u     = 0", condition="nθ == 0")
-problem.add_equation("therm_bc  = 0")
+problem.add_equation("div(u) + dot(u, grad_ln_ρ) + tau_p = 0")
+problem.add_equation("dt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))")
+problem.add_equation("dt(s1) + dot(u, grad_s0) - inv_Pe_rad*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe_rad) + lift(tau_T) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
+problem.add_equation("radial(u(r=radius)) = 0")
+problem.add_equation("angular(radial(E(r=radius))) = 0")
+problem.add_equation("s1(r=radius)  = 0")
+problem.add_equation("integ(p) = 0")
 logger.info("Problem built")
 
 # Solver
@@ -273,11 +273,11 @@ visual_dt = 0.05*t_buoy
 logger.info("output times... scalars: {:2e} / profiles: {:2e} / slices: {:.2e}".format(scalar_dt, flux_dt, visual_dt))
 
 # Operators, extra fields
-ur = dot(er, u)
-u_squared = dot(u,u)
+ur = d3.dot(er, u)
+u_squared = d3.dot(u,u)
 h = p - 0.5*u_squared + T*s1
 pomega_hat = p - 0.5*u_squared
-visc_flux_r = 2*dot(er, dot(u, E) - (1/3) * u * divU)
+visc_flux_r = 2*d3.dot(er, d3.dot(u, E) - (1/3) * u * divU)
 
 r_vals = dist.Field(name='r_vals', bases=basis)
 r_vals['g'] = r1
@@ -303,7 +303,7 @@ analysis_tasks.append(scalars)
 profiles = solver.evaluator.add_file_handler('{:s}/profiles'.format(out_dir), max_writes=100, sim_dt=flux_dt, mode=write_mode)
 profiles.add_task(luminosity(ρ*ur*h),                      name='enth_lum', layout='g')
 profiles.add_task(luminosity(-ρ*visc_flux_r/Re),           name='visc_lum', layout='g')
-profiles.add_task(luminosity(-ρ*T*dot(er, grad_s1)/Pe),    name='cond_lum', layout='g')
+profiles.add_task(luminosity(-ρ*T*d3.dot(er, grad_s1)/Pe),    name='cond_lum', layout='g')
 profiles.add_task(luminosity(0.5*ρ*ur*u_squared),          name='KE_lum',   layout='g')
 profiles.add_task(luminosity(ρ*ur*pomega_hat),             name='wave_lum', layout='g')
 analysis_tasks.append(profiles)
