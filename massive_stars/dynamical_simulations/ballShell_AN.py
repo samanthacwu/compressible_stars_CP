@@ -184,8 +184,7 @@ for S2_basis, name in zip((top_ball_S2_basis, bot_shell_S2_basis, top_shell_S2_b
     for fn in scalar_taus:
         key = '{}_{}'.format(fn, name)
         field_dict[key] = dist.Field(name=key, bases=S2_basis)
-field_dict['tau_p_B'] = dist.Field(name='tau_p_B')
-field_dict['tau_p_S'] = dist.Field(name='tau_p_S')
+field_dict['tau_p'] = dist.Field(name='tau_p')
 
 #Other fields
 for basis, name in zip((ball_basis, shell_basis), ('B', 'S')):
@@ -392,29 +391,58 @@ BC_s1_B = liftB(tau_s_B)
 BC_s1_S = liftS(tau_s_Sbot, -1) + liftS(tau_s_Stop, -2)
 
 # Problem
-problem = d3.IVP([p_B, u_B, p_S, u_S, s1_B, s1_S, tau_p_B, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+problem = d3.IVP([p_B, u_B, p_S, u_S, s1_B, s1_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
 
 # Equations
-problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) + tau_p_B = 0")
-problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
-problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S = 0")
-problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
+problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) = 0", condition="nθ != 0")
+problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B", condition="nθ != 0")
+problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) = 0", condition="nθ != 0")
+problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S", condition="nθ != 0")
+problem.add_equation("p_B = 0", condition="nθ == 0")
+problem.add_equation("u_B = 0", condition="nθ == 0")
+problem.add_equation("p_S = 0", condition="nθ == 0")
+problem.add_equation("u_S = 0", condition="nθ == 0")
 problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - (inv_Pe_rad_B)*(lap(s1_B) + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - dot(grad_s1_B, grad_inv_Pe_rad_B) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
 problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - (inv_Pe_rad_S)*(lap(s1_S) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - dot(grad_s1_S, grad_inv_Pe_rad_S) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
 
 # Boundary Conditions
-problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
-problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
-problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
-problem.add_equation("radial(u_S(r=r_outer)) = 0")
-problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
-problem.add_equation("integ(p_B) = 0")
-problem.add_equation("integ(p_S) = 0")
+problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0", condition="nθ != 0")
+problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0", condition="nθ != 0")
+problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0", condition="nθ != 0")
+problem.add_equation("radial(u_S(r=r_outer)) = 0", condition="nθ != 0")
+problem.add_equation("angular(radial(E_S(r=r_outer))) = 0", condition="nθ != 0")
+problem.add_equation("tau_u_B = 0", condition="nθ == 0")
+problem.add_equation("tau_u_Sbot = 0", condition="nθ == 0")
+problem.add_equation("tau_u_Stop = 0", condition="nθ == 0")
 
 # Entropy BCs
 problem.add_equation("s1_B(r=r_inner) - s1_S(r=r_inner) = 0")
 problem.add_equation("radial(grad_s1_B(r=r_inner) - grad_s1_S(r=r_inner)) = 0")
 problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
+
+## Problem
+#problem = d3.IVP([p_B, u_B, p_S, u_S, s1_B, s1_S, tau_p, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+#
+## Equations
+#problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) + tau_p = 0")
+#problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
+#problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p = 0")
+#problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
+#problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - (inv_Pe_rad_B)*(lap(s1_B) + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - dot(grad_s1_B, grad_inv_Pe_rad_B) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
+#problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - (inv_Pe_rad_S)*(lap(s1_S) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - dot(grad_s1_S, grad_inv_Pe_rad_S) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
+#
+## Boundary Conditions
+#problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
+#problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
+#problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
+#problem.add_equation("radial(u_S(r=r_outer)) = 0")
+#problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
+#
+## Entropy BCs
+#problem.add_equation("s1_B(r=r_inner) - s1_S(r=r_inner) = 0")
+#problem.add_equation("radial(grad_s1_B(r=r_inner) - grad_s1_S(r=r_inner)) = 0")
+#problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
+#problem.add_equation("integ(p_B) + integ(p_S) = 0")
 
 logger.info("Problem built")
 # Solver
@@ -632,7 +660,7 @@ try:
         if slice_process:
             slice_process = False
             wall_time = time.time() - solver.start_time
-#            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
+            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
             slice_time = solver.sim_time + outer_shell_dt
             just_wrote = True
 
