@@ -119,6 +119,8 @@ dist   = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
 basis  = d3.BallBasis(coords, shape=resolution, radius=radius, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
 φ, θ, r = basis.local_grids(basis.dealias)
 φ1, θ1, r1 = basis.local_grids((1,1,1))
+x, y, z = coords.cartesian(φ, θ, r)
+print(x.shape, y.shape, z.shape)
 
 #Operators
 lift_basis = basis.clone_with(k=0)
@@ -129,7 +131,7 @@ integ     = lambda A: d3.Integrate(A, coords)
 vec_fields = ['u', 'eφ', 'eθ', 'er']
 scalar_fields = ['p', 's1', 'inv_T', 'H', 'ρ', 'T']
 vec_taus = ['tau_u']
-scalar_taus = ['tau_T']
+scalar_taus = ['tau_s']
 taus = ['tau_p']
 field_dict = OrderedDict()
 for fn in vec_fields:
@@ -178,10 +180,11 @@ if ncc_file is not None:
     for k in ['H', 'ρ', 'T', 'inv_T']:
         field_dict[k].require_scales(basis.dealias)
     with h5py.File(ncc_file, 'r') as f:
-        for k in vec_nccs:
-            ncc_dict[k]['g'] = f[k][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape) 
+        if np.prod(local_vncc_shape) > 0:
+            for k in vec_nccs:
+                ncc_dict[k]['g'] = f[k+'B'][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape) 
         for k in scalar_nccs:
-            ncc_dict[k]['g'] = f[k][()][:,:,grid_slices[2]]
+            ncc_dict[k]['g'] = f[k+'B'][()][:,:,grid_slices[2]]
         field_dict['H']['g'] = f['H_effB'][()][:,:,grid_slices[2]]
         field_dict['ρ']['g'] = np.exp(f['ln_ρB'][()][:,:,grid_slices[2]])
         field_dict['T']['g'] = f['TB'][()][:,:,grid_slices[2]]
@@ -237,12 +240,12 @@ inv_T = d3.Grid(inv_T).evaluate()
 grad_s1 = d3.grad(s1)
 
 # Problem
-problem = d3.IVP([p, u, s1, tau_p, tau_u, tau_T], namespace=locals())
+problem = d3.IVP([p, u, s1, tau_p, tau_u, tau_s], namespace=locals())
 
 # Equations / Problem
 problem.add_equation("div(u) + dot(u, grad_ln_ρ) + tau_p = 0")
 problem.add_equation("dt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))")
-problem.add_equation("dt(s1) + dot(u, grad_s0) - inv_Pe_rad*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe_rad) + lift(tau_T) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
+problem.add_equation("dt(s1) + dot(u, grad_s0) - inv_Pe_rad*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe_rad) + lift(tau_s) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
 problem.add_equation("radial(u(r=radius)) = 0")
 problem.add_equation("angular(radial(E(r=radius))) = 0")
 problem.add_equation("s1(r=radius)  = 0")
