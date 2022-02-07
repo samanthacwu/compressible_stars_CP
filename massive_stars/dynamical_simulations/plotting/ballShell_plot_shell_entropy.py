@@ -1,13 +1,14 @@
 """
-This script plots snapshots of the evolution of a 2D slice through the equator of a BallBasis simulation.
+This script plots snapshots of entropy fluctuations in a shell domain through the equator and two meridions.
+The goal is to see the entropy fluctuations of waves in the shell domain, masking out the ball domain.
 
 Usage:
-    plot_equatorial_slices.py <root_dir> --r_inner=<r> --r_outer=<r> [options]
-    plot_equatorial_slices.py <root_dir> --mesa_file=<f> [options]
+    ballShell_plot_shell_entropy.py <root_dir> --r_inner=<r> --r_outer=<r> [options]
+    ballShell_plot_shell_entropy.py <root_dir> --mesa_file=<f> [options]
 
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: slices]
-    --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_equatorial]
+    --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: shell_entropy]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
@@ -52,10 +53,9 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # Just plot a single plot (1x1 grid) of the field "T eq"
 # remove_x_mean option removes the (numpy horizontal mean) over phi
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
-plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
-kwargs = {'azimuth_basis' : 'φ', 'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
-plotter.add_ball_shell_polar_colormesh(ball='s1B_eq', shell='s1S_eq', remove_x_mean=True, divide_x_mean=True, **kwargs)
-plotter.add_ball_shell_polar_colormesh(ball='uB_eq', shell='uS_eq', vector_ind=0, cmap='PuOr_r', **kwargs)
-plotter.add_ball_shell_polar_colormesh(ball='uB_eq', shell='uS_eq', vector_ind=1, cmap='PuOr_r', **kwargs)
-plotter.add_ball_shell_polar_colormesh(ball='uB_eq', shell='uS_eq', vector_ind=2, cmap='PuOr_r', **kwargs)
+plotter.setup_grid(num_rows=1, num_cols=3, polar=True, **plotter_kwargs)
+kwargs = {'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
+plotter.add_polar_colormesh('s1S_eq', azimuth_basis='φ', remove_x_mean=True, **kwargs)
+plotter.add_meridional_colormesh(left='s1S(phi=0)', right='s1S(phi=pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
+plotter.add_meridional_colormesh(left='s1S(phi=0.5*pi)', right='s1S(phi=1.5*pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
 plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']))

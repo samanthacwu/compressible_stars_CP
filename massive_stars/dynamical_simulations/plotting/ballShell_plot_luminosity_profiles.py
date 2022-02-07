@@ -1,8 +1,8 @@
 """
-Script for plotting flux profiles of a joint ball-sphere simulation.
+Script for plotting luminosity profiles from a BallShell simulation.
 
 Usage:
-    plot_ballSphere_flux_profiles.py <root_dir> [options]
+    ballShell_plot_luminosity_profiles.py <root_dir> [options]
 
 Options:
     --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: fluxes_profiles]

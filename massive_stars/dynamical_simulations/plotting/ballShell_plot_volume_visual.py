@@ -2,7 +2,7 @@
 This script plots nice 3D, fancy plots of ball-shell stars.
 
 Usage:
-    plot_ballShell_plotly3d.py <root_dir> [options]
+    ballShell_plot_volume_visual.py <root_dir> [options]
 
 Options:
     --data_dir=<dir>     Name of data handler directory [default: slices]
@@ -35,7 +35,7 @@ if root_dir is None:
 
 r_outer = float(args['--r_outer'])
 
-plotter = SFP(root_dir, file_dir=data_dir, fig_name='plotly3Dplot', start_file=1, n_files=np.inf, distribution='even')
+plotter = SFP(root_dir, file_dir=data_dir, fig_name='volume_vizualization', start_file=1, n_files=np.inf, distribution='even')
 if not plotter.idle:
     phi_keys = []
     theta_keys = []
