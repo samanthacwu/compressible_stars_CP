@@ -5,6 +5,7 @@ The goal is to see the entropy fluctuations of waves in the shell domain, maskin
 Usage:
     ballShell_plot_shell_entropy.py <root_dir> --r_inner=<r> --r_outer=<r> [options]
     ballShell_plot_shell_entropy.py <root_dir> --mesa_file=<f> [options]
+    ballShell_plot_shell_entropy.py <root_dir> [options]
 
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: slices]
@@ -40,14 +41,18 @@ if n_files is not None:
 if args['--r_inner'] is not None and args['--r_outer'] is not None:
     r_inner = float(args['--r_inner'])
     r_outer = float(args['--r_outer'])
-else:
+elif args['--mesa_file'] is not None:
     import h5py
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
+else:
+    print('WARNING: using default r_inner = 1.1 and r_outer = 2.59')
+    r_inner = 1.1
+    r_outer = 2.59
 
 # Create Plotter object, tell it which fields to plot
-plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
+plotter = SlicePlotter(root_dir, data_dir, fig_name, start_file=start_file, n_files=n_files)
 plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['--row_inch']) }
 
 # Just plot a single plot (1x1 grid) of the field "T eq"
@@ -55,7 +60,7 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
 plotter.setup_grid(num_rows=1, num_cols=3, polar=True, **plotter_kwargs)
 kwargs = {'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
-plotter.add_polar_colormesh('s1S_eq', azimuth_basis='φ', remove_x_mean=True, **kwargs)
-plotter.add_meridional_colormesh(left='s1S(phi=0)', right='s1S(phi=pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
-plotter.add_meridional_colormesh(left='s1S(phi=0.5*pi)', right='s1S(phi=1.5*pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
+plotter.add_polar_colormesh('s1_S_eq', azimuth_basis='φ', remove_x_mean=True, **kwargs)
+plotter.add_meridional_colormesh(left='s1_S(phi=0)', right='s1_S(phi=pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
+plotter.add_meridional_colormesh(left='s1_S(phi=0.5*pi)', right='s1_S(phi=1.5*pi)', colatitude_basis='θ', remove_x_mean=True, **kwargs)
 plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']))

@@ -4,6 +4,7 @@ This script plots snapshots of the evolution of a 2D slice through the equator o
 Usage:
     plot_equatorial_slices.py <root_dir> --r_inner=<r> --r_outer=<r> [options]
     plot_equatorial_slices.py <root_dir> --mesa_file=<f> [options]
+    plot_equatorial_slices.py <root_dir> [options]
 
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: slices]
@@ -39,11 +40,15 @@ if n_files is not None:
 if args['--r_inner'] is not None and args['--r_outer'] is not None:
     r_inner = float(args['--r_inner'])
     r_outer = float(args['--r_outer'])
-else:
+elif args['--mesa_file'] is not None:
     import h5py
     with h5py.File(args['--mesa_file'], 'r') as f:
         r_inner = f['r_inner'][()]
         r_outer = f['r_outer'][()]
+else:
+    print('WARNING: using default r_inner = 1.1 and r_outer = 2.59')
+    r_inner = 1.1
+    r_outer = 2.59
 
 # Create Plotter object, tell it which fields to plot
 plotter = SlicePlotter(root_dir, data_dir, fig_name, start_file=start_file, n_files=n_files)

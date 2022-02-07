@@ -24,7 +24,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from docopt import docopt
 args = docopt(__doc__)
-from plotpal.file_reader import SingleFiletypePlotter as SFP
+from plotpal.file_reader import SingleTypeReader
 from plotpal.plot_grid import PlotGrid as PG
 
 # Read in master output directory
@@ -43,13 +43,12 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-plotterS = SFP(root_dir, file_dir=data_dirS, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
-plotterB = SFP(root_dir, file_dir=data_dirB, fig_name=fig_name, start_file=start_file, n_files=n_files, distribution='even')
+reader = SingleTypeReader(root_dir, data_dirS, fig_name, start_file=start_file, n_files=n_files, distribution='even')
 
 fields = ['enth_lum', 'visc_lum', 'cond_lum', 'KE_lum']
-fieldsB = ['{}B'.format(f) for f in fields]
-fieldsS = ['{}S'.format(f) for f in fields]
-bases  = ['r']
+fieldsB = ['{}_B'.format(f) for f in fields]
+fieldsS = ['{}_S'.format(f) for f in fields]
+fields = fieldsB + fieldsS
 
 plot_grid = PG(5, 1, col_in=float(args['--col_inch']), row_in=float(args['--row_inch'])) 
 axs  = plot_grid.axes
@@ -152,8 +151,8 @@ with plotterB.my_sync:
             count += 1
 
         
-plotterS = SFP(root_dir, file_dir=data_dirS, fig_name='wave_lum', start_file=start_file, n_files=n_files, distribution='even')
-plotterB = SFP(root_dir, file_dir=data_dirB, fig_name='wave_lum', start_file=start_file, n_files=n_files, distribution='even')
+plotterS = SingleTypeReader(root_dir, data_dirS, 'wave_lum', start_file=start_file, n_files=n_files, distribution='even')
+plotterB = SingleTypeReader(root_dir, data_dirB, 'wave_lum', start_file=start_file, n_files=n_files, distribution='even')
 
 fields = ['wave_lum',]
 fieldsB = ['{}B'.format(f) for f in fields]

@@ -36,14 +36,14 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_file=start_file, n_files=n_files)
+plotter = SlicePlotter(root_dir, data_dir, fig_name, start_file=start_file, n_files=n_files)
 plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['--row_inch']) }
 
 plotter.setup_grid(num_cols=2, num_rows=2, orthographic=True, **plotter_kwargs)
 kwargs = { 'azimuth_basis' : 'φ', 'colatitude_basis' : 'θ' }
-plotter.add_orthographic_colormesh('s1B(r=0.5)', remove_mean=True, **kwargs)
-plotter.add_orthographic_colormesh('uB(r=0.5)', vector_ind=2, cmap='PuOr_r', **kwargs)
-plotter.add_orthographic_colormesh('s1S(r=0.95R)', remove_mean=True, **kwargs)
-plotter.add_orthographic_colormesh('uS(r=0.95R)',vector_ind=2, cmap='PuOr_r', **kwargs)
+plotter.add_orthographic_colormesh('s1_B(r=0.5)', remove_mean=True, **kwargs)
+plotter.add_orthographic_colormesh('u_B(r=0.5)', vector_ind=2, cmap='PuOr_r', **kwargs)
+plotter.add_orthographic_colormesh('s1_S(r=0.95R)', remove_mean=True, **kwargs)
+plotter.add_orthographic_colormesh('u_S(r=0.95R)',vector_ind=2, cmap='PuOr_r', **kwargs)
 
 plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']))
