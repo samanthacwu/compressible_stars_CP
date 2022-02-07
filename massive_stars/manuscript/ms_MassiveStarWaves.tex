@@ -1,0 +1,140 @@
+% Preamble
+\documentclass[twocolumn, linenumbers, twocolappendix]{aastex631}
+%\documentclass[twocolumn]{aastex631}
+\usepackage{natbib}
+\usepackage{latexsym}
+\usepackage{graphicx}
+\usepackage{epsfig}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{epstopdf}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+%%%% Custom commands
+\newcommand{\yL}{\ensuremath{\mathcal{Y}_{\rm{L}}}}
+\newcommand{\yS}{\ensuremath{\mathcal{Y}_{\rm{S}}}}
+\newcommand{\justgrad}{\ensuremath{\nabla}}
+\newcommand{\gradrad}{\ensuremath{\nabla_{\rm{rad}}}}
+\newcommand{\gradad}{\ensuremath{\nabla_{\rm{ad}}}}
+\newcommand{\gradC}{\ensuremath{\nabla_{\mathrm{C}}}}
+\newcommand{\gradmu}{\ensuremath{\nabla_{\mu}}}
+\newcommand{\gradL}{\ensuremath{\nabla_{\mathrm{L}}}}
+\newcommand{\gradT}{\ensuremath{\nabla_{\mathrm{T}}}}
+\newcommand{\Ro}{\ensuremath{\mathrm{R}_{0}}}
+\newcommand{\delp}{\ensuremath{\delta_{\rm{p}}}}
+\newcommand{\Fbot}{\ensuremath{F_{\rm{bot}}}}
+\newcommand{\Ftot}{\ensuremath{F_{\rm{tot}}}}
+\newcommand{\Frad}{\ensuremath{F_{\rm{rad}}}}
+\newcommand{\Fconv}{\ensuremath{F_{\rm{conv}}}}
+\newcommand{\Fcz}{\ensuremath{F_{\rm{cz}}}}
+\newcommand{\mP}{\ensuremath{\mathcal{P}}}
+\newcommand{\mD}{\ensuremath{\mathcal{D}}}
+\newcommand{\dP}{\ensuremath{\delta_{\rm{p}}}}
+\newcommand{\Lcz}{\ensuremath{L_{\rm{CZ}}}}
+\newcommand{\mR}{\ensuremath{\mathcal{R}}}
+\newcommand{\mS}{\ensuremath{\mathcal{S}}}
+\newcommand\Pran{\ensuremath{\mathrm{Pr}}}
+\newcommand{\brunt}{{Brunt-V\"{a}is\"{a}l\"{a}}}
+
+\newcommand{\angles}[1]{\langle #1 \rangle}
+\newcommand{\pd}[1]{\partial_{#1}}
+\renewcommand{\vec}[1]{\boldsymbol{#1}}
+\newcommand{\M}[1]{\mathbf{#1}}
+\renewcommand{\dot}{\vec{\cdot}}
+\renewcommand{\bar}[1]{\overline{#1}}
+\newcommand{\grad}{\vec{\nabla}}
+\newcommand{\cross}{\vec{\times}}
+\newcommand{\laplacian}{\nabla^2}
+
+\newcommand{\editone}[1]{\textcolor{orange}{#1}}
+
+\newcommand{\todo}[1]{ {\color{blue} \noindent\footnotesize \\\textsf{TODO:} \textsf{#1}\\\noindent }}
+
+
+%%%% Journal preamble
+\received{July 28, 2021}
+\revised{October 19, 2021}
+\accepted{}
+\published{}
+\submitjournal{ApJ}
+
+\shorttitle{TODO waves and such}
+\shortauthors{Anders et al}
+
+
+\begin{document}
+
+%%%% Title and Abstract
+\title{Waves!}
+\author[0000-0002-3433-4733]{Evan H. Anders}
+\affiliation{CIERA, Northwestern University, Evanston IL 60201, USA}
+\author[0000-0002-7635-9728]{Daniel Lecoanet}
+\affiliation{CIERA, Northwestern University, Evanston IL 60201, USA}
+\affiliation{Department of Engineering Sciences and Applied Mathematics, Northwestern University, Evanston IL 60208, USA}
+\author{Matteo Cantiello}
+\affiliation{Center for Computational Astrophysics, Flatiron Institute, New York, NY 10010, USA}
+\affiliation{Department of Astrophysical Sciences, Princeton University, Princeton, NJ 08544, USA}
+\author[0000-0001-8935-219X]{Benjamin P. Brown}
+\affiliation{University of Colorado Laboratory for Atmospheric and Space Physics and Department of Astrophysical and Planetary Sciences, Boulder, Colorado 80309, USA}
+\author[0000-0003-4761-4766]{Keaton J. Burns}
+\affiliation{Massachusetts Institute of Technology Departments of Mathematics and Physics, Cambridge, Massachusetts 02139, USA}
+\affiliation{Center for Computational Astrophysics, Flatiron Institute, New York, New York 10010, USA}
+\author[0000-0002-8902-5030]{Geoffrey M. Vasil}
+\affiliation{School of Mathematics and Statistics, University of Sydney, Sydney, New South Wales 2006, Australia}
+\author[0000-0001-8531-6570]{Jeffrey S. Oishi}
+\affiliation{Bates College Department of Physics and Astronomy, Lewiston, Maine 04240, USA}
+
+\author{others?}
+%\author[0000-0001-5048-9973]{Adam S. Jermyn}
+%\affiliation{Center for Computational Astrophysics, Flatiron Institute, New York, NY 10010, USA}
+
+\correspondingauthor{Evan H. Anders}
+\email{evan.anders@northwestern.edu}
+
+\begin{abstract}
+\end{abstract}
+\keywords{Stellar convection zones (301), Stellar physics (1621); Stellar evolutionary models (2046), others?}
+
+
+
+%%%% Body of paper
+\input{intro}
+
+\input{music}
+
+\input{simulation_details}
+
+\input{results_damping}
+
+\input{results_surface}
+
+\input{transfer_verification}
+
+\input{transfer_extrapolation}
+
+\input{conclusions}
+
+
+%\begin{figure*}[t!]
+%\centering
+%\includegraphics[width=\textwidth]{dynamics_figure.pdf}
+%\caption{
+%    {\color{blue} Note: this is currently evolving further.}
+%\label{fig:dynamics}
+%}
+%\end{figure*}
+
+\begin{acknowledgments}
+We thank Dominic Bowman, Jared Goldberg, Will Schultz, Falk Herwig, Kyle Augustson, (OTHERS?) for useful discussions which helped improve our understanding.
+EHA is funded as a CIERA Postdoctoral fellow and would like to thank CIERA and Northwestern University. 
+This research was supported in part by the National Science Foundation under Grant No. PHY-1748958, and we acknowledge the hospitality of KITP during the Probes of Transport in Stars Program.
+Computations were conducted with support from the NASA High End Computing (HEC) Program through the NASA Advanced Supercomputing (NAS) Division at Ames Research Center on Pleiades with allocation GID s2276.
+\end{acknowledgments}
+
+
+\appendix
+
+\bibliographystyle{aasjournal}
+\bibliography{biblio}
+\end{document}
