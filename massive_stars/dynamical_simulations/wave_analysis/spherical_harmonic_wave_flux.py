@@ -61,7 +61,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
+star_file = '../ncc_creation/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
 with h5py.File(star_file, 'r') as f:
     rB = f['rB'][()]
     rS = f['rS'][()]
@@ -80,7 +80,7 @@ with h5py.File(star_file, 'r') as f:
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'.format(data_dir)
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
-reader = SR(root_dir, file_dir=data_dir, fig_name=out_dir, start_file=start_file, n_files=n_files, distribution='single')
+reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files, distribution='single')
 with h5py.File(reader.files[0], 'r') as f:
     fields = list(f['tasks'].keys())
 radii = []
@@ -105,6 +105,7 @@ if not args['--no_ft']:
 
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
+    print(ells.shape, ms.shape)
 
     #TODO: only load in one ell and m at a time, that'll save memory.
     for i, f in enumerate(fields):
@@ -114,7 +115,6 @@ if not args['--no_ft']:
         print('filling datacube...')
         writes = 0
         while reader.writes_remain():
-            print('reading file {}...'.format(reader.current_file_number+1))
             dsets, ni = reader.get_dsets([])
             rf = reader.current_file_handle
             data_cube[writes,:] = rf['tasks'][f][ni,:].squeeze()

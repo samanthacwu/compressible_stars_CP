@@ -147,8 +147,8 @@ if not reader.idle:
         with h5py.File(output_file_name, file_mode) as of:
             sim_times = dsets[fields[0]].dims[0]['sim_time']
             if ni == 0:
-                of['ells'] = np.expand_dims(ell_values, axis=(0,2))
-                of['ms']   = np.expand_dims(m_values, axis=(0,1))
+                of['ells'] = ell_values[None,:,:,None]
+                of['ms']   = m_values[None,:,:,None]
                 of['time'] = sim_times[()]
                 for attr in ['writes', 'set_number', 'handler_name']:
                     of.attrs[attr] = reader.current_file_handle.attrs[attr]
