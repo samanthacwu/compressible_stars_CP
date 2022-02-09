@@ -112,20 +112,16 @@ if not reader.idle:
     m_values = np.arange(max_m+1).reshape((1,max_m+1))
 
     slices = dict()
-    domain = basis.domain
-    coeff_layout = dist.coeff_layout
-    group_coupling = [True] * domain.dist.dim
-    group_coupling[0] = False
-    group_coupling[1] = False
-    group_coupling = tuple(group_coupling)
-    groupsets = coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
-    for ell_v in ell_values.squeeze():
-        if MPI.COMM_WORLD.rank == 0:
-            print('getting slices for ell = {}'.format(ell_v))
-        for m_v in m_values.squeeze():
-            if (m_v, ell_v, None) in groupsets:
-                groupset_slices = coeff_layout.local_groupset_slices((m_v, ell_v, None), domain, scales=domain.dealias, broadcast=True)
-                slices['{},{}'.format(ell_v,m_v)] = groupset_slices
+    for i in range(resolution[0]):
+        for j in range(resolution[1]):
+            groups = basis.elements_to_groups((False, False, False), (np.array((i,)),np.array((j,)), np.array((0,))))
+            m = groups[0][0]
+            ell = groups[1][0]
+            key = '{},{}'.format(ell, m)
+            if key not in slices.keys():
+                slices[key] = [(m, ell)]
+            else:
+                slices[key].append((m, ell))
 
     scalar_field = dist.Field(bases=basis)
     vector_field = dist.VectorField(bases=basis, coordsys=c)
@@ -177,15 +173,18 @@ if not reader.idle:
                 for j, ell in enumerate(ell_values.squeeze()):
                     for k, m in enumerate(m_values.squeeze()):
                         if '{},{}'.format(ell,m) in slices.keys():
-                            sl = slices['{},{}'.format(ell,m)][0]
+                            sl = slices['{},{}'.format(ell,m)]
                             if scalar:
-                                values = scalar_field['c'][sl].squeeze()
-                                out_field[j,k] = values[0] + 1j*values[1]
+                                value1 = scalar_field['c'][sl[0]].squeeze()
+                                value2 = scalar_field['c'][sl[1]].squeeze()
+                                out_field[j,k] = value1 + 1j*value2
                             elif vector:
                                 for v in range(shape[0]):
-                                    v_sl = tuple([v] + list(sl))
-                                    values = vector_field['c'][v_sl].squeeze()
-                                    out_field[v,j,k] = values[0] + 1j*values[1]
+                                    v_sl1 = tuple([v] + list(sl[0]))
+                                    v_sl2 = tuple([v] + list(sl[1]))
+                                    value1 = vector_field['c'][v_sl1].squeeze()
+                                    value2 = vector_field['c'][v_sl2].squeeze()
+                                    out_field[v,j,k] = value1 + 1j*value2
 
                 if len(shape) == 3:
                     out_field[:,0]  /= np.sqrt(2) #m == 0 normalization
