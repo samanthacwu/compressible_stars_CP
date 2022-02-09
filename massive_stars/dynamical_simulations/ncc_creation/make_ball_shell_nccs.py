@@ -426,3 +426,59 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     for k in ['r_inner', 'r_outer', 'max_dt', 'Ma2']:
         f[k].attrs['units'] = 'dimensionless'
 print('finished saving NCCs to {}'.format(out_file))
+
+
+fig, axs = plt.subplots(nrows=2, ncols=4, figsize=(8,4))
+
+for i in range(2):
+    for j in range(4):
+        axs[i][j].axvline(r_inner_MESA.value, c='k', lw=0.5)
+        axs[i][j].axvline(r_outer_MESA.value, c='k', lw=0.5)
+
+
+axs[0][0].plot(r, inv_Pe_rad)
+axs[0][0].plot(rB.flatten()*L, inv_Pe_rad_fieldB['g'][0,0,:], c='k')
+axs[0][0].plot(rS.flatten()*L, inv_Pe_rad_fieldS['g'][0,0,:], c='k')
+axs[0][0].set_yscale('log')
+
+axs[0][1].plot(r, np.gradient(inv_Pe_rad, r))
+axs[0][1].plot(rB.flatten()*L, grad_inv_Pe_B['g'][2,0,0,:]/L, c='k')
+axs[0][1].plot(rS.flatten()*L, grad_inv_Pe_S['g'][2,0,0,:]/L, c='k')
+axs[0][1].set_yscale('log')
+
+
+axs[0][2].plot(r, np.log(rho/rho0))
+axs[0][2].plot(rB.flatten()*L, ln_rho_fieldB['g'][0,0,:], c='k')
+axs[0][2].plot(rS.flatten()*L, ln_rho_fieldS['g'][0,0,:], c='k')
+
+axs[0][3].plot(r, np.log(T/T0))
+axs[0][3].plot(rB.flatten()*L, ln_T_fieldB['g'][0,0,:], c='k')
+axs[0][3].plot(rS.flatten()*L, ln_T_fieldS['g'][0,0,:], c='k')
+
+axs[1][0].plot(r, grad_T*T0/L)
+axs[1][0].plot(rB.flatten()*L, T0*grad_T_fieldB['g'][2,0,0,:]/L, c='k')
+axs[1][0].plot(rS.flatten()*L, T0*grad_T_fieldS['g'][2,0,0,:]/L, c='k')
+
+axs[1][1].plot(r, T)
+axs[1][1].plot(rB.flatten()*L, T0*T_fieldB['g'][0,0,:], c='k')
+axs[1][1].plot(rS.flatten()*L, T0*T_fieldS['g'][0,0,:], c='k')
+
+
+axs[1][2].plot(r, H_eff/(rho*T), c='b')
+axs[1][2].plot(r, -H_eff/(rho*T), ls='--', c='b')
+axs[1][2].plot(rB.flatten()*L, (H0 / rho0 / T0)*H_fieldB['g'][0,0,:], c='k')
+axs[1][2].plot(rS.flatten()*L, (H0 / rho0 / T0)*H_fieldS['g'][0,0,:], c='k')
+axs[1][2].plot(rB.flatten()*L, -(H0 / rho0 / T0)*H_fieldB['g'][0,0,:], c='k', ls='--')
+axs[1][2].plot(rS.flatten()*L, -(H0 / rho0 / T0)*H_fieldS['g'][0,0,:], c='k', ls='--')
+axs[1][2].set_yscale('log')
+axs[1][2].set_ylim(1e-6, 1e0)
+
+axs[1][3].plot(r, grad_s)
+axs[1][3].plot(rB.flatten()*L, (s_c/L)*grad_s_fieldB['g'][2,0,0,:], c='k')
+axs[1][3].plot(rS.flatten()*L, (s_c/L)*grad_s_fieldS['g'][2,0,0,:], c='k')
+axs[1][3].set_yscale('log')
+axs[1][3].set_ylim(1e-4, 1e0)
+
+
+
+fig.savefig('dedalus_mesa_figure.png', dpi=200, bbox_inches='tight')
