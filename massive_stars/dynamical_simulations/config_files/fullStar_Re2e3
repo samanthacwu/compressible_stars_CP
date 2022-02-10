@@ -1,9 +1,0 @@
-[parameters]
-L = 96
-NB = 96
-NS = 96
-Re = 2e3
-buoy_end_time = 1000
-mesa_file = ./mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re2e3_de1.5.h5
-wall_hours = 119.95
-CFL_max_r = 1.05

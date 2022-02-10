@@ -1,7 +1,0 @@
-[parameters]
-L = 62
-N = 63
-Re = 1e2
-mesh = 8,8
-buoy_end_time = 300
-mesa_file = ./mesa_stars/MESA_Models_Dedalus_Full_Sphere_h1_0.6_core/nccs_63.h5

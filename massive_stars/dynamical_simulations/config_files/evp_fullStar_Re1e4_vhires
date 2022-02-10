@@ -1,9 +1,0 @@
-[parameters]
-L = 10
-NB = 255
-NS = 127
-NB_hires = 383
-NS_hires = 191
-Re = 1e4
-mesa_file = mesa_stars/nccs_40msol/ballShell_nccs_B255_S127_Re1e4.h5
-mesa_file_hires = mesa_stars/nccs_40msol/ballShell_nccs_B383_S191_Re1e4.h5

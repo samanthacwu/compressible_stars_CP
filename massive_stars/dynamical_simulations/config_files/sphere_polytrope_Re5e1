@@ -1,6 +1,0 @@
-[parameters]
-L = 14
-N = 63
-Re = 5e1
-buoy_end_time = 300
-mesa_file = mesa_stars/sphere_polytrope/sphere_nccs_63.h5

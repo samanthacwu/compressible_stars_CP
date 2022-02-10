@@ -1,0 +1,10 @@
+[parameters]
+ntheta = 64
+nrB = 96
+nrS = 96
+Re = 1e3
+buoy_end_time = 1e4
+ncc_file = ncc_creation/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5
+CFL_max_r = 1.05
+safety = 0.2
+wall_hours = 11.5
