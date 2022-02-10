@@ -1,0 +1,28 @@
+\section{Comparison of MESA and Dedalus models}
+\label{app:mesa_dedalus}
+We read in a 40 $M_\odot$ ZAMS MESA stellar model (\texttt{LOGS/6.data} at \url{github.com/matteocantiello/MESA_Models_Dedalus_Full_Sphere}).
+From this model, we load the radial profiless of the mass $m$, radial coordinate $r$, density $\rho$, pressure $P$, temperature $T$, energy generation rate per unit mass $\epsilon$, opacity $\kappa$, logarithmic temperature gradlent $\nabla = d \ln T/d \ln P$, adiabatic temperature gradient $\gradad$, $\chi_{\rho} = (d\ln P /d\ln\rho)|_T$, $\chi_T = (d\ln P/d\ln T)|_{\rho}$, \brunt$\,$frequency $N^2$, specific heat at constant volume $c_V$ and pressure $c_P$, convective luminosity $L_{\rm{conv}}$, and square sound speed $c_s^2$.
+From these quantities, we calculate the radiative diffusivity,
+\begin{equation}
+\chi_{\rm{rad}} = \frac{16 \sigma_{\rm{SB}} T^3}{3 \rho^2 c_P \kappa},
+\end{equation}
+the gravitational acceleration $g = G m / r^2$, the logarithmic pressure derivative $d\ln P/dr = - \rho g /P$, the logarithmic density gradient $(d\ln\rho/dr = d\ln P/dr)(\chi_T/\chi_{\rho})(\gradad - \justgrad) - g/c_s^2$, and the logarithmic temperature gradient $d\ln T/dr = (d\ln P/dr)\justgrad$.
+The heating profile is found from the convective velocity $H = \hat{e}_r\dot\grad L_{\rm{conv}} / (4\pi r^2)$.
+We nondimensionalize the length $L$ on the radius of the core convection zone; the density, temperature, heating, and specific heat at constant pressure are nondimensionalized at their core values $\rho_c = \rho(r=0)$ and $T_c = T(r=0)$, $H_c = H(r=0)$, $c_{P,c} = c_P(r=0)$; the timescale is then set to be the core heating timescale $\tau_H = (H_c / L^2 / \rho_c)^{-1/3}$ and the nondimensiona velocity is $u_H = L / \tau_H$.
+
+Given this nondimensionalization and these MESA profiles, we compute the following nonconstant coefficients for our Dedalus model:
+\begin{enumerate}
+\item $\rm{Pe}^{-1} = \chi_{\rm{rad}} / (u_H L)$. When $\rm{Pe}^{-1} < \rm{Re}^{-1}$, a constant, we set $\rm{Pe}^{-1} = \rm{Re}^{-1}$.
+\item $\justgrad\rm{Pe}^{-1}$ is computed as the gradient of $\rm{Pe}^{-1}$.
+\item $\ln\rho$ is set to be $\ln(\rho / \rho_c)$.
+\item $\ln T$ is set to be $\ln(T / T_c)$.
+\item $T$ is set to be $T/T_c$.
+\item $\grad T$ is set to be $(T/T_c)\,L\,d\ln T/dr$.
+\item $\mathcal{H} = (H/H_c)\, \rho_c T_C / (\rho T)$.
+\item $\justgrad s_0 = c_P N^2 / g (L/s_c)$
+\todo{write down what $s_c$ is}
+\end{enumerate}
+
+Some fields with particularly sharp transitions (e.g., $\grad s_0$, $\mathcal{H}$) require additional smoothing.
+In Fig.\todo{put fig in}, we show comparisons between the stratification felt by the Dedalus simulation and the original MESA model.
+
