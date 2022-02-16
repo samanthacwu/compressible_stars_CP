@@ -2,7 +2,7 @@
 #PBS -N sponge_AN_Re1e4
 #PBS -l select=37:ncpus=28:mpiprocs=28:model=bro
 #PBS -l walltime=24:00:00
-#PBS -l site=needed=/home1+/nobackupp12+/nobackupp16/swbuild
+#PBS -l site=needed=/home1+/nobackupp19+/nobackupp16/swbuild
 #PBS -j oe
 #PBS -q long
 #PBS -W group_list=s2114

@@ -257,6 +257,7 @@ ncc_dict['{}_{}'.format(vec_nccs[0], 'S')].change_scales(shell_basis.dealias)
 local_vncc_shape_B = ncc_dict['{}_{}'.format(vec_nccs[0], 'B')]['g'].shape
 local_vncc_shape_S = ncc_dict['{}_{}'.format(vec_nccs[0], 'S')]['g'].shape
 if ncc_file is not None:
+    logger.info('reading NCCs from {}'.format(ncc_file))
     for basis, basis_name in zip((ball_basis, shell_basis), ['B', 'S']):
         for k in vec_nccs + scalar_nccs:
             ncc_dict['{}_{}'.format(k, basis_name)].change_scales(basis.dealias)
@@ -287,7 +288,7 @@ if ncc_file is not None:
         t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
 
         if do_rotation:
-            sim_tau_sec = f['tau'][()]
+            sim_tau_sec = f['tau_nd'][()]
             sim_tau_day = sim_tau_sec / (60*60*24)
             Ω = sim_tau_day * dimensional_Ω 
             t_rot = 1/(2*Ω)
@@ -295,7 +296,7 @@ if ncc_file is not None:
             t_rot = np.inf
 
         if sponge:
-            f_brunt = f['tau'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+            f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
             ncc_dict['sponge_S']['g'] *= f_brunt
 
 else:
@@ -402,6 +403,8 @@ problem.add_equation("p_B = 0", condition="nθ == 0")
 problem.add_equation("u_B = 0", condition="nθ == 0")
 problem.add_equation("p_S = 0", condition="nθ == 0")
 problem.add_equation("u_S = 0", condition="nθ == 0")
+#problem.add_equation("dt(s1_B) - (inv_Pe_rad_B)*(lap(s1_B) + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B - dot(u_B, grad_s0_B) + dot(grad_s1_B, grad_inv_Pe_rad_B) ")
+#problem.add_equation("dt(s1_S) - (inv_Pe_rad_S)*(lap(s1_S) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S - dot(u_S, grad_s0_S) + dot(grad_s1_S, grad_inv_Pe_rad_S) ")
 problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - (inv_Pe_rad_B)*(lap(s1_B) + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - dot(grad_s1_B, grad_inv_Pe_rad_B) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
 problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - (inv_Pe_rad_S)*(lap(s1_S) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - dot(grad_s1_S, grad_inv_Pe_rad_S) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
 
@@ -575,7 +578,7 @@ if args['--sponge']:
     for rval in [0.90, 1.05]:
         surface_shell_slices.add_task(d3.radial(u_B(r=rval)), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_B(r=rval), name='pomega(r={})'.format(rval),    layout='g')
-    for rval in [1.15, 1.60]:
+    for rval in [1.5, 2.0, 2.5, 3.0, 3.5]:
         surface_shell_slices.add_task(d3.radial(u_S(r=rval)), name='u(r={})'.format(rval), layout='g')
         surface_shell_slices.add_task(pomega_hat_S(r=rval), name='pomega(r={})'.format(rval),    layout='g')
     analysis_tasks.append(surface_shell_slices)
