@@ -584,7 +584,11 @@ else:
     surface_shell_slices.add_task(s1_S(r=r_outer),         name='s1_surf',    layout='g')
     analysis_tasks.append(surface_shell_slices)
 
-checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
+if Re > 1e4:
+    chk_time = 2*t_buoy
+else:
+    chk_time = 10*t_buoy
+checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=chk_time)
 checkpoint.add_tasks(solver.state, layout='g')
 
 re_ball = solver.evaluator.add_dictionary_handler(iter=10)
@@ -681,6 +685,10 @@ finally:
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
     fcheckpoint.add_tasks(solver.state, layout='g')
     solver.step(timestep)
+
+    if dist.comm_cart.rank == 0:
+        for handler in analysis_tasks:
+            handler.process_virtual_file()
 
     #TODO: Make the end-of-sim report better
     n_coeffs = np.prod(resolutionB) + np.prod(resolutionS)
