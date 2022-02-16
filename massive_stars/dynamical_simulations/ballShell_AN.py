@@ -252,16 +252,16 @@ if sponge:
 # Load MESA NCC file or setup NCCs using polytrope
 grid_slices_B  = dist.layouts[-1].slices(field_dict['{}_{}'.format(vec_fields[0], 'B')].domain, N_dealias)
 grid_slices_S  = dist.layouts[-1].slices(field_dict['{}_{}'.format(vec_fields[0], 'S')].domain, N_dealias)
-ncc_dict['{}_{}'.format(vec_nccs[0], 'B')].require_scales(ball_basis.dealias)
-ncc_dict['{}_{}'.format(vec_nccs[0], 'S')].require_scales(shell_basis.dealias)
+ncc_dict['{}_{}'.format(vec_nccs[0], 'B')].change_scales(ball_basis.dealias)
+ncc_dict['{}_{}'.format(vec_nccs[0], 'S')].change_scales(shell_basis.dealias)
 local_vncc_shape_B = ncc_dict['{}_{}'.format(vec_nccs[0], 'B')]['g'].shape
 local_vncc_shape_S = ncc_dict['{}_{}'.format(vec_nccs[0], 'S')]['g'].shape
 if ncc_file is not None:
     for basis, basis_name in zip((ball_basis, shell_basis), ['B', 'S']):
         for k in vec_nccs + scalar_nccs:
-            ncc_dict['{}_{}'.format(k, basis_name)].require_scales(basis.dealias)
+            ncc_dict['{}_{}'.format(k, basis_name)].change_scales(basis.dealias)
         for k in ['H', 'ρ', 'T', 'inv_T']:
-            field_dict['{}_{}'.format(k, basis_name)].require_scales(basis.dealias)
+            field_dict['{}_{}'.format(k, basis_name)].change_scales(basis.dealias)
     with h5py.File(ncc_file, 'r') as f:
         for k in vec_nccs:
             if np.prod(local_vncc_shape_B) > 0:
@@ -325,10 +325,10 @@ else:
         grad_T_full = d3.grad(field_dict['T_{}'.format(basis_name)]).evaluate()
         grad_ln_T_full = (grad_T_full/field_dict['T_{}'.format(basis_name)]).evaluate()
         if np.prod(local_vncc_shape) > 0:
-            ncc_dict['grad_s0_{}'.format(basis_name)].require_scales(1)
+            ncc_dict['grad_s0_{}'.format(basis_name)].change_scales(1)
             print(ncc_dict['grad_s0_{}'.format(basis_name)]['g'].shape, 'grad_s0_{}'.format(basis_name))
             ncc_dict['grad_s0_{}'.format(basis_name)]['g'][2]  = grad_s0_func(r1)
-            for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict['{}_{}'.format(f, basis_name)].require_scales(basis.dealias)
+            for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict['{}_{}'.format(f, basis_name)].change_scales(basis.dealias)
             ncc_dict['grad_ln_ρ_{}'.format(basis_name)]['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
             ncc_dict['grad_ln_T_{}'.format(basis_name)]['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
             ncc_dict['grad_T_{}'.format(basis_name)]['g']      = grad_T_full['g'][:,0,0,None,None,:]
@@ -382,8 +382,8 @@ sponge_term_B = 0
 # Lift operators for boundary conditions
 lift_ball_basis = ball_basis.clone_with(k=0)
 lift_shell_basis = shell_basis.clone_with(k=2)
-liftB   = lambda A: d3.LiftTau(A, lift_ball_basis, -1)
-liftS   = lambda A, n: d3.LiftTau(A, lift_shell_basis, n)
+liftB   = lambda A: d3.Lift(A, lift_ball_basis, -1)
+liftS   = lambda A, n: d3.Lift(A, lift_shell_basis, n)
 integ     = lambda A: d3.Integrate(A, coords)
 BC_u_B = liftB(tau_u_B)
 BC_u_S = liftS(tau_u_Sbot, -1) + liftS(tau_u_Stop, -2)
