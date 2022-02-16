@@ -124,7 +124,7 @@ print(x.shape, y.shape, z.shape)
 
 #Operators
 lift_basis = basis.clone_with(k=0)
-lift      = lambda A: d3.LiftTau(A, lift_basis, -1)
+lift      = lambda A: d3.Lift(A, lift_basis, -1)
 integ     = lambda A: d3.Integrate(A, coords)
 
 # Problem variables
@@ -172,13 +172,13 @@ for i in range(3):
 
 # Load MESA NCC file or setup NCCs using polytrope.
 grid_slices = dist.layouts[-1].slices(field_dict[vec_fields[0]].domain, N_dealias)
-ncc_dict[vec_nccs[0]].require_scales(basis.dealias)
+ncc_dict[vec_nccs[0]].change_scales(basis.dealias)
 local_vncc_shape = ncc_dict[vec_nccs[0]]['g'].shape
 if ncc_file is not None:
     for k in [vec_nccs + scalar_nccs]:
-        ncc_dict[k].require_scales(basis.dealias)
+        ncc_dict[k].change_scales(basis.dealias)
     for k in ['H', 'ρ', 'T', 'inv_T']:
-        field_dict[k].require_scales(basis.dealias)
+        field_dict[k].change_scales(basis.dealias)
     with h5py.File(ncc_file, 'r') as f:
         if np.prod(local_vncc_shape) > 0:
             for k in vec_nccs:
@@ -210,9 +210,9 @@ else:
     grad_T_full = d3.grad(field_dict['T']).evaluate()
     grad_ln_T_full = (grad_T_full/field_dict['T']).evaluate()
     if np.prod(local_vncc_shape) > 0:
-        ncc_dict['grad_s0'].require_scales(1)
+        ncc_dict['grad_s0'].change_scales(1)
         ncc_dict['grad_s0']['g'][2]  = grad_s0_func(r1)
-        for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict[f].require_scales(basis.dealias)
+        for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict[f].change_scales(basis.dealias)
         ncc_dict['grad_ln_ρ']['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
         ncc_dict['grad_ln_T']['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
         ncc_dict['grad_T']['g']      = grad_T_full['g'][:,0,0,None,None,:]
