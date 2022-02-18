@@ -29,6 +29,7 @@ from astropy import units as u
 from astropy import constants
 from scipy.signal import savgol_filter
 from scipy.interpolate import interp1d
+import scipy.integrate as si
 from numpy.polynomial import Chebyshev as Pfit
 
 args = docopt(__doc__)
@@ -123,7 +124,6 @@ lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
 R_star = (p.photosphere_r * u.R_sun).cgs
 
 #Put all MESA fields into cgs and calculate secondary MESA fields
-rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs
 g               = constants.G.cgs*mass/r**2
 dlogPdr         = -rho*g/P
 gamma1          = dlogPdr/(-g/csound**2)
@@ -131,7 +131,16 @@ dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
 dlogTdr         = dlogPdr*(nablaT)
 grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
 L_conv          = conv_L_div_L*Luminosity
-H_eff           = np.gradient(L_conv,r, edge_order=2)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
+dTdr            = (T)*dlogTdr
+
+#True calculation of rad_diff, rad_cond
+#rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs
+#rad_cond        = rho*cp*rad_diff
+
+#Calculate k_rad using luminosities and smooth things.
+k_rad = rad_cond = -(Luminosity - L_conv)/(4*np.pi*r**2*dTdr)
+rad_diff        = k_rad / (rho * cp)
+
 
 ### Split up the domain
 # Find edge of core cz
@@ -149,6 +158,44 @@ print('fraction of FULL star simulated: {}, up to r={:.3e}'.format(fracStar, r_o
 ball_bool     = r <= r_inner_MESA
 shell_bool    = (r > r_inner_MESA)*(r <= r_outer_MESA)
 sim_bool      = r <= r_outer_MESA
+
+# Calculate heating function
+# Goal: H_eff= np.gradient(L_conv,r, edge_order=1)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
+# (1/4pir^2) dL_conv/dr = rho * eps + (1/r^2)d/dr (r^2 k_rad dT/dr) -> chain rule
+eo=2
+H_eff = (1/(4*np.pi*r**2))*np.gradient(Luminosity, r, edge_order=eo) + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
+H_eff_secondary = rho*eps_nuc + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
+H_eff[:2] = H_eff_secondary[:2]
+
+
+sim_H_eff = np.copy(H_eff)
+L_conv_sim = np.zeros_like(L_conv)
+L_eps = np.zeros_like(Luminosity)
+for i in range(L_conv_sim.shape[0]):
+    L_conv_sim[i] = np.trapz((4*np.pi*r**2*sim_H_eff)[:1+i], r[:1+i])
+    L_eps[i] = np.trapz((4*np.pi*r**2*rho*eps_nuc)[:i+1], r[:i+1])
+L_excess = L_conv_sim[-5] - Luminosity[-5]
+
+#construct internal heating field
+if smooth_H:
+    #smooth CZ-RZ transition
+    L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.15*core_cz_radius)
+    L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.05*core_cz_radius)
+
+    transition_region = (r > 0.5*core_cz_radius)
+    sim_H_eff[transition_region] = ((1/(4*np.pi*r**2))*np.gradient(L_conv_sim, r, edge_order=eo))[transition_region]
+
+#    plt.figure()
+#    plt.axhline(0, c='k')
+#    plt.plot(r, L_conv)
+#    plt.plot(r, L_conv_sim, c='k', ls='--')
+#    plt.figure()
+#    plt.plot(r, H_eff)
+#    plt.plot(r, sim_H_eff, ls='--', c='k')
+#    plt.show()
+else:
+    sim_H_eff = H_eff
+
 
 #Nondimensionalization
 L_nd    = L_CZ = core_cz_radius
@@ -173,16 +220,6 @@ Ma2_r0 = (u_nd**2 / ((gamma1_r0-1)*cp_r0*T_r0)).cgs
 print('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
 cp_surf = cp[shell_bool][-1]
-
-#construct internal heating field
-if smooth_H:
-    #smooth transition from some L_conv -> zero L_conv.
-    L_conv_smooth = np.copy(L_conv)
-    L_conv_smooth *= one_to_zero(r, core_cz_radius*0.97, 0.02*core_cz_radius)
-    sim_H_eff  = (np.gradient(L_conv_smooth,r)/(4*np.pi*r**2)) # Heating, for ncc, H = rho*eps - portion carried by radiation
-    sim_H_eff[0] = (eps_nuc*rho)[0] * (H_eff/(eps_nuc*rho))[1] # fix up central point
-else:
-    sim_H_eff = H_eff
 
 #MESA radial values, in simulation units
 r_inner = (r_inner_MESA/L_nd).value
@@ -269,13 +306,12 @@ if plot:
     plot_ncc_figure(r[sim_bool]/L_nd, (T/T_nd)[sim_bool], (rB.flatten(), rS.flatten()), (T_fieldB['g'][:1,:1,:].flatten(), T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$T$", fig_name="T", out_dir=out_dir, log=True, r_int=r_inner)
 
 ### Temperature gradient
-grad_T = (T/T_nd)*dlogTdr*L_nd
 NmaxB, NmaxS = 32, 32
-grad_T_fieldB, grad_T_interpB = make_NCC(bB, (rB, r_ball_nd,  grad_T[ball_bool]), Nmax=NmaxB, vector=True)
-grad_T_fieldS, grad_T_interpS = make_NCC(bS, (rS, r_shell_nd, grad_T[shell_bool]), Nmax=NmaxS, vector=True)
+grad_T_fieldB, grad_T_interpB = make_NCC(bB, (rB, r_ball_nd,  (L_nd/T_nd)*dTdr[ball_bool]), Nmax=NmaxB, vector=True)
+grad_T_fieldS, grad_T_interpS = make_NCC(bS, (rS, r_shell_nd, (L_nd/T_nd)*dTdr[shell_bool]), Nmax=NmaxS, vector=True)
 
 if plot:
-    plot_ncc_figure(r[sim_bool]/L_nd, -grad_T[sim_bool], (rB.flatten(), rS.flatten()), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(), -grad_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=r_inner)
+    plot_ncc_figure(r[sim_bool]/L_nd, -(L_nd/T_nd)*dTdr[sim_bool], (rB.flatten(), rS.flatten()), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(), -grad_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=r_inner)
 
 ### Radiative diffusivity & gradient
 NmaxB, NmaxS = 8, 100#np.min((nrS - 1, 126))
@@ -312,7 +348,7 @@ if plot:
 ### effective heating / (rho * T)
 #Logic for smoothing heating profile at outer edge of CZ. Adjust outer edge of heating
 H_NCC = ((sim_H_eff)  / H0) * (rho_nd*T_nd/rho/T)
-H_NCC_true = ((H_eff)  / H0) * (rho_nd*T_nd/rho/T)
+H_NCC_true = ((H_eff)  / H0) * (rho_nd*T_nd/rho/T) * one_to_zero(r, 1.5*L_nd, width=0.1*L_nd)
 NmaxB, NmaxS = 60, 10
 H_fieldB, H_interpB = make_NCC(bB, (rB, r_ball_nd, H_NCC[ball_bool]), Nmax=NmaxB, grid_only=True)
 H_fieldS, H_interpS = make_NCC(bS, (rS, r_shell_nd, H_NCC[shell_bool]), Nmax=NmaxS, grid_only=True)
