@@ -226,7 +226,7 @@ for basis_name, grid_points in zip(['B', 'S'], [(r1B, θ1B, φ1B), (r1S, θ1S, �
 # NCCs
 ncc_dict = OrderedDict()
 tensor_nccs = ['I_matrix']
-vec_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe_rad', 'r_vec']
+vec_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe_rad']
 scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe_rad', 'sponge']
 
 for basis, name in zip((ball_basis, shell_basis), ('B', 'S')):
@@ -251,6 +251,8 @@ if sponge:
     L_shell = r_outer - r_inner
     ncc_dict['sponge_S']['g'] = zero_to_one(r1S, r_inner + 2*L_shell/3, 0.1*L_shell)
 
+ncc_dict['r_vec_B'] = dist.VectorField(coords, name='r_vec_B', bases=ball_basis.radial_basis)
+ncc_dict['r_vec_S'] = dist.VectorField(coords, name='r_vec_S', bases=shell_basis.radial_basis)
 ncc_dict['r_vec_B']['g'][2] = r1B
 ncc_dict['r_vec_S']['g'][2] = r1S
 
@@ -353,7 +355,7 @@ locals().update(field_dict)
 
 # Lift operators for boundary conditions
 lift_ball_basis = ball_basis.clone_with(k=0)
-lift_shell_basis = shell_basis.clone_with(k=2)
+lift_shell_basis = shell_basis.clone_with(k=1)
 liftB   = lambda A: d3.Lift(A, lift_ball_basis, -1)
 liftS   = lambda A: d3.Lift(A, lift_shell_basis, -1)
 integ     = lambda A: d3.Integrate(A, coords)
@@ -370,8 +372,10 @@ visc_div_stress_B = d3.div(σ_B) + d3.dot(σ_B, grad_ln_ρ_B)
 VH_B  = 2*(d3.trace(d3.dot(E_B, E_B)) - (1/3)*divU_B*divU_B)
 
 divU_S = d3.div(u_S)
+grad_u_S = d3.grad(u_S)
+grad_u_S_NCC = grad_u_S + r_vec_S*liftS(tau_u_Sbot)
 E_S = 0.5*(d3.grad(u_S) + d3.transpose(d3.grad(u_S)))
-E_S_NCC = E_S + 0.5*r_vec_S*liftS(tau_u_Sbot)
+E_S_NCC = 0.5*(grad_u_S_NCC + d3.transpose(grad_u_S_NCC))
 σ_S = 2*(E_S - (1/3)*divU_S*I_matrix_S)
 σ_S_NCC = 2*(E_S_NCC - (1/3)*divU_S*I_matrix_S)
 visc_div_stress_S = d3.div(σ_S) + d3.dot(σ_S, grad_ln_ρ_S)
