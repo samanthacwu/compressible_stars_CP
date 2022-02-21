@@ -356,13 +356,18 @@ locals().update(field_dict)
 # Lift operators for boundary conditions
 lift_ball_basis = ball_basis.clone_with(k=0)
 lift_shell_basis = shell_basis.clone_with(k=1)
+#lift_shell_basis = shell_basis.clone_with(k=2)
 liftB   = lambda A: d3.Lift(A, lift_ball_basis, -1)
-liftS   = lambda A: d3.Lift(A, lift_shell_basis, -1)
+liftS   = lambda A, n: d3.Lift(A, lift_shell_basis, n)
 integ     = lambda A: d3.Integrate(A, coords)
 BC_u_B = liftB(tau_u_B)
-BC_u_S = liftS(tau_u_Stop)
+BC_u_S = liftS(tau_u_Stop, -1)
+#BC_u_S = liftS(tau_u_Stop, -1) - d3.div(r_vec_S*liftS(tau_u_Sbot,-1))/Re
+#BC_u_S = liftS(tau_u_Stop, -1) + liftS(tau_u_Sbot, -2)
 BC_s1_B = liftB(tau_s_B)
-BC_s1_S = liftS(tau_s_Stop)
+BC_s1_S = liftS(tau_s_Stop, -1)
+#BC_s1_S = liftS(tau_s_Stop, -1)  - d3.div(r_vec_S*liftS(tau_s_Sbot,-1))/Re
+#BC_s1_S = liftS(tau_s_Stop, -1) + liftS(tau_s_Sbot, -2)
 
 #Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
 divU_B = d3.div(u_B)
@@ -373,13 +378,14 @@ VH_B  = 2*(d3.trace(d3.dot(E_B, E_B)) - (1/3)*divU_B*divU_B)
 
 divU_S = d3.div(u_S)
 grad_u_S = d3.grad(u_S)
-grad_u_S_NCC = grad_u_S + r_vec_S*liftS(tau_u_Sbot)
+grad_u_S_LHS = grad_u_S# + r_vec_S*liftS(tau_u_Sbot, -1)
 E_S = 0.5*(d3.grad(u_S) + d3.transpose(d3.grad(u_S)))
-E_S_NCC = 0.5*(grad_u_S_NCC + d3.transpose(grad_u_S_NCC))
+E_S_LHS = 0.5*(grad_u_S_LHS + d3.transpose(grad_u_S_LHS))
+divU_S_LHS = d3.trace(E_S_LHS)
 σ_S = 2*(E_S - (1/3)*divU_S*I_matrix_S)
-σ_S_NCC = 2*(E_S_NCC - (1/3)*divU_S*I_matrix_S)
+σ_S_LHS = 2*(E_S_LHS - (1/3)*divU_S_LHS*I_matrix_S)
 visc_div_stress_S = d3.div(σ_S) + d3.dot(σ_S, grad_ln_ρ_S)
-visc_div_stress_S_NCC = d3.div(σ_S_NCC) + d3.dot(σ_S, grad_ln_ρ_S)
+visc_div_stress_S_LHS = d3.div(σ_S_LHS) + d3.dot(σ_S_LHS, grad_ln_ρ_S)
 VH_S  = 2*(d3.trace(d3.dot(E_S, E_S)) - (1/3)*divU_S*divU_S)
 
 # Grid-lock some operators / define grad's
@@ -389,8 +395,12 @@ inv_T_B = d3.Grid(inv_T_B).evaluate()
 inv_T_S = d3.Grid(inv_T_S).evaluate()
 grad_s1_B = d3.grad(s1_B)
 grad_s1_S = d3.grad(s1_S)
+grad_s1_S_LHS = grad_s1_S# + r_vec_S*liftS(tau_s_Sbot, -1)
 
-grad_s1_S_NCC = r_vec_S*liftS(tau_s_Sbot)
+#div_rad_flux_B = (inv_Pe_rad_B)*(d3.div(grad_s1_B) + d3.dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - d3.dot(grad_s1_B, grad_inv_Pe_rad_B)
+#div_rad_flux_S = (inv_Pe_rad_S)*(d3.div(grad_s1_S) + d3.dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - d3.dot(grad_s1_S, grad_inv_Pe_rad_S)
+div_rad_flux_B = (inv_Pe_rad_B)*(d3.div(grad_s1_B    ) + d3.dot(grad_s1_B    , (grad_ln_ρ_B + grad_ln_T_B))) - d3.dot(grad_s1_B    , grad_inv_Pe_rad_B)
+div_rad_flux_S = (inv_Pe_rad_S)*(d3.div(grad_s1_S_LHS) + d3.dot(grad_s1_S_LHS, (grad_ln_ρ_S + grad_ln_T_S))) - d3.dot(grad_s1_S_LHS, grad_inv_Pe_rad_S)
 
 # Rotation and damping terms
 if do_rotation:
@@ -406,26 +416,51 @@ else:
     sponge_term_S = 0
 sponge_term_B = 0
 
-# Problem
-problem = d3.IVP([p_B, u_B, p_S, u_S, s1_B, s1_S, tau_p_B, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
 
-# Equations
-problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) + tau_p_B = 0")
-problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S = 0")
-problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B     + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
-problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S_NCC + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
-problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - (inv_Pe_rad_B)*(div(grad_s1_B)     + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - dot(grad_s1_B, grad_inv_Pe_rad_B) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
-problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - (inv_Pe_rad_S)*(div(grad_s1_S_NCC) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - dot(grad_s1_S, grad_inv_Pe_rad_S) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
+problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) = 0", condition="nθ != 0")
+problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B", condition="nθ != 0")
+problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) = 0", condition="nθ != 0")
+problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S", condition="nθ != 0")
+problem.add_equation("p_B = 0", condition="nθ == 0")
+problem.add_equation("p_S = 0", condition="nθ == 0")
+problem.add_equation("u_B = 0", condition="nθ == 0")
+problem.add_equation("u_S = 0", condition="nθ == 0")
+problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
+problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
+#problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - (inv_Pe_rad_B)*(lap(s1_B) + dot(grad_s1_B, (grad_ln_ρ_B + grad_ln_T_B))) - dot(grad_s1_B, grad_inv_Pe_rad_B) + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
+#problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - (inv_Pe_rad_S)*(lap(s1_S) + dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) - dot(grad_s1_S, grad_inv_Pe_rad_S) + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
 
-# Boundary Conditions
-problem.add_equation("integ(p_B) = 0")
-problem.add_equation("integ(p_S) = 0")
-problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
-problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
-problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
-problem.add_equation("radial(u_S(r=r_outer)) = 0")
-problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
 
+problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0", condition="nθ != 0")
+problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0", condition="nθ != 0")
+problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0", condition="nθ != 0")
+problem.add_equation("radial(u_S(r=r_outer)) = 0", condition="nθ != 0")
+problem.add_equation("angular(radial(E_S(r=r_outer))) = 0", condition="nθ != 0")
+problem.add_equation("tau_u_B = 0", condition="nθ == 0")
+problem.add_equation("tau_u_Sbot = 0", condition="nθ == 0")
+problem.add_equation("tau_u_Stop = 0", condition="nθ == 0")
+
+## Problem
+#problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_p_B, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+#
+## Equations
+#problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) + tau_p_B = 0")
+#problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S = 0")
+#problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B     + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
+#problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S_LHS + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
+#problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
+#problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
+#
+## Boundary Conditions
+#problem.add_equation("integ(p_B) = 0")
+#problem.add_equation("integ(p_S) = 0")
+#problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
+#problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
+#problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
+#problem.add_equation("radial(u_S(r=r_outer)) = 0")
+#problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
+#
 # Entropy BCs
 problem.add_equation("s1_B(r=r_inner) - s1_S(r=r_inner) = 0")
 problem.add_equation("radial(grad_s1_B(r=r_inner) - grad_s1_S(r=r_inner)) = 0")
