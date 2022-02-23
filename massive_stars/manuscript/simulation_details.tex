@@ -1,3 +1,32 @@
 \section{Simulation Details}
 \label{sec:simulation_details}
 
+We solve a version of the LBR Anelastic equations based on Eqns.~118-120 of \citet{vasil_etal_2013},
+\begin{align}
+&\grad\dot\vec{u} + \vec{u}\dot\grad\ln\rho_0 = 0,
+\label{eqn:continuity}\\
+&\partial_t\vec{u} + \grad\varpi + s_1\grad T_0 + \vec{u}\mathcal{D}= -\vec{u}\dot\grad\vec{u} + \grad\dot\Pi,
+\label{eqn:momentum}\\
+\begin{split}
+&\partial_t s_1 + \vec{u}\dot\grad s_0 =\\
+&-\vec{u}\dot\grad s_1 + \frac{1}{\rho_0 T_0}\left(\grad\dot[\rho_0 T_0 \chi_R \grad s_1] + \mathcal{H} + \mathrm{VH}\right),
+\end{split}
+\label{eqn:energy}
+\end{align}
+where $\vec{u}$ is the velocity, $s$ is the specific entropy, and $\varpi = h + \phi - T_0 s_1$ is the dynamic pressure with $h$ the enthalpy and $\phi$ the gravitational potential.
+The background density $\rho_0$, temperature $T_0$, and specific entropy $s_0$ stratification are loaded from a MESA stellar model.
+We define the viscous stress tensor
+\begin{equation}
+\Pi_{ij} = 2\rho_0 \nu \left(e_{ij} - \frac{1}{3}\delta_{ij}\grad\dot\vec{u}\right),
+\end{equation}
+where $e = 0.5(\grad\vec{u} + [\grad\vec{u}]^T)$ is the rate of strain tensor and $\nu$ is the kinematic viscosity.
+The viscous heating term is then $\mathrm{VH} = 2\rho\nu(\mathrm{Tr}(e\dot e) - (1/3)(\grad\dot\vec{u})^2)$ where $\mathrm{Tr}$ is the trace operation.
+The efective internal heating accounts for nuclear energy generation and flux carried radiative $\mathcal{H} = \rho\epsilon - \grad\dot(F_{\rm{rad}})$ with $\epsilon$ the nuclear energy generation rate per unit mass.
+Finally, $\chi_R$ is the radiative conductivity; we assume this is a constant in the interior of the star, but use the real value in the outer portions of the stellar envelope where diffusivity is large.
+
+The momentum equation includes a damping term ($\vec{u}\mathcal{D}$).
+In simulations which include damping, $\mathcal{D} = f_{\rm{char}} H(r=r_{\rm{transition}})$ where $f_{\rm{char}}$ is a characteristic frequency and $H$ is the Heaviside step function, which is zero below $r = r_{\rm{transition}}$.
+In simulations without damping, we set $\mathcal{D} = 0$.
+
+For full details about how we implement these equations, we refer the reader to appendix~\ref{app:numerical_methods}.
+

@@ -1,33 +1,34 @@
 \section{Numerical Methods}
 \label{app:numerical_methods}
 
-\todo{Describe nondimensionalization}
+We nondimensionalize Eqns.~\ref{eqn:continuity}-\ref{eqn:energy}.
+Our nondimensional length scale $\Lnd$ is the radial coordinate of the outer boundary of the core convection zone.
+We nondimensionalize the temperature as the temperature at the stellar core $\Tnd = T(r=0)$ and we use the central density to nondimensionalize the mass $\mnd = \rho(r=0)\Lnd^3$.
+We use the central value of the nuclear generation rate $H_0 = (\rho \epsilon)(r=0)$ to define the nondimensional timescale $\tnd = (\mnd/[H_0\Lnd])^{1/3}$.
+The important remaining control parameters are then the nondimensional viscosity $\nu_{\rm{nd}} = \nu \tnd/\Lnd^2$ and thermal diffusivity $\chi_{\rm{nd}} = \chi_R \tnd/\Lnd^2$.
 
-We specifically solve these equations:
+Under this nondimensionalization, the equations of evolution become
 \begin{align}
     &\grad\dot\vec{u} + \vec{u}\dot\grad\ln\rho_0 = 0
     \label{eqn:dedalus_nondim_anelastic}, \\
     \begin{split}
     &\partial_t \vec{u} + \grad\varpi + s_1(\grad T_0) + \vec{u} \mathcal{D} \\
-    &\qquad- \frac{1}{\rm{Re}}\left(\grad\dot\bar{\vec{\sigma}} + \bar{\vec{\sigma}}\dot\grad\ln\rho_0\right)\\
+        &\qquad- \nu_{\rm{nd}}\left(\grad\dot\bar{\vec{\sigma}} + \bar{\vec{\sigma}}\dot\grad\ln\rho_0\right)\\
     &\qquad= \vec{u}\times(\grad\times\vec{u}),
     \end{split}
     \label{eqn:dedalus_nondim_momentum}\\
     \begin{split}
-    &\partial_t s_1 + \vec{u}\dot(\grad s_0) -\grad s_1 \dot \grad \frac{1}{\rm{Pe}_{\rm{rad}}}  \\
-    &\qquad- \frac{1}{\rm{Pe}_{\rm{rad}}}(\grad^2 s_1 + [\grad s_1]\dot[\grad \ln \rho_0 + \grad\ln T_0]) \\
-    &\qquad= - \vec{u}\dot\grad s_1 + \frac{1}{\rm{Re}}\frac{1}{T_0}\mathcal{V} + \mathcal{H}.
+        &\partial_t s_1 + \vec{u}\dot(\grad s_0) -\grad s_1 \dot \grad \chi_{\rm{nd}}  \\
+        &\qquad- \chi_{\rm{nd}}(\grad^2 s_1 + [\grad s_1]\dot[\grad \ln \rho_0 + \grad\ln T_0]) \\
+        &\qquad= - \vec{u}\dot\grad s_1 + \frac{\nu_{\rm{nd}}}{T_0}\mathcal{V} + \tilde{\mathcal{H}},
     \end{split}
     \label{eqn:dedalus_nondim_entropy}
 \end{align}
+where we define $\tilde{\mathcal{H}} = \mathcal{H}/(\rho_0 T_0)$ before nondimensionalizing.
 The state variables are $\vec{u}$ the velocity, $s_1$ the fluctuations of specific entropy, and $\varpi$ the dynamic reduced pressure.
-We define the stress tensor
-\begin{equation}
-    \bar{\vec{\sigma}} = 2\left(\bar{\vec{e}} - \frac{1}{3}\,\bar{\vec{\mathcal{I}}}\,\grad\dot\vec{u}\right),
-\end{equation}
-where $\bar{\vec{e}} \equiv 0.5[\grad\vec{u} + (\grad\vec{u})^T]$ is the strain rate tensor and $\bar{\vec{\mathcal{I}}}$ is the identity matrix.
-The background stellar structure is that of a $40 M_\odot$ MESA model (see appendices \ref{app:mesa_dedalus} \& \ref{app:mesa}).
-This provides radial profiles of $\grad\ln\rho_0$, $\grad\ln T_0$, $\grad T_0$, $T_0$, $\grad s_0$, $\rm{Pe}_{\rm{rad}}^{-1}$, and the effective heating $\mathcal{H}$.
+We define the stress tensor $\bar{\vec{\sigma}} = \Pi/(\rho_0\nu)$.
+The background stellar structure is that of a $15 M_\odot$ MESA model (see appendices \ref{app:mesa_dedalus} \& \ref{app:mesa}).
+This provides radial profiles of $\grad\ln\rho_0$, $\grad\ln T_0$, $\grad T_0$, $T_0$, $\grad s_0$, $\chi_R$, and the effective heating $\mathcal{H}$.
 We refer the reader to appendix \ref{app:mesa_dedalus} for information on how these are calculated and what differences exist between MESA and Dedalus.
 
 $\mathcal{D}$ is a radial profile of a damping coefficient.
