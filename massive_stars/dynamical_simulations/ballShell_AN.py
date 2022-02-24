@@ -175,6 +175,7 @@ vec_fields = ['u', 'eφ', 'eθ', 'er', 'ex', 'ey', 'ez']
 scalar_fields = ['p', 's1', 'inv_T', 'H', 'ρ', 'T']
 vec_taus = ['tau_u']
 scalar_taus = ['tau_s']
+single_taus = ['tau_p']
 
 #Tau fields
 for S2_basis, name in zip((top_ball_S2_basis, bot_shell_S2_basis, top_shell_S2_basis),('B', 'Sbot', 'Stop')):
@@ -193,6 +194,9 @@ for basis, name in zip((ball_basis, shell_basis), ('B', 'S')):
     for fn in scalar_fields:
         key = '{}_{}'.format(fn, name)
         field_dict[key] = dist.Field(name=key, bases=basis)
+    for fn in single_taus:
+        key = '{}_{}'.format(fn, name)
+        field_dict[key] = dist.Field(name=key)
 
 for k in field_dict.keys():
     field_dict[k]['g'][:] = 0
@@ -401,32 +405,28 @@ else:
 sponge_term_B = 0
 
 # Problem
-problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_p_B, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
 
-problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) = 0", condition="nθ != 0")
-problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B", condition="nθ != 0")
-problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) = 0", condition="nθ != 0")
-problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S", condition="nθ != 0")
-problem.add_equation("p_B = 0", condition="nθ == 0")
-problem.add_equation("p_S = 0", condition="nθ == 0")
-problem.add_equation("u_B = 0", condition="nθ == 0")
-problem.add_equation("u_S = 0", condition="nθ == 0")
+problem.add_equation("div(u_B) + dot(u_B, grad_ln_ρ_B) + tau_p_B = 0")
+problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S = 0")
+problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
+problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
 problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + BC_s1_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
 problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S ")
 
-problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0", condition="nθ != 0")
-problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0", condition="nθ != 0")
-problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0", condition="nθ != 0")
-problem.add_equation("radial(u_S(r=r_outer)) = 0", condition="nθ != 0")
-problem.add_equation("angular(radial(E_S(r=r_outer))) = 0", condition="nθ != 0")
-problem.add_equation("tau_u_B = 0", condition="nθ == 0")
-problem.add_equation("tau_u_Sbot = 0", condition="nθ == 0")
-problem.add_equation("tau_u_Stop = 0", condition="nθ == 0")
+problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
+problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
+problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
+problem.add_equation("radial(u_S(r=r_outer)) = 0")
+problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
 
 # Entropy BCs
 problem.add_equation("s1_B(r=r_inner) - s1_S(r=r_inner) = 0")
 problem.add_equation("radial(grad_s1_B(r=r_inner) - grad_s1_S(r=r_inner)) = 0")
 problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
+
+problem.add_equation("integ(p_B) = 0")
+problem.add_equation("integ(p_S) = 0")
 
 logger.info("Problem built")
 # Solver
@@ -596,7 +596,17 @@ my_cfl.add_velocity(heaviside_cfl*u_B)
 #startup iterations
 for i in range(10):
     solver.step(timestep)
-    logger.info("startup iteration %d, t = %f, timestep = %f" %(i, solver.sim_time, timestep))
+    Re_avg = re_ball.fields['Re_avg_ball']
+    if dist.comm_cart.rank == 0:
+        Re0 = Re_avg['g'].min()
+        taus = (tau_p_B['g'].squeeze(), tau_p_S['g'].squeeze())
+    else:
+        Re0 = None
+        taus = (-1, -1)
+    Re0 = dist.comm_cart.bcast(Re0, root=0)
+    this_str = "startup iteration {}, t = {:f}, timestep = {:f}, Re = {:.4e}".format(i, solver.sim_time, timestep, Re0)
+    this_str += ", tau_ps = ({:.4e}, {:.4e})".format(*taus)
+    logger.info(this_str)
     timestep = my_cfl.compute_timestep()
 
 # Main loop
@@ -635,10 +645,14 @@ try:
             Re_avg = re_ball.fields['Re_avg_ball']
             if dist.comm_cart.rank == 0:
                 Re0 = Re_avg['g'].min()
+                taus = (tau_p_B['g'].squeeze(), tau_p_S['g'].squeeze())
             else:
                 Re0 = None
+                taus = (-1, -1)
             Re0 = dist.comm_cart.bcast(Re0, root=0)
-            logger.info("t = %f, timestep = %f, Re = %e" %(solver.sim_time, timestep, Re0))
+            this_str = "t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.sim_time, timestep, Re0)
+            this_str += ", tau_ps = ({:.4e}, {:.4e})".format(*taus)
+            logger.info(this_str)
         if max_dt_check and timestep < outer_shell_dt:
             my_cfl.max_dt = max_dt
             max_dt_check = False
