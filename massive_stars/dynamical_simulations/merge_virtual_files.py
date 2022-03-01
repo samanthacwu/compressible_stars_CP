@@ -18,7 +18,8 @@ from docopt import docopt
 args = docopt(__doc__)
 
 root_dir = args['<root_dir>']
-handlers = ['slices',]
+handlers = ['slices', 'profiles', 'scalars', 'checkpoint', 'final_checkpoint']
+cleanup = True
 
 for data_dir in handlers:
     files = glob.glob('{}/{}/{}_s*.h5'.format(root_dir, data_dir, data_dir))
@@ -32,19 +33,17 @@ for data_dir in handlers:
         if do_file[i]:
             permanent_file = sorted_files[i]
             tmp_file = permanent_file.replace('.h5', '_tmp.h5')
+            print('merging {}'.format(permanent_file))
 
             #Copy virtual -> permanent
             with h5py.File(permanent_file, 'r') as vf:
                 with h5py.File(tmp_file, 'w') as mf:
-
                     for k, attr in vf.attrs.items():
+                        #adds handler_name, set_number, writes
                         mf.attrs[k] = attr
 
-                    scale_group = mf.create_group('scales')
-                    for k in vf['scales'].keys():
-                        scale_group.create_dataset(k, data=vf['scales'][k])
-                        print(dir(vf['scales'][k]))
-                        print(vf['scales'][k].write_direct)
+                    vf.copy('scales', mf)
+                    scale_group = mf['scales']
 
                     task_group = mf.create_group('tasks')
                     for k in vf['tasks'].keys():
@@ -54,27 +53,23 @@ for data_dir in handlers:
                             dset.attrs[attr] = vf_dset.attrs[attr]
                         for i, d in enumerate(vf_dset.dims):
                             dset.dims[i].label = d.label
-                            if len(d.keys()) > 0:
-                                for k in d.keys():
-                                    if len(k) > 0:
-                                        scale = scale_group[k]
-                                        scale.make_scale(k)
-                                        dset.dims[i].attach_scale(scale)
-                            else:
-                                pass
-                                #TODO: figure this out!! - maybe can get it from scales?
-    
-
-
-
-#            #Replace virtual with permanent
+                            for scalename in d:
+                                if scalename == '':
+                                    if d.label == 'constant':
+                                        continue
+                                    else:
+                                        scalename = '{}_{}'.format(d.label, k)
+                                        scale_group.create_dataset(scalename, data=d[0])
+                                scale = mf['scales'][scalename]
+                                dset.dims.create_scale(scale, scalename)
+                                dset.dims[i].attach_scale(scale)
             os.remove(permanent_file)
             os.rename(tmp_file, permanent_file)
 
-
-            with h5py.File(permanent_file, 'r') as mf:
-                print(mf['tasks/s1_eq'])
-                for d in mf['tasks/s1_eq'].dims:
-                    print(d[0][:])
-
-
+            if cleanup:
+                folder = permanent_file.replace('.h5', '/')
+                if os.path.isdir(folder):
+                    partial_files = glob.glob('{}/*.h5'.format(folder))
+                    for pf in partial_files:
+                        os.remove(pf)
+                    os.rmdir(folder)
