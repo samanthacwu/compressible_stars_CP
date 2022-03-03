@@ -105,8 +105,8 @@ logger.info('r_inner: {:.2f} / r_outer: {:.2f}'.format(r_inner, r_outer))
 coords  = d3.SphericalCoordinates('φ', 'θ', 'r')
 dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
 shell_basis = d3.ShellBasis(coords, resolutionS, radii=(r_inner, r_outer), dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-bot_shell_S2_basis = shell_basis.S2_basis(radius=r_inner)
-top_shell_S2_basis = shell_basis.S2_basis(radius=r_outer)
+bot_shell_S2_basis = shell_basis.S2_basis()
+top_shell_S2_basis = bot_shell_S2_basis
 φS,  θS,  rS     = shell_basis.local_grids(shell_basis.dealias)
 φ1S,  θ1S,  r1S  = shell_basis.local_grids((1,1,1))
 
@@ -165,8 +165,14 @@ for basis, name in zip((shell_basis,), ('S',)):
         key = '{}_{}'.format(fn, name)
         ncc_dict[key] = dist.Field(name=key, bases=basis.radial_basis)
 
+ncc_dict['er_LHS_S'] = dist.VectorField(coords, name='er_LHS_S', bases=shell_basis.radial_basis)
+ncc_dict['rvec_S'] = dist.VectorField(coords, name='rvec_S', bases=shell_basis.radial_basis)
+
 for k in ncc_dict.keys():
     ncc_dict[k]['g'][:] = 0
+
+ncc_dict['er_LHS_S']['g'][2] = 1
+ncc_dict['rvec_S']['g'][2] = r1S
 
 for basis_name in ['S',]:
     for i in range(3):
@@ -237,12 +243,22 @@ else:
 locals().update(ncc_dict)
 locals().update(field_dict)
 
+FOF = False
+
 # Lift operators for boundary conditions
-lift_shell_basis = shell_basis.clone_with(k=2)
-liftS   = lambda A, n: d3.Lift(A, lift_shell_basis, n)
-integ     = lambda A: d3.Integrate(A, coords)
-BC_u_S = liftS(tau_u_Stop, -1) + liftS(tau_u_Sbot, -2)
-BC_s1_S = liftS(tau_s_Stop, -1) + liftS(tau_s_Sbot, -2)
+
+if FOF:
+    lift_shell_basis = shell_basis.clone_with(k=1)
+    liftS   = lambda A: d3.Lift(A, lift_shell_basis, -1)
+    BC_u_S = liftS(tau_u_Sbot)
+    BC_s1_S = liftS(tau_s_Sbot)
+    grad_u = d3.grad(u_S) + rvec_S*liftS(tau_u_Stop)
+    grad_s1 = d3.grad(s1_S) + rvec_S*liftS(tau_s_Stop)
+else:
+    lift_shell_basis = shell_basis.clone_with(k=2)
+    liftS   = lambda A, n: d3.Lift(A, lift_shell_basis, n)
+    BC_u_S = liftS(tau_u_Stop, -1) + liftS(tau_u_Sbot, -2)
+    BC_s1_S = liftS(tau_s_Stop, -1) + liftS(tau_s_Sbot, -2)
 
 #Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
 divU_S = d3.div(u_S)
@@ -257,55 +273,79 @@ H_S = d3.Grid(H_S).evaluate()
 inv_T_S = d3.Grid(inv_T_S).evaluate()
 grad_s1_S = d3.grad(s1_S)
 
-#inv_Pe_rad_S['g'] = 1/Re
-#div_rad_flux_S = (inv_Pe_rad_S)*(d3.div(grad_s1_S) + d3.dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) + d3.dot(grad_s1_S, d3.grad(inv_Pe_rad_S))
-div_rad_flux_S = (1/Re)*d3.lap(s1_S)
 
-grad_ln_ρ_S['g'] = 0
+ncc_cutoff=1e-8
+for name, ncc in ncc_dict.items():
+    logger.info("{} expansion: {}".format(ncc, np.where(np.abs(ncc['c']) >= ncc_cutoff)[0].shape)) 
 
-grad_ln_T_S['g'] = 0
-
-visc_div_stress_S = d3.lap(u_S)
-
-grad_T_S['g'] = 0
-
-grad_s0_S['g'] = 0
-for ncc_mag, ncc_order in zip((1e5, 1e5), (3, 31)):
-    grad_s0_S['g'][2] += ncc_mag* ( 1 + ((rS-r_inner)/(r_outer-r_inner))**ncc_order)
-ncc_cutoff=1e-10
-logger.info("{} expansion: {} / goal: {}".format(grad_s0_S, np.where(np.abs(grad_s0_S['c']) >= ncc_cutoff)[0].shape, ncc_order + 1)) 
+if FOF:
+    div_rad_flux_S = (1/Re)*d3.div(grad_s1)
+    visc_div_stress_S = d3.div(grad_u)
+else:
+    div_rad_flux_S = (inv_Pe_rad_S)*(d3.div(grad_s1_S) + d3.dot(grad_s1_S, (grad_ln_ρ_S + grad_ln_T_S))) + d3.dot(grad_s1_S, grad_inv_Pe_rad_S)
+#    div_rad_flux_S = (1/Re)*d3.lap(s1_S)
+#    visc_div_stress_S = d3.lap(u_S)
 
 # Problem
-problem = d3.IVP([p_S, u_S, s1_S, tau_p_S, tau_u_Sbot, tau_u_Stop, tau_s_Sbot, tau_s_Stop], namespace=locals())
+problem = d3.IVP([ s1_S, p_S, u_S, tau_p_S, tau_s_Sbot, tau_s_Stop, tau_u_Sbot, tau_u_Stop, ], namespace=locals())
 
-problem.add_equation("div(u_S) + tau_p_S = 0")
-problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + BC_u_S = 0")
-problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = 0 ")
+if FOF:
+    problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = 0 ")
+    problem.add_equation("trace(grad_u) + tau_p_S = 0")
+    problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + BC_u_S = 0")
+else:
+    linear=False
+    if linear:
+        problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = 0 ")
+        problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S + dot(er_LHS_S, liftS(tau_u_Stop, -1)) = 0")
+        problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + BC_u_S = 0")
+    else:
+        problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = - dot(u_S, grad_s1_S) + H_S + (1/Re)*inv_T_S*VH_S")
+        problem.add_equation("div(u_S) + dot(u_S, grad_ln_ρ_S) + tau_p_S + dot(er_LHS_S, liftS(tau_u_Stop, -1)) = 0")
+        problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + BC_u_S = cross(u_S, curl(u_S))")
 
-problem.add_equation("u_S(r=r_outer) = 0")
-problem.add_equation("u_S(r=r_inner) = 0")
-problem.add_equation("s1_S(r=r_outer) = 0")
-problem.add_equation("s1_S(r=r_inner) = 0")
-problem.add_equation("integ(p_S) = 0")
 
-#problem.add_equation("radial(u_S(r=r_outer)) = 0")
-#problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
-#problem.add_equation("radial(u_S(r=r_inner)) = 0")
-#problem.add_equation("angular(radial(E_S(r=r_inner))) = 0")
-#
-## Entropy BCs
-#problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
-#problem.add_equation("radial(grad_s1_S(r=r_inner)) = 0")
-#
+
+#problem.add_equation("s1_S(r=r_inner) = 0")
+#problem.add_equation("u_S(r=r_inner) = 0")
+#problem.add_equation("s1_S(r=r_outer) = 0")
+#problem.add_equation("u_S(r=r_outer) = 0")
 #problem.add_equation("integ(p_S) = 0")
+
+problem.add_equation("radial(u_S(r=r_outer)) = 0")
+problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
+problem.add_equation("radial(u_S(r=r_inner)) = 0")
+problem.add_equation("angular(radial(E_S(r=r_inner))) = 0")
+
+# Entropy BCs
+problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
+problem.add_equation("radial(grad_s1_S(r=r_inner)) = 0")
+
+problem.add_equation("integ(p_S) = 0")
 
 logger.info("Problem built")
 # Solver
 solver = problem.build_solver(ts, ncc_cutoff=ncc_cutoff)
 solver.stop_sim_time = buoy_end_time*t_buoy
 solver.stop_wall_time = wall_hours * 60 * 60
-solver.stop_iteration = 100
+solver.stop_iteration = np.inf #101
 logger.info("solver built")
+
+if dist.comm_cart.size == 1:
+    import matplotlib.pyplot as plt 
+    figure = plt.figure(figsize=(8,4))
+    for subproblem in solver.subproblems:
+        ell = subproblem.group[1]
+        sp = subproblem
+        LHS = sp.pre_left.T @ (sp.M_min + 0.5*sp.L_min)
+        plt.imshow(np.log10(np.abs(LHS.A)))
+        plt.colorbar()
+        plt.savefig("matrices/ell_%03i.png" %ell, dpi=600)
+        plt.clf()
+        cond = np.linalg.cond((sp.M_min + 0.5*sp.L_min).A)
+        print('subproblem group {}, condition: {:.4e}'.format(subproblem.group, cond))
+
+
 
 # Initial conditions / Checkpoint
 write_mode = 'overwrite'
@@ -316,8 +356,11 @@ if restart is not None:
 else:
     # Initial conditions
     s1_S.fill_random(layout='g', seed=42, distribution='normal', scale=A0)
-    s1_S.low_pass_filter(scales=0.25)
-    s1_S['g'] *= (r1S - r_inner)*(r_outer - r1S)*np.sin(θ1S)
+    if nθ > 16:
+        s1_S.low_pass_filter(scales=0.25)
+    s1_S['g'] *= np.sin(θ1S)
+    s1_S['g'] *= np.cos(np.pi*(r1S-r_inner)/(r_outer-r_inner))
+
 
 # Averaging Operations
 volume_S = (4/3)*np.pi*(r_outer**3 - r_inner**3)
@@ -328,6 +371,7 @@ re_eval = solver.evaluator.add_dictionary_handler(iter=1)
 re_eval.add_task(vol_avg_S(Re*(u_S_squared)**(1/2)), name='Re_avg_shell', layout='g')
 
 #CFL setup
+#initial_max_dt = 0.1*t_buoy
 initial_max_dt = max_dt
 while initial_max_dt < max_dt:
     max_dt /= 2
@@ -336,6 +380,20 @@ if timestep is None:
 my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(u_S)
 
+shape = s1_S['c'].shape
+slices = dict()
+for i in range(shape[0]): 
+    for j in range(shape[1]):
+        grid_space = (False,False)
+        elements = (np.array((i,)),np.array((j,)))
+        m, ell = basis.sphere_basis.elements_to_groups(grid_space, elements)
+        key = '{},{}'.format(ell[0],m[0])
+        if key not in slices.keys():
+            slices[key] = [ (i,j) ]
+        else:
+            slices[key].append( (i,j) )
+
+u = u_S
 # Main loop
 start_time = time.time()
 start_iter = solver.iteration
@@ -360,13 +418,36 @@ try:
                 taus = -1
             Re0 = dist.comm_cart.bcast(Re0, root=0)
             this_str = "t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.sim_time, timestep, Re0)
-            this_str += ", tau_ps = ({:.4e})".format(taus)
+            this_str += ", tau_ps = ({:.4e})".format(np.abs(taus))
+            
+#            key = '0,0'.format(ell,m)
+#            indices = slices[key]
+#            u['g']
+#            u.towards_coeff_space()
+#            u.towards_coeff_space()
+#            pow1 = u.data[:,indices[0][0], indices[0][1], :]
+#            pow2 = u.data[:,indices[1][0], indices[1][1], :]
+#            power = pow1 + 1j*pow2
+#            this_str += ", ell=m=0 pow {:.4e}".format(np.max(np.abs(power)))
             logger.info(this_str)
 
         if np.isnan(Re0):
             logger.info('exiting with NaN')
             break
 
+#        if (solver.iteration-1) % 100 == 0:
+#            u['g']
+#            u.towards_coeff_space()
+#            u.towards_coeff_space()
+#            for ell in range(nθ-1):
+#                for m in range(0, ell+1, 1): 
+#                    key = '{},{}'.format(ell,m)
+#                    indices = slices[key]
+#                    pow1 = u.data[:,indices[0][0], indices[0][1], :]
+#                    pow2 = u.data[:,indices[1][0], indices[1][1], :]
+#                    power = pow1 + 1j*pow2
+#                    logger.info('ell {}, m {}, pow {:e}'.format(ell, m, np.max(np.abs(power))))
+#
 except:
     logger.info('something went wrong in main loop, making final checkpoint')
     raise
