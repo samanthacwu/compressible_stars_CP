@@ -426,9 +426,8 @@ problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S 
 
 problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
 problem.add_equation("radial(u_S(r=r_inner)) = 0", condition="nθ == 0")
-problem.add_equation("angular(radial(E_S(r=r_inner))) = 0", condition="nθ == 0")
 problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0", condition="nθ != 0")
-problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S_RHS(r=r_inner)), index=0) = 0", condition="nθ != 0")
+problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
 problem.add_equation("radial(u_S(r=r_outer)) = 0")
 problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
 #
