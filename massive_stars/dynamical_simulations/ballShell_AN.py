@@ -415,9 +415,9 @@ else:
 sponge_term_B = 0
 
 # Problem
-problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_p_B, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
+problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_p_S, tau_u_B, tau_u_Sbot, tau_u_Stop, tau_s_B, tau_s_Sbot, tau_s_Stop], namespace=locals())
 
-problem.add_equation("divU_B + dot(u_B, grad_ln_ρ_B) + tau_p_B + dot(er_B_LHS, liftB(tau_u_B)) = 0")
+problem.add_equation("divU_B + dot(u_B, grad_ln_ρ_B) + tau_p_S + dot(er_B_LHS, liftB(tau_u_B)) = 0")
 problem.add_equation("divU_S + dot(u_S, grad_ln_ρ_S) + tau_p_S = 0")
 problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + BC_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
 problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + BC_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
@@ -425,8 +425,7 @@ problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + BC_s1_B 
 problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + BC_s1_S = - dot(u_S, grad(s1_S)) + H_S + (1/Re)*inv_T_S*VH_S ")
 
 problem.add_equation("u_B(r=r_inner) - u_S(r=r_inner) = 0")
-problem.add_equation("radial(u_S(r=r_inner)) = 0", condition="nθ == 0")
-problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0", condition="nθ != 0")
+problem.add_equation("p_B(r=r_inner) - p_S(r=r_inner) = 0")
 problem.add_equation("angular(radial(σ_B(r=r_inner) - σ_S(r=r_inner)), index=0) = 0")
 problem.add_equation("radial(u_S(r=r_outer)) = 0")
 problem.add_equation("angular(radial(E_S(r=r_outer))) = 0")
@@ -436,8 +435,8 @@ problem.add_equation("s1_B(r=r_inner) - s1_S(r=r_inner) = 0")
 problem.add_equation("radial(grad_s1_B(r=r_inner) - grad(s1_S)(r=r_inner)) = 0")
 problem.add_equation("radial(grad_s1_S(r=r_outer)) = 0")
 
-problem.add_equation("integ(p_B) = 0")
-problem.add_equation("integ(p_S) = 0")
+problem.add_equation("integ(p_B) + integ(p_S) = 0")
+#problem.add_equation("radial(u_B(r=r_inner)) = 0", condition="nθ == 0")
 
 logger.info("Problem built")
 # Solver
@@ -639,23 +638,23 @@ try:
     while solver.proceed:
         timestep = my_cfl.compute_timestep()
 
-        if just_wrote:
-            just_wrote = False
-            num_steps = np.ceil(outer_shell_dt / timestep)
-            timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
-        elif max_dt_check:
-            timestep = np.min((timestep, current_max_dt))
-        else:
-            my_cfl.stored_dt = timestep = current_max_dt
-
-        t_future = solver.sim_time + timestep
-        if t_future >= slice_time*(1-1e-8):
-           slice_process = True
-
-        if solver.iteration % hermitian_cadence in timestepper_history:
-            for f in solver.state:
-                f.require_grid_space()
-
+#        if just_wrote:
+#            just_wrote = False
+#            num_steps = np.ceil(outer_shell_dt / timestep)
+#            timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
+#        elif max_dt_check:
+#            timestep = np.min((timestep, current_max_dt))
+#        else:
+#            my_cfl.stored_dt = timestep = current_max_dt
+#
+#        t_future = solver.sim_time + timestep
+#        if t_future >= slice_time*(1-1e-8):
+#           slice_process = True
+#
+#        if solver.iteration % hermitian_cadence in timestepper_history:
+#            for f in solver.state:
+#                f.require_grid_space()
+#
         solver.step(timestep)
 
         if solver.iteration % 10 == 0:
@@ -676,12 +675,12 @@ try:
             just_wrote = True
             slice_time = solver.sim_time + outer_shell_dt
 
-        if slice_process:
-            slice_process = False
-            wall_time = time.time() - solver.start_time
-            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
-            slice_time = solver.sim_time + outer_shell_dt
-            just_wrote = True
+#        if slice_process:
+#            slice_process = False
+#            wall_time = time.time() - solver.start_time
+#            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
+#            slice_time = solver.sim_time + outer_shell_dt
+#            just_wrote = True
 
         if np.isnan(Re0):
             logger.info('exiting with NaN')
