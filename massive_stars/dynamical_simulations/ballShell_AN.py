@@ -735,11 +735,9 @@ try:
             if dist.comm_cart.rank == 0:
                 KE0 = KE_shell['g'].min()
                 Re0 = Re_avg['g'].min()
-                taus = tau_p['g'].squeeze()
             else:
                 KE0 = None
                 Re0 = None
-                taus = -1
             Re0 = dist.comm_cart.bcast(Re0, root=0)
             KE0 = dist.comm_cart.bcast(KE0, root=0)
             this_str = "iteration = {:08d}, t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time, timestep, Re0)
