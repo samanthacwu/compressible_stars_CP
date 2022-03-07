@@ -167,13 +167,16 @@ def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64,
     bases = OrderedDict()
     coords  = d3.SphericalCoordinates('phi', 'theta', 'r')
     dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
+    bases_keys = ['B']
     bases['B']   = d3.BallBasis(coords, resolutionB, radius=Ri, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias)) 
     bases['S'] = d3.ShellBasis(coords, resolutionS, radii=(Ri, Ro), dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-    return coords, dist, bases
+    bases_keys += ['S']
+    return coords, dist, bases, bases_keys
 
-coords, dist, bases = make_bases((resolutionB, resolutionS), (Ri,), Ro, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
-
-tau_p = dist.Field(name='tau_p')
+resolutions = (resolutionB, resolutionS)
+stitch_radii = (Ri,)
+radius = Ro
+coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
 vec_fields = ['u',]
 unit_vectors = ['ephi', 'etheta', 'er', 'ex', 'ey', 'ez']
@@ -420,38 +423,105 @@ for basis_number, bn in enumerate(bases.keys()):
     if do_rotation:
         logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
 
-
-
 # Put nccs and fields into locals()
 locals().update(variables)
 
+problem_variables = []
+problem_taus = []
+equations = OrderedDict()
+u_BCs = OrderedDict()
+s_BCs = OrderedDict()
+for basis_number, bn in enumerate(bases_keys):
+    basis = bases[bn]
+    phi, theta, r = basis.local_grids(basis.dealias)
+    phi1, theta1, r1 = basis.local_grids((1,1,1))
+
+    for field in ['p', 'u', 's1']:
+        problem_variables.append(variables['{}_{}'.format(field, bn)])
+    for tau in ['tau_u', 'tau_s']:
+        if type(basis) == d3.BallBasis:
+            problem_taus.append(variables['{}_{}'.format(tau, bn)])
+        else:
+            problem_taus.append(variables['{}1_{}'.format(tau, bn)])
+            problem_taus.append(variables['{}2_{}'.format(tau, bn)])
+
+    #Standard Equations
+    equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_ρ_{0}) = 0".format(bn)
+    equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + grad_T_{0}*s1_{0} - (1/Re)*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
+    equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + (1/Re)*inv_T_{0}*VH_{0}".format(bn)
+
+    #Boundary conditions
+    if type(basis) == d3.BallBasis:
+        if basis_number == len(bases_keys) - 1:
+            #No shell bases
+            u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
+            u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+            s_BCs['BC_s_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
+        else:
+            shell_name = bases_keys[basis_number+1] 
+            rval = stitch_radii[basis_number]
+            u_BCs['BC_u_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, shell_name, rval)
+            s_BCs['BC_s_{}'.format(bn)] = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0".format(bn, shell_name, rval)
+    else:
+        #Stitch to basis below
+        below_name = bases_keys[basis_number - 1]
+        rval = stitch_radii[basis_number - 1]
+        u_BCs['BC_u1_{}'.format(bn)] = "p_{0}(r={2}) - p_{1}(r={2}) = 0".format(bn, below_name, rval)
+        u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0".format(bn, below_name, rval)
+        s_BCs['BC_s1_{}'.format(bn)] = "radial(grad(s1_{0})(r={2}) - grad(s1_{1})(r={2})) = 0".format(bn, below_name, rval)
+
+        #Add upper BCs
+        if basis_number == len(bases_keys) - 1:
+            #top of domain
+            u_BCs['BC_u3_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
+            u_BCs['BC_u4_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+            s_BCs['BC_s2_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
+        else:
+            shn = bases_keys[basis_number+1] 
+            rval = stitch_radii[basis_number]
+            u_BCs['BC_u3_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, shn, rval)
+            s_BCs['BC_s2_{}'.format(bn)] = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0".format(bn, shn, rval)
+
 # Problem
-problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_u_B, tau_u1_S, tau_u2_S, tau_s_B, tau_s1_S, tau_s2_S], namespace=locals())
+problem = d3.IVP(problem_variables + problem_taus, namespace=locals())
 
-problem.add_equation("div_u_B + dot(u_B, grad_ln_ρ_B) = 0", condition="ntheta != 0")
-problem.add_equation("div_u_S + dot(u_S, grad_ln_ρ_S) = 0", condition="ntheta != 0")
-problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + taus_u_B = cross(u_B, curl(u_B)) + rotation_term_B", condition="ntheta != 0")
-problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + taus_u_S = cross(u_S, curl(u_S)) + rotation_term_S", condition="ntheta != 0")
-problem.add_equation("u_B = 0", condition = "ntheta == 0")
-problem.add_equation("u_S = 0", condition = "ntheta == 0")
-problem.add_equation("p_B = 0", condition = "ntheta == 0")
-problem.add_equation("p_S = 0", condition = "ntheta == 0")
-problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + taus_s_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
-problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + taus_s_S = - dot(u_S, grad(s1_S)) + H_S + (1/Re)*inv_T_S*VH_S ")
+for bn, basis in bases.items():
+    continuity = equations['continuity_{}'.format(bn)]
+    continuity_ell0 = "p_{} = 0".format(bn)
+    logger.info('adding eqn "{}" for ntheta != 0'.format(continuity))
+    logger.info('adding eqn "{}" for ntheta == 0'.format(continuity_ell0))
+    problem.add_equation(continuity, condition="ntheta != 0")
+    problem.add_equation(continuity_ell0, condition="ntheta == 0")
 
-problem.add_equation("u_B(r=Ri) - u_S(r=Ri) = 0", condition="ntheta != 0")
-problem.add_equation("p_B(r=Ri) - p_S(r=Ri) = 0", condition="ntheta != 0")
-problem.add_equation("angular(radial(sigma_B(r=Ri) - sigma_S(r=Ri)), index=0) = 0", condition="ntheta != 0")
-problem.add_equation("radial(u_S(r=Ro)) = 0", condition="ntheta != 0")
-problem.add_equation("angular(radial(E_S(r=Ro))) = 0", condition="ntheta != 0")
-problem.add_equation("tau_u_B = 0", condition="ntheta == 0")
-problem.add_equation("tau_u1_S = 0", condition="ntheta == 0")
-problem.add_equation("tau_u2_S = 0", condition="ntheta == 0")
+    momentum = equations['momentum_{}'.format(bn)]
+    momentum_ell0 = "u_{} = 0".format(bn)
+    logger.info('adding eqn "{}" for ntheta != 0'.format(momentum))
+    logger.info('adding eqn "{}" for ntheta == 0'.format(momentum_ell0))
+    problem.add_equation(momentum, condition="ntheta != 0")
+    problem.add_equation(momentum_ell0, condition="ntheta == 0")
 
-## Entropy BCs
-problem.add_equation("s1_B(r=Ri) - s1_S(r=Ri) = 0")
-problem.add_equation("radial(grad_s1_B(r=Ri) - grad(s1_S)(r=Ri)) = 0")
-problem.add_equation("radial(grad_s1_S(r=Ro)) = 0")
+    energy = equations['energy_{}'.format(bn)]
+    logger.info('adding eqn "{}"'.format(energy))
+    problem.add_equation(energy)
+
+for BC in s_BCs.values():
+    logger.info('adding BC "{}"'.format(BC))
+    problem.add_equation(BC)
+
+for BC in u_BCs.values():
+    logger.info('adding BC "{}" for ntheta != 0'.format(BC))
+    problem.add_equation(BC, condition="ntheta != 0")
+
+for bn, basis in bases.items():
+    if type(basis) == d3.BallBasis:
+        BC = 'tau_u_{} = 0'.format(bn)
+        logger.info('adding BC "{}" for ntheta == 0'.format(BC))
+        problem.add_equation(BC, condition="ntheta == 0")
+    else:
+        for i in [1, 2]:
+            BC = 'tau_u{}_{} = 0'.format(i, bn)
+            logger.info('adding BC "{}" for ntheta == 0'.format(BC))
+            problem.add_equation(BC, condition="ntheta == 0")
 
 logger.info("Problem built")
 # Solver
