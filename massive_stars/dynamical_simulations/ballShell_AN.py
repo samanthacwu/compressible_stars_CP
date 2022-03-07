@@ -94,7 +94,7 @@ rotation_time = args['--rotation_time']
 if rotation_time is not None:
     do_rotation = True
     rotation_time = float(rotation_time)
-    dimensional_Ω = 2*np.pi / rotation_time  #radians / day [in MESA units]
+    dimensional_Omega = 2*np.pi / rotation_time  #radians / day [in MESA units]
 
 # Initial conditions
 restart = args['--restart']
@@ -163,14 +163,15 @@ max_dt = None
 t_buoy = None
 t_rot = None
 
-bases = OrderedDict()
+def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64, mesh=None):
+    bases = OrderedDict()
+    coords  = d3.SphericalCoordinates('phi', 'theta', 'r')
+    dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
+    bases['B']   = d3.BallBasis(coords, resolutionB, radius=Ri, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias)) 
+    bases['S'] = d3.ShellBasis(coords, resolutionS, radii=(Ri, Ro), dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
+    return coords, dist, bases
 
-# Bases
-coords  = d3.SphericalCoordinates('phi', 'theta', 'r')
-dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
-bases['B']   = d3.BallBasis(coords, resolutionB, radius=Ri, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias)) 
-bases['S'] = d3.ShellBasis(coords, resolutionS, radii=(Ri, Ro), dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-
+coords, dist, bases = make_bases((resolutionB, resolutionS), (Ri,), Ro, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
 tau_p = dist.Field(name='tau_p')
 
@@ -184,7 +185,8 @@ vec_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe_rad']
 scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe_rad', 'sponge']
 
 variables = OrderedDict()
-for bn, basis in bases.items():
+for basis_number, bn in enumerate(bases.keys()):
+    basis = bases[bn]
     phi, theta, r = basis.local_grids(basis.dealias)
     phi1, theta1, r1 = basis.local_grids((1,1,1))
     variables['phi_'+bn], variables['theta_'+bn], variables['r_'+bn] = phi, theta, r
@@ -266,97 +268,6 @@ for bn, basis in bases.items():
     for k in ['ex', 'ey', 'ez']:
         variables['{}_{}'.format(k, bn)] = d3.Grid(variables['{}_{}'.format(k, bn)]).evaluate()
 
-    # Load MESA NCC file or setup NCCs using polytrope
-    a_vector = variables['{}_{}'.format(vec_fields[0], bn)]
-    grid_slices  = dist.layouts[-1].slices(a_vector.domain, N_dealias)
-    a_vector.change_scales(basis.dealias)
-    local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
-    if ncc_file is not None:
-        logger.info('reading NCCs from {}'.format(ncc_file))
-        for k in vec_nccs + scalar_nccs + ['H', 'ρ', 'T', 'inv_T']:
-            variables['{}_{}'.format(k, bn)].change_scales(basis.dealias)
-        with h5py.File(ncc_file, 'r') as f:
-            for k in vec_nccs:
-                if '{}{}'.format(k, bn) not in f.keys():
-                    logger.info('skipping {}{}, not in file'.format(k, bn))
-                    continue
-                if local_vncc_size > 0:
-                    logger.info('reading {}{}'.format(k, bn))
-                    variables['{}_{}'.format(k, bn)]['g'] = f['{}{}'.format(k, bn)][:,0,0,grid_slices[-1]][:,None,None,:]
-            for k in scalar_nccs:
-                if '{}{}'.format(k, bn) not in f.keys():
-                    logger.info('skipping {}{}, not in file'.format(k, bn))
-                    continue
-                logger.info('reading {}{}'.format(k, bn))
-                variables['{}_{}'.format(k, bn)]['g'] = f['{}{}'.format(k, bn)][:,:,grid_slices[-1]]
-            variables['H_{}'.format(bn)]['g']         = f['H_eff{}'.format(bn)][:,:,grid_slices[-1]]
-            variables['ρ_{}'.format(bn)]['g']         = np.exp(f['ln_ρ{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-            variables['T_{}'.format(bn)]['g']         = f['T{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
-            variables['inv_T_{}'.format(bn)]['g']     = 1/variables['T_{}'.format(bn)]['g']
-
-            if max_dt is None:
-                max_dt = f['max_dt'][()]
-
-            if t_buoy is None:
-                t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
-
-            if t_rot is None:
-                if do_rotation:
-                    sim_tau_sec = f['tau_nd'][()]
-                    sim_tau_day = sim_tau_sec / (60*60*24)
-                    Ω = sim_tau_day * dimensional_Ω 
-                    t_rot = 1/(2*Ω)
-                else:
-                    t_rot = np.inf
-
-            if sponge:
-                f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
-                variables['sponge_{}'.format(bn)]['g'] *= f_brunt
-
-    else:
-        logger.info("Using polytropic initial conditions")
-        from scipy.interpolate import interp1d
-        with h5py.File('benchmark/poly_nOuter1.6.h5', 'r') as f:
-            T_func = interp1d(f['r'][()], f['T'][()])
-            ρ_func = interp1d(f['r'][()], f['ρ'][()])
-            grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-            H_func   = interp1d(f['r'][()], f['H_eff'][()])
-        max_grad_s0 = grad_s0_func(Ro)
-        if max_dt is None:
-            max_dt = 2/np.sqrt(max_grad_s0)
-        if t_buoy is None:
-            t_buoy      = 1
-        if t_rot is None:
-            if do_rotation:
-                Ω = dimensional_Ω 
-                t_rot = 1/(2*Ω)
-            else:
-                t_rot = np.inf
-
-        variables['T_{}'.format(bn)]['g'] = T_func(r1)
-        variables['ρ_{}'.format(bn)]['g'] = ρ_func(r1)
-        variables['H_{}'.format(bn)]['g'] = H_func(r1)
-        variables['inv_T_{}'.format(bn)]['g'] = 1/T_func(r1)
-        
-        grad_ln_ρ_full = (d3.grad(variables['ρ_{}'.format(bn)])/variables['ρ_{}'.format(bn)]).evaluate()
-        grad_T_full = d3.grad(variables['T_{}'.format(bn)]).evaluate()
-        grad_ln_T_full = (grad_T_full/variables['T_{}'.format(bn)]).evaluate()
-        if local_vncc_size > 0:
-            variables['grad_s0_{}'.format(bn)].change_scales(1)
-            print(variables['grad_s0_{}'.format(bn)]['g'].shape, 'grad_s0_{}'.format(bn))
-            variables['grad_s0_{}'.format(bn)]['g'][2]  = grad_s0_func(r1)
-            for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: variables['{}_{}'.format(f, bn)].change_scales(basis.dealias)
-            variables['grad_ln_ρ_{}'.format(bn)]['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
-            variables['grad_ln_T_{}'.format(bn)]['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
-            variables['grad_T_{}'.format(bn)]['g']      = grad_T_full['g'][:,0,0,None,None,:]
-            variables['grad_inv_Pe_rad_{}'.format(bn)]['g'] = 0
-        variables['ln_T_{}'.format(bn)]['g']   = np.log(T_func(r1))
-        variables['ln_ρ_{}'.format(bn)]['g']   = np.log(ρ_func(r1))
-        variables['inv_Pe_rad_{}'.format(bn)]['g'] = 1/Pe
-
-    if do_rotation:
-        logger.info("Running with Coriolis Omega = {:.3e}".format(Ω))
-
     u = variables['u_{}'.format(bn)]
     s1 = variables['s1_{}'.format(bn)]
     I_mat = variables['I_matrix_{}'.format(bn)]
@@ -405,7 +316,7 @@ for bn, basis in bases.items():
     # Rotation and damping terms
     if do_rotation:
         ez = variables['ez_{}'.format(bn)]
-        variables['rotation_term_{}'.format(bn)] = -2*Ω*d3.cross(ez, u)
+        variables['rotation_term_{}'.format(bn)] = -2*Omega*d3.cross(ez, u)
     else:
         variables['rotation_term_{}'.format(bn)] = 0
 
@@ -413,6 +324,103 @@ for bn, basis in bases.items():
         variables['sponge_term_{}'.format(bn)] = u*variables['sponge_{}'.format(bn)]
     else:
         variables['sponge_term_{}'.format(bn)] = 0
+
+for basis_number, bn in enumerate(bases.keys()):
+    basis = bases[bn]
+    phi, theta, r = basis.local_grids(basis.dealias)
+    phi1, theta1, r1 = basis.local_grids((1,1,1))
+    # Load MESA NCC file or setup NCCs using polytrope
+    a_vector = variables['{}_{}'.format(vec_fields[0], bn)]
+    grid_slices  = dist.layouts[-1].slices(a_vector.domain, N_dealias)
+    a_vector.change_scales(basis.dealias)
+    local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
+    if ncc_file is not None:
+        logger.info('reading NCCs from {}'.format(ncc_file))
+        for k in vec_nccs + scalar_nccs + ['H', 'ρ', 'T', 'inv_T']:
+            variables['{}_{}'.format(k, bn)].change_scales(basis.dealias)
+        with h5py.File(ncc_file, 'r') as f:
+            for k in vec_nccs:
+                if '{}{}'.format(k, bn) not in f.keys():
+                    logger.info('skipping {}{}, not in file'.format(k, bn))
+                    continue
+                if local_vncc_size > 0:
+                    logger.info('reading {}{}'.format(k, bn))
+                    variables['{}_{}'.format(k, bn)]['g'] = f['{}{}'.format(k, bn)][:,0,0,grid_slices[-1]][:,None,None,:]
+            for k in scalar_nccs:
+                if '{}{}'.format(k, bn) not in f.keys():
+                    logger.info('skipping {}{}, not in file'.format(k, bn))
+                    continue
+                logger.info('reading {}{}'.format(k, bn))
+                variables['{}_{}'.format(k, bn)]['g'] = f['{}{}'.format(k, bn)][:,:,grid_slices[-1]]
+            variables['H_{}'.format(bn)]['g']         = f['H_eff{}'.format(bn)][:,:,grid_slices[-1]]
+            variables['ρ_{}'.format(bn)]['g']         = np.exp(f['ln_ρ{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
+            variables['T_{}'.format(bn)]['g']         = f['T{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
+            variables['inv_T_{}'.format(bn)]['g']     = 1/variables['T_{}'.format(bn)]['g']
+
+            if max_dt is None:
+                max_dt = f['max_dt'][()]
+
+            if t_buoy is None:
+                t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
+
+            if t_rot is None:
+                if do_rotation:
+                    sim_tau_sec = f['tau_nd'][()]
+                    sim_tau_day = sim_tau_sec / (60*60*24)
+                    Omega = sim_tau_day * dimensional_Omega 
+                    t_rot = 1/(2*Omega)
+                else:
+                    t_rot = np.inf
+
+            if sponge:
+                f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+                variables['sponge_{}'.format(bn)]['g'] *= f_brunt
+
+    else:
+        logger.info("Using polytropic initial conditions")
+        from scipy.interpolate import interp1d
+        with h5py.File('benchmark/poly_nOuter1.6.h5', 'r') as f:
+            T_func = interp1d(f['r'][()], f['T'][()])
+            ρ_func = interp1d(f['r'][()], f['ρ'][()])
+            grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
+            H_func   = interp1d(f['r'][()], f['H_eff'][()])
+        max_grad_s0 = grad_s0_func(Ro)
+        if max_dt is None:
+            max_dt = 2/np.sqrt(max_grad_s0)
+        if t_buoy is None:
+            t_buoy      = 1
+        if t_rot is None:
+            if do_rotation:
+                Omega = dimensional_Omega 
+                t_rot = 1/(2*Omega)
+            else:
+                t_rot = np.inf
+
+        variables['T_{}'.format(bn)]['g'] = T_func(r1)
+        variables['ρ_{}'.format(bn)]['g'] = ρ_func(r1)
+        variables['H_{}'.format(bn)]['g'] = H_func(r1)
+        variables['inv_T_{}'.format(bn)]['g'] = 1/T_func(r1)
+        
+        grad_ln_ρ_full = (d3.grad(variables['ρ_{}'.format(bn)])/variables['ρ_{}'.format(bn)]).evaluate()
+        grad_T_full = d3.grad(variables['T_{}'.format(bn)]).evaluate()
+        grad_ln_T_full = (grad_T_full/variables['T_{}'.format(bn)]).evaluate()
+        if local_vncc_size > 0:
+            variables['grad_s0_{}'.format(bn)].change_scales(1)
+            print(variables['grad_s0_{}'.format(bn)]['g'].shape, 'grad_s0_{}'.format(bn))
+            variables['grad_s0_{}'.format(bn)]['g'][2]  = grad_s0_func(r1)
+            for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: variables['{}_{}'.format(f, bn)].change_scales(basis.dealias)
+            variables['grad_ln_ρ_{}'.format(bn)]['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
+            variables['grad_ln_T_{}'.format(bn)]['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
+            variables['grad_T_{}'.format(bn)]['g']      = grad_T_full['g'][:,0,0,None,None,:]
+            variables['grad_inv_Pe_rad_{}'.format(bn)]['g'] = 0
+        variables['ln_T_{}'.format(bn)]['g']   = np.log(T_func(r1))
+        variables['ln_ρ_{}'.format(bn)]['g']   = np.log(ρ_func(r1))
+        variables['inv_Pe_rad_{}'.format(bn)]['g'] = 1/Pe
+
+    if do_rotation:
+        logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
+
+
 
 # Put nccs and fields into locals()
 locals().update(variables)
