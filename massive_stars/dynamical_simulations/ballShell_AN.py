@@ -38,6 +38,7 @@ import os
 import time
 import sys
 from collections import OrderedDict
+from operator import itemgetter
 from pathlib import Path
 
 import h5py
@@ -244,7 +245,7 @@ for bn, basis in bases.items():
         variables[key] = dist.VectorField(coords, name=key, bases=basis)
 
     if sponge:
-        variables['sponge_S']['g'] = sponge_function(r)
+        variables['sponge_{}'.format(bn)]['g'] = sponge_function(r1)
 
     variables['ephi_{}'.format(bn)]['g'][0,:] = 1 
     variables['etheta_{}'.format(bn)]['g'][1,:] = 1 
@@ -418,7 +419,6 @@ locals().update(variables)
 
 # Problem
 problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_u_B, tau_u1_S, tau_u2_S, tau_s_B, tau_s1_S, tau_s2_S], namespace=locals())
-#problem = d3.IVP([p_B, p_S, u_B, u_S, s1_B, s1_S, tau_p, tau_u_B, tau_u1_S, tau_u2_S, tau_s_B, tau_s1_S, tau_s2_S], namespace=locals())
 
 problem.add_equation("div_u_B + dot(u_B, grad_ln_ρ_B) = 0", condition="ntheta != 0")
 problem.add_equation("div_u_S + dot(u_S, grad_ln_ρ_S) = 0", condition="ntheta != 0")
@@ -445,32 +445,12 @@ problem.add_equation("s1_B(r=Ri) - s1_S(r=Ri) = 0")
 problem.add_equation("radial(grad_s1_B(r=Ri) - grad(s1_S)(r=Ri)) = 0")
 problem.add_equation("radial(grad_s1_S(r=Ro)) = 0")
 
-
-#problem.add_equation("div_u_B + dot(u_B, grad_ln_ρ_B) + tau_p = 0")
-#problem.add_equation("div_u_S + dot(u_S, grad_ln_ρ_S) + tau_p = 0")
-#problem.add_equation("dt(u_B) + grad(p_B) + grad_T_B*s1_B - (1/Re)*visc_div_stress_B + sponge_term_B + taus_u_B = cross(u_B, curl(u_B)) + rotation_term_B")
-#problem.add_equation("dt(u_S) + grad(p_S) + grad_T_S*s1_S - (1/Re)*visc_div_stress_S + sponge_term_S + taus_u_S = cross(u_S, curl(u_S)) + rotation_term_S")
-#problem.add_equation("dt(s1_B) + dot(u_B, grad_s0_B) - div_rad_flux_B + taus_s_B = - dot(u_B, grad_s1_B) + H_B + (1/Re)*inv_T_B*VH_B ")
-#problem.add_equation("dt(s1_S) + dot(u_S, grad_s0_S) - div_rad_flux_S + taus_s_S = - dot(u_S, grad(s1_S)) + H_S + (1/Re)*inv_T_S*VH_S ")
-#
-#problem.add_equation("u_B(r=Ri) - u_S(r=Ri) = 0")
-#problem.add_equation("p_B(r=Ri) - p_S(r=Ri) = 0")
-#problem.add_equation("angular(radial(sigma_B(r=Ri) - sigma_S(r=Ri)), index=0) = 0")
-#problem.add_equation("radial(u_S(r=Ro)) = 0")
-#problem.add_equation("angular(radial(E_S(r=Ro))) = 0")
-##
-### Entropy BCs
-#problem.add_equation("s1_B(r=Ri) - s1_S(r=Ri) = 0")
-#problem.add_equation("radial(grad_s1_B(r=Ri) - grad(s1_S)(r=Ri)) = 0")
-#problem.add_equation("radial(grad_s1_S(r=Ro)) = 0")
-#
-#problem.add_equation("integ(p_B) + integ(p_S) = 0")
-
 logger.info("Problem built")
 # Solver
 solver = problem.build_solver(ts)
 solver.stop_sim_time = buoy_end_time*t_buoy
 solver.stop_wall_time = wall_hours * 60 * 60
+solver.stop_iteration = 40
 logger.info("solver built")
 
 # Initial conditions / Checkpoint
@@ -496,131 +476,126 @@ scalar_dt = 0.25*t_buoy
 lum_dt   = 0.5*t_buoy
 visual_dt = 0.05*t_buoy
 outer_shell_dt = max_dt
+if Re > 1e4:
+    checkpoint_time = 2*t_buoy
+else:
+    checkpoint_time = 10*t_buoy
 
-##TODO: revisit outputs
-## Operators, extra fields
-#r_vals_B = dist.Field(name='r_vals_B', bases=ball_basis)
-#r_vals_S = dist.Field(name='r_vals_S', bases=shell_basis)
-#r_vals_B['g'] = r1B
-#r_vals_S['g'] = r1S
-#er_B = d3.Grid(er_B).evaluate()
-#er_S = d3.Grid(er_S).evaluate()
-#r_vals_B = d3.Grid(r_vals_B).evaluate()
-#r_vals_S = d3.Grid(r_vals_S).evaluate()
-u_B_squared = d3.dot(u_B, u_B)
-u_S_squared = d3.dot(u_S, u_S)
-#ur_B = d3.dot(er_B, u_B)
-#ur_S = d3.dot(er_S, u_S)
-#h_B = p_B - 0.5*u_B_squared + T_B*s1_B
-#h_S = p_S - 0.5*u_S_squared + T_S*s1_S
-#pomega_hat_B = p_B - 0.5*u_B_squared
-#pomega_hat_S = p_S - 0.5*u_S_squared
-#
-#visc_flux_B_r = 2*d3.dot(er_B, d3.dot(u_B, E_B) - (1/3) * u_B * div_u_B)
-#visc_flux_S_r = 2*d3.dot(er_S, d3.dot(u_S, E_S) - (1/3) * u_S * div_u_S)
-#
-## Angular momentum
-#r_B_vec_post = dist.VectorField(coords, name='rB_vec_post', bases=ball_basis)
-#r_B_vec_post['g'][2] = r1B
-#L_AM_B = d3.cross(r_B_vec_post, ρ_B*u_B)
-#Lx_AM_B = d3.dot(ex_B, L_AM_B)
-#Ly_AM_B = d3.dot(ey_B, L_AM_B)
-#Lz_AM_B = d3.dot(ez_B, L_AM_B)
-#
-#r_S_vec_post = dist.VectorField(coords, name='rS_vec_post', bases=shell_basis)
-#r_S_vec_post['g'][2] = r1S
-#L_AM_S = d3.cross(r_S_vec_post, ρ_S*u_S)
-#Lx_AM_S = d3.dot(ex_S, L_AM_S)
-#Ly_AM_S = d3.dot(ey_S, L_AM_S)
-#Lz_AM_S = d3.dot(ez_S, L_AM_S)
-#
-# Averaging Operations
-volume  = (4/3)*np.pi*Ro**3
-volume_B = (4/3)*np.pi*Ri**3
-volume_S = volume - volume_B
+analysis_tasks = []
+slices = solver.evaluator.add_file_handler('{:s}/slices'.format(out_dir), sim_dt=visual_dt, max_writes=40)
+scalars = solver.evaluator.add_file_handler('{:s}/scalars'.format(out_dir), sim_dt=scalar_dt, max_writes=np.inf)
+profiles = solver.evaluator.add_file_handler('{:s}/profiles'.format(out_dir), sim_dt=visual_dt, max_writes=100)
+if args['--sponge']:
+    surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
+else:
+    surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
+analysis_tasks.append(slices)
+analysis_tasks.append(scalars)
+analysis_tasks.append(profiles)
+analysis_tasks.append(surface_shell_slices)
+
+checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=checkpoint_time)
+checkpoint.add_tasks(solver.state, layout='g')
+analysis_tasks.append(checkpoint)
+
+
+logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
 
 az_avg = lambda A: d3.Average(A, coords.coords[0])
 s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
-vol_avg_B = lambda A: d3.Integrate(A/volume_B, coords)
-vol_avg_S = lambda A: d3.Integrate(A/volume_S, coords)
-luminosity_B = lambda A: s2_avg((4*np.pi*r_vals_B**2) * A)
-luminosity_S = lambda A: s2_avg((4*np.pi*r_vals_S**2) * A)
 
-analysis_tasks = []
+##TODO: revisit outputs
+for bn, basis in bases.items():
+    phi, theta, r = itemgetter('phi_'+bn, 'theta_'+bn, 'r_'+bn)(variables)
+    phi1, theta1, r1 = itemgetter('phi1_'+bn, 'theta1_'+bn, 'r1_'+bn)(variables)
+    ex, ey, ez = itemgetter('ex_'+bn, 'ey_'+bn, 'ez_'+bn)(variables)
+    T, ρ = itemgetter('T_{}'.format(bn), 'ρ_{}'.format(bn))(variables)
+    div_u, E = itemgetter('div_u_RHS_{}'.format(bn), 'E_RHS_{}'.format(bn))(variables)
+    u = variables['u_{}'.format(bn)]
+    p = variables['p_{}'.format(bn)]
+    s1 = variables['s1_{}'.format(bn)]
 
-slices = solver.evaluator.add_file_handler('{:s}/slices'.format(out_dir), sim_dt=visual_dt, max_writes=40)
-slices.add_task(u_B(theta=np.pi/2), name='u_B_eq', layout='g')
-slices.add_task(u_S(theta=np.pi/2), name='u_S_eq', layout='g')
-slices.add_task(s1_B(theta=np.pi/2), name='s1_B_eq', layout='g')
-slices.add_task(s1_S(theta=np.pi/2), name='s1_S_eq', layout='g')
-for fd, name in zip((u_B, s1_B), ('u_B', 's1_B')):
-    for radius, r_str in zip((0.5, 1), ('0.5', '1')):
-        operation = fd(r=radius)
-        slices.add_task(operation, name=name+'(r={})'.format(r_str), layout='g')
-for fd, name in zip((u_S, s1_S), ('u_S', 's1_S')):
-    for radius, r_str in zip((0.95*Ro,), ('0.95R',)):
-        operation = fd(r=radius)
-        slices.add_task(operation, name=name+'(r={})'.format(r_str), layout='g')
-for az_val, name in zip([0, np.pi/2, np.pi, 3*np.pi/2], ['(phi=0)', '(phi=0.5*pi)', '(phi=pi)', '(phi=1.5*pi)',]):
-    slices.add_task(u_B(phi=az_val),  name='u_B' +name, layout='g')
-    slices.add_task(s1_B(phi=az_val), name='s1_B'+name, layout='g')
-for az_val, name in zip([0, np.pi/2, np.pi, 3*np.pi/2], ['(phi=0)', '(phi=0.5*pi)', '(phi=pi)', '(phi=1.5*pi)',]):
-    slices.add_task(u_S(phi=az_val),  name='u_S' +name, layout='g')
-    slices.add_task(s1_S(phi=az_val), name='s1_S'+name, layout='g')
-analysis_tasks.append(slices)
+    variables['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
+    variables['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
+    r_vals['g'] = r1
+    r_vec['g'][2] = r1
+    r_vals = d3.Grid(r_vals).evaluate()
+    er = d3.Grid(variables['er_{}'.format(bn)]).evaluate()
 
-#scalars = solver.evaluator.add_file_handler('{:s}/scalars'.format(out_dir), sim_dt=scalar_dt, max_writes=np.inf)
-#scalars.add_task(vol_avg_B(Re*(u_B_squared)**(1/2)), name='Re_avg_ball',  layout='g')
-#scalars.add_task(vol_avg_S(Re*(u_S_squared)**(1/2)), name='Re_avg_shell', layout='g')
-#scalars.add_task(vol_avg_B(ρ_B*u_B_squared/2), name='KE_ball',   layout='g')
-#scalars.add_task(vol_avg_S(ρ_S*u_S_squared/2), name='KE_shell',  layout='g')
-#scalars.add_task(vol_avg_B(ρ_B*T_B*s1_B), name='TE_ball',  layout='g')
-#scalars.add_task(vol_avg_S(ρ_S*T_S*s1_S), name='TE_shell', layout='g')
-#scalars.add_task(vol_avg_B(Lx_AM_B), name='Lx_AM_ball', layout='g')
-#scalars.add_task(vol_avg_B(Ly_AM_B), name='Ly_AM_ball', layout='g')
-#scalars.add_task(vol_avg_B(Lz_AM_B), name='Lz_AM_ball', layout='g')
-#scalars.add_task(vol_avg_S(Lx_AM_S), name='Lx_AM_shell', layout='g')
-#scalars.add_task(vol_avg_S(Ly_AM_S), name='Ly_AM_shell', layout='g')
-#scalars.add_task(vol_avg_S(Lz_AM_S), name='Lz_AM_shell', layout='g')
-#analysis_tasks.append(scalars)
-#
-#profiles = solver.evaluator.add_file_handler('{:s}/profiles'.format(out_dir), sim_dt=visual_dt, max_writes=100)
-#profiles.add_task(luminosity_B(ρ_B*ur_B*pomega_hat_B),         name='wave_lumB', layout='g')
-#profiles.add_task(luminosity_S(ρ_S*ur_S*pomega_hat_S),         name='wave_lumS', layout='g')
-#profiles.add_task(luminosity_B(ρ_B*ur_B*h_B),                   name='enth_lumB', layout='g')
-#profiles.add_task(luminosity_S(ρ_S*ur_S*h_S),                   name='enth_lumS', layout='g')
-#profiles.add_task(luminosity_B(-ρ_B*visc_flux_B_r/Re),         name='visc_lumB', layout='g')
-#profiles.add_task(luminosity_S(-ρ_S*visc_flux_S_r/Re),         name='visc_lumS', layout='g')
-#profiles.add_task(luminosity_B(-ρ_B*T_B*d3.dot(er_B, grad_s1_B)/Pe), name='cond_lumB', layout='g')
-#profiles.add_task(luminosity_S(-ρ_S*T_S*d3.dot(er_S, grad_s1_S)/Pe), name='cond_lumS', layout='g')
-#profiles.add_task(luminosity_B(0.5*ρ_B*ur_B*u_B_squared),       name='KE_lumB',   layout='g')
-#profiles.add_task(luminosity_S(0.5*ρ_S*ur_S*u_S_squared),       name='KE_lumS',   layout='g')
-#analysis_tasks.append(profiles)
+    u_squared = d3.dot(u, u)
+    ur = d3.dot(er, u)
+    pomega_hat = p - 0.5*u_squared
+    h = pomega_hat + T*s1
+    visc_flux = 2*(d3.dot(u, E) - (1/3) * u * div_u)
+    visc_flux_r = d3.dot(er, visc_flux)
 
-#if args['--sponge']:
-#    surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
-#    for rval in [0.90, 1.05]:
-#        surface_shell_slices.add_task(d3.radial(u_B(r=rval)), name='u(r={})'.format(rval), layout='g')
-#        surface_shell_slices.add_task(pomega_hat_B(r=rval), name='pomega(r={})'.format(rval),    layout='g')
-#    for rval in [1.5, 2.0, 2.5, 3.0, 3.5]:
-#        surface_shell_slices.add_task(d3.radial(u_S(r=rval)), name='u(r={})'.format(rval), layout='g')
-#        surface_shell_slices.add_task(pomega_hat_S(r=rval), name='pomega(r={})'.format(rval),    layout='g')
-#    analysis_tasks.append(surface_shell_slices)
-#else:
-#    surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
-#    surface_shell_slices.add_task(s1_S(r=Ro),         name='s1_surf',    layout='g')
-#    analysis_tasks.append(surface_shell_slices)
-#
-if Re > 1e4:
-    chk_time = 2*t_buoy
-else:
-    chk_time = 10*t_buoy
-checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=chk_time)
-checkpoint.add_tasks(solver.state, layout='g')
+    angular_momentum = d3.cross(r_vec, ρ*u)
+    am_Lx = d3.dot(ex, angular_momentum)
+    am_Ly = d3.dot(ey, angular_momentum)
+    am_Lz = d3.dot(ez, angular_momentum)
 
-re_ball = solver.evaluator.add_dictionary_handler(iter=10)
-re_ball.add_task(vol_avg_B(Re*(u_B_squared)**(1/2)), name='Re_avg_ball', layout='g')
-re_ball.add_task(d3.integ(ρ_S*(u_S_squared)/2), name='KE_shell', layout='g')
+    if type(basis) == d3.BallBasis:
+        volume  = (4/3)*np.pi*Ri**3
+    else:
+        volume  = (4/3)*np.pi*(Ro**3-Ri**3)
+
+    vol_avg = variables['vol_avg_{}'.format(bn)] = lambda A: d3.Integrate(A/volume, coords)
+    lum_prof = variables['lum_prof_{}'.format(bn)] = lambda A: s2_avg((4*np.pi*r_vals**2) * A)
+
+    # Add slices for making movies
+    slices.add_task(u(theta=np.pi/2), name='u_eq_{}'.format(bn), layout='g')
+    slices.add_task(s1(theta=np.pi/2), name='s1_eq_{}'.format(bn), layout='g')
+
+    if type(basis) == d3.BallBasis:
+        radius_vals = (0.5, 1)
+        radius_strs = ('0.5', '1')
+    else:
+        radius_vals = (0.95*Ro,)
+        radius_strs = ('0.95R',)
+    for r_val, r_str in zip(radius_vals, radius_strs):
+            slices.add_task(u(r=r_val), name='u_{}(r={})'.format(bn, r_str), layout='g')
+            slices.add_task(s1(r=r_val), name='s1_{}(r={})'.format(bn, r_str), layout='g')
+
+    for az_val, phi_str in zip([0, np.pi/2, np.pi, 3*np.pi/2], ['0', '0.5*pi', 'pi', '1.5*pi',]):
+        slices.add_task(u(phi=az_val),  name='u_{}(phi={})'.format(bn, phi_str), layout='g')
+        slices.add_task(s1(phi=az_val), name='s1_{}(phi={})'.format(bn, phi_str), layout='g')
+
+    # Add scalars for simple evolution tracking
+    scalars.add_task(vol_avg(Re*(u_squared)**(1/2)), name='Re_avg_{}'.format(bn),  layout='g')
+    scalars.add_task(vol_avg(ρ*u_squared/2), name='KE_{}'.format(bn),   layout='g')
+    scalars.add_task(vol_avg(ρ*T*s1), name='TE_{}'.format(bn),  layout='g')
+    scalars.add_task(vol_avg(am_Lx), name='angular_momentum_x_{}'.format(bn), layout='g')
+    scalars.add_task(vol_avg(am_Ly), name='angular_momentum_y_{}'.format(bn), layout='g')
+    scalars.add_task(vol_avg(am_Lz), name='angular_momentum_z_{}'.format(bn), layout='g')
+    scalars.add_task(vol_avg(d3.dot(angular_momentum, angular_momentum)), name='square_angular_momentum_{}'.format(bn), layout='g')
+
+    # Add profiles to track structure and fluxes
+    profiles.add_task(s2_avg(s1), name='s1_profile_{}'.format(bn), layout='g')
+    profiles.add_task(lum_prof(ρ*ur*pomega_hat),   name='wave_lum_{}'.format(bn), layout='g')
+    profiles.add_task(lum_prof(ρ*ur*h),            name='enth_lum_{}'.format(bn), layout='g')
+    profiles.add_task(lum_prof(-ρ*visc_flux_r/Re), name='visc_lum_{}'.format(bn), layout='g')
+    profiles.add_task(lum_prof(-ρ*T*d3.dot(er, d3.grad(s1)/Pe)), name='cond_lum_{}'.format(bn), layout='g')
+    profiles.add_task(lum_prof(0.5*ρ*ur*u_squared), name='KE_lum_{}'.format(bn),   layout='g')
+
+    # Output high-cadence S2 shells for wave output tasks
+    if args['--sponge']:
+        if type(basis) == d3.BallBasis:
+            radius_vals = (0.90, 1.05)
+            radius_strs = ('0.90', '1.05')
+        else:
+            radius_vals = (1.5, 2.0, 2.5, 3.0, 3.5)
+            radius_strs = ('1.50', '2.00', '2.50', '3.00', '3.50')
+
+        for r_val, r_str in zip(radius_vals, radius_strs):
+                surface_shell_slices.add_task(ur(r=r_val),         name='ur_{}(r={})'.format(bn, r_str), layout='g')
+                surface_shell_slices.add_task(pomega_hat(r=r_val), name='pomega_{}(r={})'.format(bn, r_str), layout='g')
+    else:
+        if type(basis) == d3.BallBasis:
+            pass
+        surface_shell_slices.add_task(s1(r=Ro), name='s1_{}(r=Ro)'.format(bn), layout='g')
+
+    logger_handler.add_task(vol_avg(Re*(u_squared)**(1/2)), name='Re_avg_{}'.format(bn), layout='g')
+    logger_handler.add_task(d3.integ(ρ*(u_squared)/2), name='KE_{}'.format(bn), layout='g')
 
 #CFL setup
 heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -637,28 +612,6 @@ if timestep is None:
     timestep = initial_max_dt
 my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
 my_cfl.add_velocity(heaviside_cfl*u_B)
-my_cfl.add_velocity(u_S)
-
-#startup iterations
-for i in range(10):
-    solver.step(timestep)
-    Re_avg = re_ball.fields['Re_avg_ball']
-    KE_shell = re_ball.fields['KE_shell']
-    if dist.comm_cart.rank == 0:
-        KE0 = KE_shell['g'].min()
-        Re0 = Re_avg['g'].min()
-        taus = tau_p['g'].squeeze()
-    else:
-        KE0 = None 
-        Re0 = None
-        taus = -1
-    Re0 = dist.comm_cart.bcast(Re0, root=0)
-    KE0 = dist.comm_cart.bcast(KE0, root=0)
-    this_str = "startup iteration {}, t = {:f}, timestep = {:f}, Re = {:.4e}".format(i, solver.sim_time, timestep, Re0)
-    this_str += ", KE = {:.4e}".format(KE0)
-#    this_str += ", tau_p = {:.4e}".format(taus)
-    logger.info(this_str)
-    timestep = my_cfl.compute_timestep()
 
 # Main loop
 start_time = time.time()
@@ -671,30 +624,37 @@ slice_time = np.inf
 Re0 = 0
 try:
     while solver.proceed:
+        if max_dt_check and timestep < outer_shell_dt:
+            #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
+            my_cfl.max_dt = max_dt
+            max_dt_check = False
+            just_wrote = True
+            slice_time = solver.sim_time + outer_shell_dt
+
         timestep = my_cfl.compute_timestep()
 
-#        if just_wrote:
-#            just_wrote = False
-#            num_steps = np.ceil(outer_shell_dt / timestep)
-#            timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
-#        elif max_dt_check:
-#            timestep = np.min((timestep, current_max_dt))
-#        else:
-#            my_cfl.stored_dt = timestep = current_max_dt
-#
-#        t_future = solver.sim_time + timestep
-#        if t_future >= slice_time*(1-1e-8):
-#           slice_process = True
-#
-#        if solver.iteration % hermitian_cadence in timestepper_history:
-#            for f in solver.state:
-#                f.require_grid_space()
-#
+        if just_wrote:
+            just_wrote = False
+            num_steps = np.ceil(outer_shell_dt / timestep)
+            timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
+        elif max_dt_check:
+            timestep = np.min((timestep, current_max_dt))
+        else:
+            my_cfl.stored_dt = timestep = current_max_dt
+
+        t_future = solver.sim_time + timestep
+        if t_future >= slice_time*(1-1e-8):
+           slice_process = True
+
+        if solver.iteration % hermitian_cadence in timestepper_history:
+            for f in solver.state:
+                f.require_grid_space()
+
         solver.step(timestep)
 
-        if solver.iteration % 10 == 0:
-            Re_avg = re_ball.fields['Re_avg_ball']
-            KE_shell = re_ball.fields['KE_shell']
+        if solver.iteration % 10 == 0 or solver.iteration <= 10:
+            Re_avg = logger_handler.fields['Re_avg_B']
+            KE_shell = logger_handler.fields['KE_S']
             if dist.comm_cart.rank == 0:
                 KE0 = KE_shell['g'].min()
                 Re0 = Re_avg['g'].min()
@@ -705,50 +665,38 @@ try:
                 taus = -1
             Re0 = dist.comm_cart.bcast(Re0, root=0)
             KE0 = dist.comm_cart.bcast(KE0, root=0)
-            this_str = "t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.sim_time, timestep, Re0)
+            this_str = "iteration = {:08d}, t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time, timestep, Re0)
             this_str += ", KE = {:.4e}".format(KE0)
-#            this_str += ", tau_ps = {:.4e}".format(taus)
             logger.info(this_str)
-        if max_dt_check and timestep < outer_shell_dt:
-            my_cfl.max_dt = max_dt
-            max_dt_check = False
-            just_wrote = True
-            slice_time = solver.sim_time + outer_shell_dt
 
-#        if slice_process:
-#            slice_process = False
-#            wall_time = time.time() - solver.start_time
-#            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
-#            slice_time = solver.sim_time + outer_shell_dt
-#            just_wrote = True
+
+        if slice_process:
+            slice_process = False
+            wall_time = time.time() - solver.start_time
+            solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
+            slice_time = solver.sim_time + outer_shell_dt
+            just_wrote = True
 
         if np.isnan(Re0):
             logger.info('exiting with NaN')
             break
 
 except:
-    logger.info('something went wrong in main loop, making final checkpoint')
+    logger.info('something went wrong in main loop.')
     raise
 finally:
-    end_time = time.time()
-    end_iter = solver.iteration
-    cpu_sec  = end_time - start_time
-    n_iter   = end_iter - start_iter
+    solver.log_stats()
 
-
+    logger.info('making final checkpoint')
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
     fcheckpoint.add_tasks(solver.state, layout='g')
     solver.step(timestep)
 
-    if dist.comm_cart.rank == 0:
-        for handler in analysis_tasks:
-            handler.process_virtual_file()
+    logger.info('Stitching open virtual files...')
+    for handler in analysis_tasks:
+        if not handler.check_file_limits():
+            file = handler.get_file()
+            file.close()
+            if dist.comm_cart.rank == 0:
+                handler.process_virtual_file()
 
-    #TODO: Make the end-of-sim report better
-    n_coeffs = np.prod(resolutionB) + np.prod(resolutionS)
-    n_cpu    = dist.comm_cart.size
-    dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
-    logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
-    logger.info('Run iterations: {:e}'.format(n_iter))
-    logger.info('Sim end time: {:e}'.format(solver.sim_time))
-    logger.info('Run time: {}'.format(cpu_sec))
