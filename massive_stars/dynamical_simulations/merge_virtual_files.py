@@ -18,7 +18,7 @@ from docopt import docopt
 args = docopt(__doc__)
 
 root_dir = args['<root_dir>']
-handlers = ['slices', 'profiles', 'scalars', 'checkpoint', 'final_checkpoint']
+handlers = ['slices', 'profiles', 'scalars', 'checkpoint', 'final_checkpoint', 'wave_shell_slices]
 cleanup = True
 
 for data_dir in handlers:

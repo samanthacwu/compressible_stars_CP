@@ -450,7 +450,6 @@ logger.info("Problem built")
 solver = problem.build_solver(ts)
 solver.stop_sim_time = buoy_end_time*t_buoy
 solver.stop_wall_time = wall_hours * 60 * 60
-solver.stop_iteration = 40
 logger.info("solver built")
 
 # Initial conditions / Checkpoint
