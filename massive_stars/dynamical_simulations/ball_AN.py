@@ -44,6 +44,8 @@ from mpi4py import MPI
 import logging
 logger = logging.getLogger(__name__)
 
+from ballShell_AN import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
+
 args   = docopt(__doc__)
 if args['<config>'] is not None: 
     config_file = Path(args['<config>'])
@@ -56,10 +58,10 @@ if args['<config>'] is not None:
                 args[k] = v
 
 # Parameters
-nθ = int(args['--ntheta'])
+ntheta = int(args['--ntheta'])
 nr = int(args['--nr'])
-nφ = int(2*nθ)
-resolution = (nφ, nθ, nr)
+nphi = int(2*ntheta)
+resolution = (nphi, ntheta, nr)
 L_dealias = N_dealias = dealias = 1.5
 dtype = np.float64
 Re  = float(args['--Re'])
@@ -114,149 +116,58 @@ if ncc_file is not None:
 else:
     radius = 1.5
 
-coords = d3.SphericalCoordinates('φ', 'θ', 'r')
-dist   = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
-basis  = d3.BallBasis(coords, shape=resolution, radius=radius, dtype=dtype, dealias=(L_dealias, L_dealias, N_dealias))
-φ, θ, r = basis.local_grids(basis.dealias)
-φ1, θ1, r1 = basis.local_grids((1,1,1))
-x, y, z = coords.cartesian(φ, θ, r)
-print(x.shape, y.shape, z.shape)
+resolutions = (resolution,)
+stitch_radii = ()
+radius = radius
+coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
+print(bases, bases_keys)
 
-#Operators
-lift_basis = basis.clone_with(k=0)
-lift      = lambda A: d3.Lift(A, lift_basis, -1)
-integ     = lambda A: d3.Integrate(A, coords)
-
-# Problem variables
-vec_fields = ['u', 'eφ', 'eθ', 'er']
+vec_fields = ['u',]
 scalar_fields = ['p', 's1', 'inv_T', 'H', 'ρ', 'T']
 vec_taus = ['tau_u']
 scalar_taus = ['tau_s']
-taus = ['tau_p']
-field_dict = OrderedDict()
-for fn in vec_fields:
-    field_dict[fn] = dist.VectorField(coords, name=fn, bases=basis)
-for fn in scalar_fields:
-    field_dict[fn] = dist.Field(name=fn, bases=basis)
-for fn in vec_taus:
-    field_dict[fn] = dist.VectorField(coords, name=fn, bases=basis.S2_basis())
-for fn in scalar_taus:
-    field_dict[fn] = dist.Field(name=fn, bases=basis.S2_basis())
-for fn in taus:
-    field_dict[fn] = dist.Field(name=fn)
-
-for k in field_dict.keys():
-    field_dict[k]['g'][:] = 0
-
-field_dict['eφ']['g'][0,:] = 1
-field_dict['eθ']['g'][1,:] = 1
-field_dict['er']['g'][2,:] = 1
-
-# NCCs
-tensor_nccs = ['I_matrix']
 vec_nccs = ['grad_ln_ρ', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_inv_Pe_rad']
-scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe_rad']
-ncc_dict = OrderedDict()
-for fn in tensor_nccs:
-    ncc_dict[fn] = dist.TensorField(coords, name=fn, bases=basis.radial_basis)
-for fn in vec_nccs:
-    ncc_dict[fn] = dist.VectorField(coords, name=fn, bases=basis.radial_basis)
-for fn in scalar_nccs:
-    ncc_dict[fn] = dist.Field(name=fn, bases=basis.radial_basis)
+scalar_nccs = ['ln_ρ', 'ln_T', 'inv_Pe_rad', 'sponge']
+variables = make_fields(bases, coords, dist, 
+                        vec_fields=vec_fields, scalar_fields=scalar_fields, 
+                        vec_taus=vec_taus, scalar_taus=scalar_taus, 
+                        vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
+                        sponge=False, do_rotation=False)
 
-for k in ncc_dict.keys():
-    ncc_dict[k]['g'][:] = 0
 
-for i in range(3):
-    ncc_dict['I_matrix']['g'][i,i,:] = 1
-
-# Load MESA NCC file or setup NCCs using polytrope.
-grid_slices = dist.layouts[-1].slices(field_dict[vec_fields[0]].domain, N_dealias)
-ncc_dict[vec_nccs[0]].change_scales(basis.dealias)
-local_vncc_shape = ncc_dict[vec_nccs[0]]['g'].shape
-if ncc_file is not None:
-    for k in [vec_nccs + scalar_nccs]:
-        ncc_dict[k].change_scales(basis.dealias)
-    for k in ['H', 'ρ', 'T', 'inv_T']:
-        field_dict[k].change_scales(basis.dealias)
-    with h5py.File(ncc_file, 'r') as f:
-        if np.prod(local_vncc_shape) > 0:
-            for k in vec_nccs:
-                ncc_dict[k]['g'] = f[k+'B'][()][:,:,:,  grid_slices[2]].reshape(local_vncc_shape) 
-        for k in scalar_nccs:
-            ncc_dict[k]['g'] = f[k+'B'][()][:,:,grid_slices[2]]
-        field_dict['H']['g'] = f['H_effB'][()][:,:,grid_slices[2]]
-        field_dict['ρ']['g'] = np.exp(f['ln_ρB'][()][:,:,grid_slices[2]])
-        field_dict['T']['g'] = f['TB'][()][:,:,grid_slices[2]]
-        field_dict['inv_T']['g'] = 1/field_dict['T']['g']
-
-        max_dt = f['max_dt'][()]
-        t_buoy = 1 #Assume nondimensionalization on heating ~ buoyancy time
-else:
-    logger.info("Using polytropic initial conditions")
-    from scipy.interpolate import interp1d
-    with h5py.File('benchmark/poly_nOuter1.6.h5', 'r') as f:
-        T_func = interp1d(f['r'][()], f['T'][()])
-        ρ_func = interp1d(f['r'][()], f['ρ'][()])
-        grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-        H_func   = interp1d(f['r'][()], f['H_eff'][()])
-
-    field_dict['T']['g']       = T_func(r1)
-    field_dict['ρ']['g']       = ρ_func(r1)
-    field_dict['H']['g']       = H_func(r1)
-    field_dict['inv_T']['g']   = 1/T_func(r1)
-
-    grad_ln_ρ_full = (d3.grad(field_dict['ρ'])/field_dict['ρ']).evaluate()
-    grad_T_full = d3.grad(field_dict['T']).evaluate()
-    grad_ln_T_full = (grad_T_full/field_dict['T']).evaluate()
-    if np.prod(local_vncc_shape) > 0:
-        ncc_dict['grad_s0'].change_scales(1)
-        ncc_dict['grad_s0']['g'][2]  = grad_s0_func(r1)
-        for f in ['grad_ln_ρ', 'grad_ln_T', 'grad_T']: ncc_dict[f].change_scales(basis.dealias)
-        ncc_dict['grad_ln_ρ']['g']   = grad_ln_ρ_full['g'][:,0,0,None,None,:]
-        ncc_dict['grad_ln_T']['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
-        ncc_dict['grad_T']['g']      = grad_T_full['g'][:,0,0,None,None,:]
-        ncc_dict['grad_inv_Pe_rad']['g'] = 0
-    ncc_dict['ln_T']['g']        = np.log(T_func(r1))
-    ncc_dict['ln_ρ']['g']        = np.log(ρ_func(r1))
-    ncc_dict['inv_Pe_rad']['g']      = 1/Pe
-
-    t_buoy      = 1
+variables, timescales = fill_structure(bases, dist, variables, ncc_file, radius, Pe, 
+                                vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
+                                sponge=False, do_rotation=False)
+max_dt, t_buoy, t_rot = timescales
 
 # Put nccs and fields into locals()
-locals().update(ncc_dict)
-locals().update(field_dict)
+locals().update(variables)
 
-# Stress matrices & viscous terms (assumes uniform kinematic viscosity, so dynamic viscosity mu = const * rho)
-divU = d3.div(u)
-E = 0.5*(d3.grad(u) + d3.transpose(d3.grad(u)))
-σ = 2*(E - (1/3)*divU*I_matrix)
-visc_div_stress = d3.div(σ) + d3.dot(σ, grad_ln_ρ)
-VH  = 2*(d3.trace(d3.dot(E, E)) - (1/3)*divU**2)
-
-# Grid-lock / define extra operators
-H = d3.Grid(H).evaluate()
-inv_T = d3.Grid(inv_T).evaluate()
-grad_s1 = d3.grad(s1)
 
 # Problem
-problem = d3.IVP([p, u, s1, tau_p, tau_u, tau_s], namespace=locals())
+prob_variables = get_anelastic_variables(bases, bases_keys, variables)
+problem = d3.IVP(prob_variables, namespace=locals())
 
-# Equations / Problem
-problem.add_equation("div(u) + dot(u, grad_ln_ρ) + tau_p = 0")
-problem.add_equation("dt(u) + grad(p) + grad_T*s1 - (1/Re)*visc_div_stress + lift(tau_u) = cross(u, curl(u))")
-problem.add_equation("dt(s1) + dot(u, grad_s0) - inv_Pe_rad*(lap(s1) + dot(grad_s1, (grad_ln_ρ + grad_ln_T))) - dot(grad_s1, grad_inv_Pe_rad) + lift(tau_s) = - dot(u, grad_s1) + H + (1/Re)*inv_T*VH ")
-problem.add_equation("radial(u(r=radius)) = 0")
-problem.add_equation("angular(radial(E(r=radius))) = 0")
-problem.add_equation("s1(r=radius)  = 0")
-problem.add_equation("integ(p) = 0")
-logger.info("Problem built")
+problem = set_anelastic_problem(problem, bases, bases_keys)
 
 # Solver
 solver = problem.build_solver(ts)
 solver.stop_sim_time = buoy_end_time*t_buoy
 solver.stop_wall_time = wall_hours * 60 * 60
 logger.info("solver built")
+
+
+bn = 'B'
+phi, theta, r = itemgetter('phi_'+bn, 'theta_'+bn, 'r_'+bn)(variables)
+phi1, theta1, r1 = itemgetter('phi1_'+bn, 'theta1_'+bn, 'r1_'+bn)(variables)
+ex, ey, ez = itemgetter('ex_'+bn, 'ey_'+bn, 'ez_'+bn)(variables)
+T, ρ = itemgetter('T_{}'.format(bn), 'ρ_{}'.format(bn))(variables)
+div_u, E = itemgetter('div_u_RHS_{}'.format(bn), 'E_RHS_{}'.format(bn))(variables)
+u = variables['u_{}'.format(bn)]
+p = variables['p_{}'.format(bn)]
+s1 = variables['s1_{}'.format(bn)]
+
+
 
 # Initial conditions / Checkpoint
 write_mode = 'overwrite'
@@ -316,8 +227,8 @@ slices.add_task(u(r=0.5), name='u_r0.5', layout='g')
 slices.add_task(s1(r=0.5), name='s1_r0.5',  layout='g')
 slices.add_task(u(r=0.95), name='u_r0.95', layout='g')
 slices.add_task(s1(r=0.95), name='s1_r0.95',  layout='g')
-slices.add_task(u(θ=np.pi/2),  name='u_eq', layout='g')
-slices.add_task(s1(θ=np.pi/2), name='s1_eq', layout='g')
+slices.add_task(u(theta=np.pi/2),  name='u_eq', layout='g')
+slices.add_task(s1(theta=np.pi/2), name='s1_eq', layout='g')
 analysis_tasks.append(slices)
 
 # Checkpoint 
