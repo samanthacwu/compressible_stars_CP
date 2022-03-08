@@ -31,6 +31,7 @@ Options:
 import os
 import time
 import sys
+from operator import itemgetter
 from collections import OrderedDict
 from pathlib import Path
 
@@ -44,7 +45,7 @@ from mpi4py import MPI
 import logging
 logger = logging.getLogger(__name__)
 
-from ballShell_AN import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
+from anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
 
 args   = docopt(__doc__)
 if args['<config>'] is not None: 
@@ -158,6 +159,7 @@ logger.info("solver built")
 
 
 bn = 'B'
+basis = bases[bn]
 phi, theta, r = itemgetter('phi_'+bn, 'theta_'+bn, 'r_'+bn)(variables)
 phi1, theta1, r1 = itemgetter('phi1_'+bn, 'theta1_'+bn, 'r1_'+bn)(variables)
 ex, ey, ez = itemgetter('ex_'+bn, 'ey_'+bn, 'ez_'+bn)(variables)
@@ -166,8 +168,7 @@ div_u, E = itemgetter('div_u_RHS_{}'.format(bn), 'E_RHS_{}'.format(bn))(variable
 u = variables['u_{}'.format(bn)]
 p = variables['p_{}'.format(bn)]
 s1 = variables['s1_{}'.format(bn)]
-
-
+er = variables['er_{}'.format(bn)]
 
 # Initial conditions / Checkpoint
 write_mode = 'overwrite'
@@ -191,7 +192,7 @@ ur = d3.dot(er, u)
 u_squared = d3.dot(u,u)
 h = p - 0.5*u_squared + T*s1
 pomega_hat = p - 0.5*u_squared
-visc_flux_r = 2*d3.dot(er, d3.dot(u, E) - (1/3) * u * divU)
+visc_flux_r = 2*d3.dot(er, d3.dot(u, E) - (1/3) * u * div_u)
 
 r_vals = dist.Field(name='r_vals', bases=basis)
 r_vals['g'] = r1
@@ -217,7 +218,7 @@ analysis_tasks.append(scalars)
 profiles = solver.evaluator.add_file_handler('{:s}/profiles'.format(out_dir), max_writes=100, sim_dt=flux_dt, mode=write_mode)
 profiles.add_task(luminosity(ρ*ur*h),                      name='enth_lum', layout='g')
 profiles.add_task(luminosity(-ρ*visc_flux_r/Re),           name='visc_lum', layout='g')
-profiles.add_task(luminosity(-ρ*T*d3.dot(er, grad_s1)/Pe),    name='cond_lum', layout='g')
+profiles.add_task(luminosity(-ρ*T*d3.dot(er, d3.grad(s1))/Pe),    name='cond_lum', layout='g')
 profiles.add_task(luminosity(0.5*ρ*ur*u_squared),          name='KE_lum',   layout='g')
 profiles.add_task(luminosity(ρ*ur*pomega_hat),             name='wave_lum', layout='g')
 analysis_tasks.append(profiles)
