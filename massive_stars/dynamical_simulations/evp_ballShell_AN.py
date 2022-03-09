@@ -439,11 +439,18 @@ if __name__ == '__main__':
 #        s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
         velocity_eigenfunctions = []
         velocity_eigenfunctions_pieces = []
-#        entropy_eigenfunctions = []
-#        wave_flux_eigenfunctions = []
+        entropy_eigenfunctions = []
+        wave_flux_eigenfunctions = []
 #
 #        subsystem = subsystem1
 #        print('using subsystem ', subsystem.group, ' for eigenvectors')
+
+        for sbsys in solver.subsystems:
+            ss_m, ss_ell, r_couple = sbsys.group
+            if ss_ell == ell and ss_m == 1:
+                subsystem = sbsys
+                break
+
         ρ_full = np.concatenate((ρB['g'], ρS['g']), axis=-1)
         for i, e in enumerate(solver.eigenvalues):
             solver.set_state(i, subsystem)
@@ -452,9 +459,9 @@ if __name__ == '__main__':
             for i, bn in enumerate(bases_keys):
                 variables['pomega_hat_field_{}'.format(bn)] = variables['pomega_hat_{}'.format(bn)].evaluate()
 
-            ef_u, ef_u_pieces = combine_eigvecs('u', good, bases, namespace1, shift=False)
-            ef_s1, ef_s1_pieces = combine_eigvecs('s1', good, bases, namespace1, shift=False)
-            ef_pom, ef_pom_pieces = combine_eigvecs('pomega_hat_field', good, bases, namespace1, shift=False)
+            ef_u, ef_u_pieces = combine_eigvecs('u', good, bases, variables, shift=False)
+            ef_s1, ef_s1_pieces = combine_eigvecs('s1', good, bases, variables, shift=False)
+            ef_pom, ef_pom_pieces = combine_eigvecs('pomega_hat_field', good, bases, variables, shift=False)
 
             #normalize & store eigenvectors
             shift = np.max(np.abs(ef_u[2,:]))
