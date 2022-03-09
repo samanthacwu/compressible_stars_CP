@@ -75,6 +75,53 @@ def solve_dense(solver, ell):
         solver.eigenvectors = vectors
         return solver
 
+def combine_eigvecs(field, ell_m_bool, bases, namespace, scales=None, shift=True):
+    fields = []
+    nr = []
+    ef_base = []
+    vector = False
+    for i, bn in enumerate(bases.keys()):
+        fields.append(namespace['{}_{}'.format(field, bn)])
+        nr.append(namespace['resolutions'][i][-1])
+
+        this_field = fields[-1]
+
+
+        if len(this_field.tensorsig) == 1:
+            vector = True
+
+        if scales is not None:
+            this_field.change_scales(scales[i])
+        this_field['c']
+        this_field.towards_grid_space()
+
+        if vector:
+            ef_base.append(this_field.data[:,ell_m_bool,:].squeeze())
+        else:
+            ef_base.append(this_field.data[ell_m_bool,:].squeeze())
+
+    ef = np.concatenate(ef_base, axis=-1)
+
+    if shift:
+        if vector:
+            divisor = np.max(np.abs(ef[2,:]))
+        else:
+            divisor = np.max(np.abs(ef))
+
+        ef /= divisor
+
+    if vector:
+        #go from plus/minus to theta/phi
+        ef_u = np.zeros_like(ef)
+        ef_u[0,:] = (1j/np.sqrt(2))*(ef[1,:] - ef_u[0,:])
+        ef_u[1,:] = ( 1/np.sqrt(2))*(ef[1,:] + ef_u[0,:])
+        ef_u[2,:] = ef_u[2,:]
+        ef[:] = ef_u[:]
+
+    return ef, ef_base
+
+
+
 def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, cutoff=1e-2):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
@@ -83,6 +130,10 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, c
     good_values1 = []
     good_values2 = []
     cutoff2 = np.sqrt(cutoff)
+
+    scales = []
+    for i, bn in enumerate(bases1.keys()):
+        scales.append((1, 1, namespace2['resolutions_hi'][i][-1]/namespace1['resolutions'][i][-1]))
 
     needed_vars = ['ρ', 'u', 'r']
     ρB1, uB1, rB1 = [namespace1[v+'_B'] for v in needed_vars]
@@ -107,16 +158,14 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, c
             break
 
     shape = list(namespace1['s1_B']['c'].shape[:2])
-    good1 = np.zeros(shape, bool)
-    good2 = np.zeros(shape, bool)
+    good = np.zeros(shape, bool)
     for i in range(shape[0]):
         for j in range(shape[1]):
             grid_space = (False,False)
             elements = (np.array((i,)),np.array((j,)))
             m, this_ell = bases1['B'].sphere_basis.elements_to_groups(grid_space, elements)
             if this_ell == ell and m == 1:
-                good1[i,j] = True
-                good2[i,j] = True
+                good[i,j] = True
 
     rough_dr2 = np.gradient(r2, edge_order=2)
 
@@ -133,34 +182,9 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, c
 #                print((np.abs(v1 - v2)/np.abs(v1)).min())
                 solver1.set_state(i, subsystem1)
                 solver2.set_state(j, subsystem2)
-                uB1.change_scales((1, 1, (nrB_hi)/(nrB)))
-                uS1.change_scales((1, 1, (nrS_hi)/(nrS)))
-                uB2.change_scales((1, 1, 1))
-                uS2.change_scales((1, 1, 1))
 
-                #Get eigenvectors
-                for f in [uB1, uS1, uB2, uS2]:
-                    f['c']
-                    f.towards_grid_space()
-                ef_uB1_pm = uB1.data[:,good1,:].squeeze()
-                ef_uS1_pm = uS1.data[:,good1,:].squeeze()
-                ef_uB2_pm = uB2.data[:,good2,:].squeeze()
-                ef_uS2_pm = uS2.data[:,good2,:].squeeze()
-
-                ef_u1_pm = np.concatenate((ef_uB1_pm, ef_uS1_pm), axis=-1)
-                ef_u2_pm = np.concatenate((ef_uB2_pm, ef_uS2_pm), axis=-1)
-
-                ix1 = np.argmax(np.abs(ef_u1_pm[2,:]))
-                ef_u1_pm /= ef_u1_pm[2,ix1]
-                ix1 = np.argmax(np.abs(ef_u2_pm[2,:]))
-                ef_u2_pm /= ef_u2_pm[2,ix1]
-
-                ef_u1 = np.zeros_like(ef_u1_pm)
-                ef_u2 = np.zeros_like(ef_u2_pm)
-                for u, u_pm in zip((ef_u1, ef_u2), (ef_u1_pm, ef_u2_pm)):
-                    u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
-                    u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
-                    u[2,:] = u_pm[2,:]
+                ef_u1, ef_u1_pieces = combine_eigvecs('u', good, bases1, namespace1, scales=scales)
+                ef_u2, ef_u2_pieces = combine_eigvecs('u', good, bases2, namespace2)
 
                 #If mode KE is inside of the convection zone then it's a bad mode.
                 mode_KE = ρ2*np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
@@ -180,6 +204,39 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, c
     solver1.eigenvectors = solver1.eigenvectors[:, good_values1]
     solver2.eigenvectors = solver2.eigenvectors[:, good_values2]
     return solver1, solver2
+
+#    def calculate_duals(velocity_listB, velocity_listS, rhoB, rhoS, work_fieldB, work_fieldS, coord):
+#        """
+#        Calculate the dual basis of the velocity eigenvectors.
+#        """
+#        int_field = d3.Integrate(rhoB*work_fieldB, coord) + d3.Integrate(rhoS*work_fieldS, coord)
+#        def IP(velocities1, velocities2):
+#            """ Integrate the bra-ket of two eigenfunctions of velocity. """
+#            work_fieldB['g'] = np.sum(velocities1[0]*np.conj(velocities2[0]), axis=0)
+#            work_fieldS['g'] = np.sum(velocities1[1]*np.conj(velocities2[1]), axis=0)
+#            return int_field.evaluate()['g'].min()
+#
+#
+#        velocity_listB = np.array(velocity_listB)
+#        velocity_listS = np.array(velocity_listS)
+#        n_modes = velocity_listB.shape[0]
+#        IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+#        for i in range(n_modes):
+#            if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
+#            for j in range(n_modes):
+#                IP_matrix[i,j] = IP((velocity_listB[i], velocity_listS[i]), (velocity_listB[j], velocity_listS[j]))
+#        
+#        print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
+#        IP_inv = np.linalg.inv(IP_matrix)
+#
+#        vel_dualB = np.zeros_like(velocity_listB)
+#        vel_dualS = np.zeros_like(velocity_listS)
+#        for i in range(3):
+#            vel_dualB[:,i,:] = np.einsum('ij,ik->kj', velocity_listB[:,i,:], np.conj(IP_inv))
+#            vel_dualS[:,i,:] = np.einsum('ij,ik->kj', velocity_listS[:,i,:], np.conj(IP_inv))
+#
+#        return np.concatenate((vel_dualB, vel_dualS), axis=-1)
+
 
 
 # Define smooth Heaviside functions
@@ -321,71 +378,18 @@ if __name__ == '__main__':
         logger.info('hires solver built')
 
     #ell = 1 solve
-    ell = 1
-    solve_dense(solver, ell)
+    for i in range(Lmax):
+        ell = i + 1
+        solve_dense(solver, ell)
 
-    if do_hires:
-        solve_dense(solver_hi, ell)
-        print(variables['u_B']['g'].shape, variables_hi['u_B']['g'].shape, 'meh')
-        solver, solver_hi = check_eigen(solver, solver_hi, bases, bases_hi, variables, variables_hi, ell, cutoff=1e-2)
+        if do_hires:
+            solve_dense(solver_hi, ell)
+            print(variables['u_B']['g'].shape, variables_hi['u_B']['g'].shape, 'meh')
+            solver, solver_hi = check_eigen(solver, solver_hi, bases, bases_hi, variables, variables_hi, ell, cutoff=1e-2)
     
 
-#    def calculate_duals(velocity_listB, velocity_listS, rhoB, rhoS, work_fieldB, work_fieldS, coord):
-#        """
-#        Calculate the dual basis of the velocity eigenvectors.
-#        """
-#        int_field = d3.Integrate(rhoB*work_fieldB, coord) + d3.Integrate(rhoS*work_fieldS, coord)
-#        def IP(velocities1, velocities2):
-#            """ Integrate the bra-ket of two eigenfunctions of velocity. """
-#            work_fieldB['g'] = np.sum(velocities1[0]*np.conj(velocities2[0]), axis=0)
-#            work_fieldS['g'] = np.sum(velocities1[1]*np.conj(velocities2[1]), axis=0)
-#            return int_field.evaluate()['g'].min()
-#
-#
-#        velocity_listB = np.array(velocity_listB)
-#        velocity_listS = np.array(velocity_listS)
-#        n_modes = velocity_listB.shape[0]
-#        IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
-#        for i in range(n_modes):
-#            if i % 10 == 0: logger.info("duals {}/{}".format(i, n_modes))
-#            for j in range(n_modes):
-#                IP_matrix[i,j] = IP((velocity_listB[i], velocity_listS[i]), (velocity_listB[j], velocity_listS[j]))
-#        
-#        print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
-#        IP_inv = np.linalg.inv(IP_matrix)
-#
-#        vel_dualB = np.zeros_like(velocity_listB)
-#        vel_dualS = np.zeros_like(velocity_listS)
-#        for i in range(3):
-#            vel_dualB[:,i,:] = np.einsum('ij,ik->kj', velocity_listB[:,i,:], np.conj(IP_inv))
-#            vel_dualS[:,i,:] = np.einsum('ij,ik->kj', velocity_listS[:,i,:], np.conj(IP_inv))
-#
-#        return np.concatenate((vel_dualB, vel_dualS), axis=-1)
-#
-#    from scipy.interpolate import interp1d
-#    for i in range(Lmax):
-#        ell = i + 1
-#        logger.info('solving lores eigenvalue with nr = ({}, {})'.format(nrB, nrS))
-#        solver1 = solve_dense(solver1, ell)
-#        subsystem1 = None
-#        for sbsys in solver1.subsystems:
-#            ss_m, ss_ell, r_couple = sbsys.group
-#            if ss_ell == ell and ss_m == 1:
-#                subsystem1 = sbsys
-#                break
-#
-#        if nrB_hi is not None and nrS_hi is not None:
-#            logger.info('solving hires eigenvalue with nr ({}, {})'.format(nrB_hi, nrS_hi))
-#            solver2 = solve_dense(solver2, ell)
-#            subsystem2 = None
-#            for sbsys in solver2.eigenvalue_subproblem.subsystems:
-#                ss_m, ss_ell, r_couple = sbsys.group
-#                if ss_ell == ell and ss_m == 1:
-#                    subsystem2 = sbsys
-#                    break
-#            logger.info('cleaning bad eigenvalues')
-#            solver1, solver2 = check_eigen(solver1, solver2, subsystem1, subsystem2, namespace1, namespace2)
-#
+
+#TODO address this
 #        #Calculate 'optical depths' of each mode.
 #        depths = []
 #        for om in solver1.eigenvalues.real:
@@ -404,11 +408,22 @@ if __name__ == '__main__':
 #                    opt_depth += depth_integrand[i]
 #            depths.append(opt_depth)
 #
-#        needed_fields = ['ρ', 'u', 'p', 's1']
-#        ρB, uB, pB, s1B = [namespace1[f + 'B'] for f in needed_fields]
-#        ρS, uS, pS, s1S = [namespace1[f + 'S'] for f in needed_fields]
-#        pomega_hat_B = pB - 0.5*d3.dot(uB,uB)
-#        pomega_hat_S = pS - 0.5*d3.dot(uS,uS)
+        shape = list(variables['s1_B']['c'].shape[:2])
+        good = np.zeros(shape, bool)
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                grid_space = (False,False)
+                elements = (np.array((i,)),np.array((j,)))
+                m, this_ell = bases['B'].sphere_basis.elements_to_groups(grid_space, elements)
+                if this_ell == ell and m == 1:
+                    good[i,j] = True
+
+        needed_fields = ['ρ', 'u', 'p', 's1']
+        ρB, uB, pB, s1B = [variables[f + '_B'] for f in needed_fields]
+        ρS, uS, pS, s1S = [variables[f + '_S1'] for f in needed_fields]
+        for i, bn in enumerate(bases_keys):
+            p, u = [variables['{}_{}'.format(f, bn)] for f in ['p', 'u']]
+            variables['pomega_hat_{}'.format(bn)] = p - 0.5*d3.dot(u,u)
 #
 #        basisB, basisS = namespace1['basisB'], namespace1['basisS']
 #        dist, coords = namespace1['dist'], namespace1['coords']
@@ -422,56 +437,44 @@ if __name__ == '__main__':
 #
 #        integ_energies = np.zeros_like(   solver1.eigenvalues, dtype=np.float64) 
 #        s1_amplitudes = np.zeros_like(solver1.eigenvalues, dtype=np.float64)  
-#        velocity_eigenfunctions = []
-#        velocity_eigenfunctionsB = []
-#        velocity_eigenfunctionsS = []
+        velocity_eigenfunctions = []
+        velocity_eigenfunctions_pieces = []
 #        entropy_eigenfunctions = []
 #        wave_flux_eigenfunctions = []
 #
 #        subsystem = subsystem1
 #        print('using subsystem ', subsystem.group, ' for eigenvectors')
-#        for i, e in enumerate(solver1.eigenvalues):
-#            good = (shell_ell == ell)*(shell_m == subsystem.group[0])
-#            solver1.set_state(i, subsystem)
-#
-#            #Get eigenvectors
-#            pomB = pomega_hat_B.evaluate()
-#            pomS = pomega_hat_S.evaluate()
-#            for f in [uB, uS, s1B, s1S, pomB, pomS]:
-#                f['c']
-#                f.towards_grid_space()
-#            ef_uB_pm = uB.data[:,good,:].squeeze()
-#            ef_uS_pm = uS.data[:,good,:].squeeze()
-#            ef_s1B = s1B.data[good,:].squeeze()
-#            ef_s1S = s1S.data[good,:].squeeze()
-#            ef_pomB = s1B.data[good,:].squeeze()
-#            ef_pomS = s1S.data[good,:].squeeze()
-#
-#            #normalize & store eigenvectors
-#            shift = np.max((np.abs(ef_uB_pm[2,:]).max(), np.abs(ef_uS_pm[2,:]).max()))
-#            for data in [ef_uB_pm, ef_uS_pm, ef_s1B, ef_s1S, ef_pomB, ef_pomS]:
-#                data /= shift
-#
-#            ef_uB = np.zeros_like(ef_uB_pm)
-#            ef_uS = np.zeros_like(ef_uS_pm)
-#            for u, u_pm in zip((ef_uB, ef_uS), (ef_uB_pm, ef_uS_pm)):
-#                u[0,:] = (1j/np.sqrt(2))*(u_pm[1,:] - u_pm[0,:])
-#                u[1,:] = ( 1/np.sqrt(2))*(u_pm[1,:] + u_pm[0,:])
-#                u[2,:] = u_pm[2,:]
-#
-#            full_ef_u = np.concatenate((ef_uB, ef_uS), axis=-1)
-#            full_ef_s1 = np.concatenate((ef_s1B, ef_s1S), axis=-1)
-#            velocity_eigenfunctions.append(full_ef_u)
-#            velocity_eigenfunctionsB.append(ef_uB)
-#            velocity_eigenfunctionsS.append(ef_uS)
-#            entropy_eigenfunctions.append(full_ef_s1)
-#
-#            #Wave flux
+        ρ_full = np.concatenate((ρB['g'], ρS['g']), axis=-1)
+        for i, e in enumerate(solver.eigenvalues):
+            solver.set_state(i, subsystem)
+
+            #Get eigenvectors
+            for i, bn in enumerate(bases_keys):
+                variables['pomega_hat_field_{}'.format(bn)] = variables['pomega_hat_{}'.format(bn)].evaluate()
+
+            ef_u, ef_u_pieces = combine_eigvecs('u', good, bases, namespace1, shift=False)
+            ef_s1, ef_s1_pieces = combine_eigvecs('s1', good, bases, namespace1, shift=False)
+            ef_pom, ef_pom_pieces = combine_eigvecs('pomega_hat_field', good, bases, namespace1, shift=False)
+
+            #normalize & store eigenvectors
+            shift = np.max(np.abs(ef_u[2,:]))
+            for data in [ef_u, ef_s1, ef_pom]:
+                data[:] /= shift
+            for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_pom_pieces]:
+                for data in piece_tuple:
+                    data[:] /= shift
+
+            velocity_eigenfunctions.append(ef_u)
+            velocity_eigenfunctions_pieces.append(ef_u_pieces)
+            entropy_eigenfunctions.append(ef_s1)
+
+            #Wave flux
+            wave_flux = ρ_full*ef_u[2,:]*np.conj(ef_pom).squeeze()
 #            wave_fluxB = (ρB['g'][0,0,:]*ef_uB[2,:]*np.conj(ef_pomB)).squeeze()
 #            wave_fluxS = (ρS['g'][0,0,:]*ef_uS[2,:]*np.conj(ef_pomS)).squeeze()
 #            wave_flux_eig = np.concatenate((wave_fluxB, wave_fluxS), axis=-1)
-#            wave_flux_eigenfunctions.append(wave_flux_eig)
-#
+            wave_flux_eigenfunctions.append(wave_flux)
+
 #            #Kinetic energy
 #            KES['g'] = (ρS['g'][0,0,:]*np.sum(ef_uS*np.conj(ef_uS), axis=0)).real/2
 #            KEB['g'] = (ρB['g'][0,0,:]*np.sum(ef_uB*np.conj(ef_uB), axis=0)).real/2
