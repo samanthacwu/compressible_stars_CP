@@ -43,14 +43,14 @@ if not plotter.idle:
     with h5py.File(plotter.files[0], 'r') as f:
         scale_keys = f['scales'].keys()
         for k in scale_keys:
-            if k[0] == 'φ':
+            if k[0] == 'phi':
                 phi_keys.append(k)
-            if k[0] == 'θ':
+            if k[0] == 'theta':
                 theta_keys.append(k)
     r_keys = ['r_0', 'r_1']
 
     fields = ['s1_B(phi=0)', 's1_B(phi=pi)', 's1_B(r=1)', 's1_B_eq', 's1_S(phi=0)', 's1_S(phi=pi)', 's1_S(r=0.95R)', 's1_S_eq']
-    bases  = ['r', 'φ', 'θ']
+    bases  = ['r', 'phi', 'theta']
 
     re = float(root_dir.split('Re')[-1].split('_')[0])
 
@@ -80,10 +80,10 @@ if not plotter.idle:
     while plotter.writes_remain():
         dsets, ni = plotter.get_dsets(fields)
         time_data=dsets[fields[0]].dims[0]
-        plain_theta = match_basis(dsets['s1_B(r=1)'], 'θ')[None,:,None]
-        plain_phi   = match_basis(dsets['s1_B(r=1)'], 'φ')[:,None,None]
-        plain_phi_de   = match_basis(dsets['s1_B_eq'], 'φ')[:,None,None]
-        plain_theta_de = match_basis(dsets['s1_B(phi=0)'], 'θ')[None,:,None]
+        plain_theta = match_basis(dsets['s1_B(r=1)'], 'theta')[None,:,None]
+        plain_phi   = match_basis(dsets['s1_B(r=1)'], 'phi')[:,None,None]
+        plain_phi_de   = match_basis(dsets['s1_B_eq'], 'phi')[:,None,None]
+        plain_theta_de = match_basis(dsets['s1_B(phi=0)'], 'theta')[None,:,None]
         plain_rB_de    = match_basis(dsets['s1_B(phi=0)'], 'r')[None,None,:]
         plain_rS_de    = match_basis(dsets['s1_S(phi=0)'], 'r')[None,None,:]
         theta  = np.pad(plain_theta, ((0,0), (1,1), (0,0)), mode='constant', constant_values=(np.pi, 0))

@@ -272,20 +272,18 @@ except:
     logger.info('something went wrong in main loop, making final checkpoint')
     raise
 finally:
+    solver.log_stats()
+
+    logger.info('making final checkpoint')
     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, iter=1, mode=write_mode)
     fcheckpoint.add_tasks(solver.state, layout='g')
     solver.step(dt)
+    
+    logger.info('Stitching open virtual files...')
+    for handler in analysis_tasks:
+        if not handler.check_file_limits():
+            file = handler.get_file()
+            file.close()
+            if dist.comm_cart.rank == 0:
+                handler.process_virtual_file()
 
-    end_time = time.time()
-    end_iter = solver.iteration
-    cpu_sec  = end_time - start_time
-    n_iter   = end_iter - start_iter
-
-    #TODO: Make the end-of-sim report better
-    n_coeffs = np.prod(resolution)
-    n_cpu    = dist.comm_cart.size
-    dof_cycles_per_cpusec = n_coeffs*n_iter/(cpu_sec*n_cpu)
-    logger.info('DOF-cycles/cpu-sec : {:e}'.format(dof_cycles_per_cpusec))
-    logger.info('Run iterations: {:e}'.format(n_iter))
-    logger.info('Sim end time: {:e}'.format(solver.sim_time))
-    logger.info('Run time: {}'.format(cpu_sec))

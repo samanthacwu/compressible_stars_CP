@@ -40,7 +40,7 @@ plotter = SlicePlotter(root_dir, file_dir=data_dir, fig_name=fig_name, start_fil
 plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['--row_inch']) }
 
 plotter.setup_grid(num_cols=2, num_rows=2, orthographic=True, **plotter_kwargs)
-kwargs = { 'azimuth_basis' : 'φ', 'colatitude_basis' : 'θ' }
+kwargs = { 'azimuth_basis' : 'phi', 'colatitude_basis' : 'theta' }
 plotter.add_orthographic_colormesh('s1(r=0.5)', remove_mean=True, **kwargs)
 plotter.add_orthographic_colormesh('u(r=0.5)', vector_ind=2, cmap='PuOr_r', **kwargs)
 plotter.add_orthographic_colormesh('s1(r=1)', remove_mean=True, **kwargs)
