@@ -52,19 +52,26 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
     return -(one_to_zero(*args, **kwargs) - 1)
 
-def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False, r_int=None, ylim=None, axhline=None):
+def plot_ncc_figure(rvals, mesa_func, dedalus_vals, Ns, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False, r_int=None, ylim=None, axhline=None):
     """ Plots up a figure to compare a dedalus field to the MESA field it's based on. """
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
+    ax2 = fig.add_subplot(2,1,2)
     if zero_line:
         ax1.axhline(0, c='k', lw=0.5)
 
     if axhline is not None:
         ax1.axhline(axhline, c='k')
-    ax1.plot(mesa_r, mesa_y, label='mesa', c='k', lw=3)
-    for r, y in zip(dedalus_rs, dedalus_ys):
+
+    for r, y in zip(rvals, dedalus_vals):
+        mesa_y = mesa_func(r)
+        ax1.plot(r, mesa_y, label='mesa', c='k', lw=3)
         ax1.plot(r, y, label='dedalus', c='red')
-    plt.legend(loc='best')
+
+        diff = np.abs(1 - mesa_y/y)
+        ax2.plot(r, diff)
+
+    ax1.legend(loc='best')
     ax1.set_xlabel('radius/L', labelpad=-3)
     ax1.set_ylabel('{}'.format(ylabel))
     ax1.xaxis.set_ticks_position('top')
@@ -74,11 +81,6 @@ def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_n
     if ylim is not None:
         ax1.set_ylim(ylim)
 
-    ax2 = fig.add_subplot(2,1,2)
-    mesa_func = interp1d(mesa_r, mesa_y, bounds_error=False, fill_value='extrapolate') 
-    for r, y in zip(dedalus_rs, dedalus_ys):
-        diff = np.abs(1 - mesa_func(r)/y)
-        ax2.plot(r, diff)
     ax2.axhline(1e-1, c='k', lw=0.5)
     ax2.axhline(1e-2, c='k', lw=0.5)
     ax2.axhline(1e-3, c='k', lw=0.5)
@@ -90,7 +92,8 @@ def plot_ncc_figure(mesa_r, mesa_y, dedalus_rs, dedalus_ys, Ns, ylabel="", fig_n
     fig.suptitle('coeff bandwidth = {}, {}; cutoff = {:e}'.format(Ns[0], Ns[1], NCC_CUTOFF))
     if r_int is not None:
         for ax in [ax1, ax2]:
-            ax.axvline(r_int, c='k')
+            for rval in r_int:
+                ax.axvline(rval, c='k')
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
 def make_NCC(basis, dist, interp_func, Nmax=32, vector=False, grid_only=False):
@@ -327,7 +330,7 @@ ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_
 ncc_dict['grad_s']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
 
 ncc_dict['chi_rad']['interp_func'] = interp1d(r_nd, sim_rad_diff)
-ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, 0.1/simulation_Re * np.ones_like(r_nd))
+ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
 
 ncc_dict['grad_ln_rho']['vector'] = True
 ncc_dict['grad_ln_T']['vector'] = True
@@ -371,52 +374,53 @@ ncc_dict['grad_chi_rad']['field_S1']['c'][:,:,:,gradPe_S_cutoff:] = 0
 
 print(ncc_dict)
 ### Log Density 
-sys.exit()
+
 
 if PLOT:
-    plot_ncc_figure(r[sim_bool]/L_nd, np.log(rho/rho_nd)[sim_bool], (rB.flatten(), rS.flatten()), (ln_rho_fieldB['g'][:1,:1,:].flatten(), ln_rho_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln\rho$", fig_name="ln_rho", out_dir=out_dir, log=False, r_int=r_inner)
-    plot_ncc_figure(r[sim_bool]/L_nd, (dlogrhodr*L_nd)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_rho_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_rho_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln\rho$", fig_name="grad_ln_rho", out_dir=out_dir, log=False, r_int=r_inner)
+    for ncc in ncc_dict.keys():
+        axhline = None
+        log = False
+        ylim = None
+        rvals = []
+        dedalus_yvals = []
+        nvals = []
+        for bn, basis in bases.items():
+            rvals.append(dedalus_r[bn].ravel())
+            nvals.append(ncc_dict[ncc]['Nmax_{}'.format(bn)])
+            if ncc_dict[ncc]['vector']:
+                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
+            else:
+                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:])
 
-    plot_ncc_figure(r[sim_bool]/L_nd, np.log(T/T_nd)[sim_bool], (rB.flatten(), rS.flatten()), (ln_T_fieldB['g'][:1,:1,:].flatten(), ln_T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\ln T$", fig_name="ln_T", out_dir=out_dir, log=False, r_int=r_inner)
-    plot_ncc_figure(r[sim_bool]/L_nd, (dlogTdr*L_nd)[sim_bool], (rB.flatten(), rS.flatten()), (grad_ln_T_fieldB['g'][2][:1,:1,:].flatten(), grad_ln_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\ln T$", fig_name="grad_ln_T", out_dir=out_dir, log=False, r_int=r_inner)
+        if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s']:
+            print('log scale for ncc {}'.format(ncc))
+            log = True
+        if ncc == 'grad_s': 
+            axhline = 1
+        elif ncc in ['chi_rad', 'grad_chi_rad']:
+            axhline = 1/simulation_Re
 
-    plot_ncc_figure(r[sim_bool]/L_nd, (T/T_nd)[sim_bool], (rB.flatten(), rS.flatten()), (T_fieldB['g'][:1,:1,:].flatten(), T_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$T$", fig_name="T", out_dir=out_dir, log=True, r_int=r_inner)
+        interp_func = ncc_dict[ncc]['interp_func']
+        if ncc == 'H':
+            interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_inner, width=0.05*r_inner)*H_eff/(rho*T) ) * (rho_nd*T_nd/H0) )
+        elif ncc == 'grad_s':
+            interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s)
+        plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
+                    ylabel=ncc, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
+                    r_int=stitch_radii, axhline=axhline)
 
-    plot_ncc_figure(r[sim_bool]/L_nd, -(L_nd/T_nd)*dTdr[sim_bool], (rB.flatten(), rS.flatten()), (-grad_T_fieldB['g'][2][:1,:1,:].flatten(), -grad_T_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$-\nabla T$", fig_name="grad_T", out_dir=out_dir, log=True, r_int=r_inner)
-
-    plot_ncc_figure(r[sim_bool]/L_nd, inv_Pe_rad[sim_bool], (rB.flatten(), rS.flatten()), (inv_Pe_rad_fieldB['g'][:1,:1,:].flatten(), inv_Pe_rad_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\mathrm{Pe}^{-1}$", fig_name="inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner, axhline=1/simulation_Re)
-    plot_ncc_figure(r[sim_bool]/L_nd, np.gradient(inv_Pe_rad, r/L_nd)[sim_bool], (rB.flatten(), rS.flatten()), (grad_inv_Pe_B['g'][2][:1,:1,:].flatten(), grad_inv_Pe_S['g'][2][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$\nabla\mathrm{Pe}^{-1}$", fig_name="grad_inv_Pe_rad", out_dir=out_dir, log=True, r_int=r_inner, ylim=(1e-4/simulation_Re, 1), axhline=1/simulation_Re)
-
-    plot_ncc_figure(r[sim_bool]/L_nd, H_NCC_true[sim_bool], (rB.flatten(), rS.flatten()), (H_fieldB['g'][:1,:1,:].flatten(), H_fieldS['g'][:1,:1,:].flatten()), (NmaxB, NmaxS), ylabel=r"$H$", fig_name="heating", out_dir=out_dir, log=False, r_int=r_inner)
-
-    plot_ncc_figure(r[sim_bool]/L_nd, (grad_s*L_nd/s_nd)[sim_bool], (rB.flatten(), rS.flatten()), (grad_s_fieldB['g'][2][:1,:1,:].flatten(), grad_s_fieldS['g'][2][:1,:1,:].flatten()), (NmaxB_after, NmaxS), ylabel=r"$\nabla s$", fig_name="grad_s", out_dir=out_dir, log=True, r_int=r_inner, axhline=1)
 
 with h5py.File('{:s}'.format(out_file), 'w') as f:
     # Save output fields.
     # slicing preserves dimensionality
-    f['rB']          = rB
-    f['TB']          = T_fieldB['g'][:1,:1,:]
-    f['grad_TB']     = grad_T_fieldB['g'][:,:1,:1,:]
-    f['H_effB']      = H_fieldB['g'][:1,:1,:]
-    f['ln_ρB']       = ln_rho_fieldB['g'][:1,:1,:]
-    f['ln_TB']       = ln_T_fieldB['g'][:1,:1,:]
-    f['grad_ln_TB']  = grad_ln_T_fieldB['g'][:,:1,:1,:]
-    f['grad_ln_ρB']  = grad_ln_rho_fieldB['g'][:,:1,:1,:]
-    f['grad_s0B']    = grad_s_fieldB['g'][:,:1,:1,:]
-    f['inv_Pe_radB'] = inv_Pe_rad_fieldB['g'][:1,:1,:]
-    f['grad_inv_Pe_radB'] = grad_inv_Pe_B['g'][:,:1,:1,:]
-
-    f['rS']          = rS
-    f['TS']          = T_fieldS['g'][:1,:1,:]
-    f['grad_TS']     = grad_T_fieldS['g'][:,:1,:1,:]
-    f['H_effS']      = H_fieldS['g'][:1,:1,:]
-    f['ln_ρS']       = ln_rho_fieldS['g'][:1,:1,:]
-    f['ln_TS']       = ln_T_fieldS['g'][:1,:1,:]
-    f['grad_ln_TS']  = grad_ln_T_fieldS['g'][:,:1,:1,:]
-    f['grad_ln_ρS']  = grad_ln_rho_fieldS['g'][:,:1,:1,:]
-    f['grad_s0S']    = grad_s_fieldS['g'][:,:1,:1,:]
-    f['inv_Pe_radS'] = inv_Pe_rad_fieldS['g'][:1,:1,:]
-    f['grad_inv_Pe_radS'] = grad_inv_Pe_S['g'][:,:1,:1,:]
+    for bn, basis in bases.items():
+        f['r_{}'.format(bn)] = dedalus_r[bn]
+        for ncc in ncc_dict.keys():
+            this_field = ncc_dict[ncc]['field_{}'.format(bn)]
+            if ncc_dict[ncc]['vector']:
+                f['{}_{}'.format(ncc, bn)] = this_field['g'][:, :1,:1,:]
+            else:
+                f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]
 
     #Save properties of the star, with units.
     f['L_nd']   = L_nd
@@ -465,79 +469,79 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
 print('finished saving NCCs to {}'.format(out_file))
 
 
-fig, axs = plt.subplots(nrows=2, ncols=3, figsize=(8,4))
-
-for i in range(2):
-    for j in range(3):
-        axs[i][j].axvline(r_inner_MESA.value, c='k', lw=0.5)
-        axs[i][j].axvline(r_outer_MESA.value, c='k', lw=0.5)
-
-
-axs[0][0].plot(r, T)
-axs[0][0].plot(rB.flatten()*L_nd, T_nd*T_fieldB['g'][0,0,:], c='k')
-axs[0][0].plot(rS.flatten()*L_nd, T_nd*T_fieldS['g'][0,0,:], c='k')
-axs[0][0].set_ylabel('T (K)')
-
-axs[0][1].plot(r, np.log(rho/rho_nd))
-axs[0][1].plot(rB.flatten()*L_nd, ln_rho_fieldB['g'][0,0,:], c='k')
-axs[0][1].plot(rS.flatten()*L_nd, ln_rho_fieldS['g'][0,0,:], c='k')
-axs[0][1].set_ylabel(r'$\ln(\rho/\rho_{\rm{nd}})$')
-
-axs[1][0].plot(r, inv_Pe_rad)
-axs[1][0].plot(rB.flatten()*L_nd, inv_Pe_rad_fieldB['g'][0,0,:], c='k')
-axs[1][0].plot(rS.flatten()*L_nd, inv_Pe_rad_fieldS['g'][0,0,:], c='k')
-axs[1][0].set_yscale('log')
-axs[1][0].set_ylabel(r'$\chi_{\rm{rad}}\,L_{\rm{nd}}^{-2}\,\tau_{\rm{nd}}$')
-
-#axs[0][1].plot(r, np.gradient(inv_Pe_rad, r))
-#axs[0][1].plot(rB.flatten()*L_nd, grad_inv_Pe_B['g'][2,0,0,:]/L_nd, c='k')
-#axs[0][1].plot(rS.flatten()*L_nd, grad_inv_Pe_S['g'][2,0,0,:]/L_nd, c='k')
-#axs[0][1].set_yscale('log')
-
-
-#axs[0][3].plot(r, np.log(T/T_nd))
-#axs[0][3].plot(rB.flatten()*L_nd, ln_T_fieldB['g'][0,0,:], c='k')
-#axs[0][3].plot(rS.flatten()*L_nd, ln_T_fieldS['g'][0,0,:], c='k')
-
-#axs[1][0].plot(r, grad_T*T_nd/L_nd)
-#axs[1][0].plot(rB.flatten()*L_nd, T_nd*grad_T_fieldB['g'][2,0,0,:]/L_nd, c='k')
-#axs[1][0].plot(rS.flatten()*L_nd, T_nd*grad_T_fieldS['g'][2,0,0,:]/L_nd, c='k')
-
-
-
-axs[1][1].plot(r, H_eff/(rho*T), c='b')
-axs[1][1].plot(r, eps_nuc / T, c='r')
-axs[1][1].plot(rB.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k')
-axs[1][1].plot(rS.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k')
-axs[1][1].set_ylim(-5e-4, 2e-3)
-#axs[1][1].plot(rB.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k', ls='--')
-#axs[1][1].plot(rS.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k', ls='--')
-#axs[1][1].set_yscale('log')
-axs[1][1].set_ylabel(r'$H/(\rho T)$ (units)')
-
-axs[1][2].plot(r, grad_s)
-axs[1][2].plot(rB.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldB['g'][2,0,0,:], c='k')
-axs[1][2].plot(rS.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldS['g'][2,0,0,:], c='k')
-axs[1][2].set_yscale('log')
-axs[1][2].set_ylim(1e-6, 1e0)
-axs[1][2].set_ylabel(r'$\nabla s$ (erg$\,\rm{g}^{-1}\rm{K}^{-1}\rm{cm}^{-1}$)')
-
-
-
-plt.subplots_adjust(wspace=0.4, hspace=0.4)
-fig.savefig('dedalus_mesa_figure.png', dpi=200, bbox_inches='tight')
-
-#Plot a propagation diagram
-plt.figure()
-plt.plot(r, np.sqrt(N2), label=r'$N$')
-plt.plot(r, lamb_freq(1), label=r'$S_1$')
-plt.plot(r, lamb_freq(10), label=r'$S_{10}$')
-plt.plot(r, lamb_freq(100), label=r'$S_{100}$')
-plt.xlim(0, r_outer_MESA.value)
-plt.xlabel('r (cm)')
-plt.ylabel('freq (1/s)')
-plt.yscale('log')
-plt.legend(loc='best')
-plt.savefig('{}/propagation_diagram.png'.format(out_dir), dpi=300, bbox_inches='tight')
-
-
+#fig, axs = plt.subplots(nrows=2, ncols=3, figsize=(8,4))
+#
+#for i in range(2):
+#    for j in range(3):
+#        axs[i][j].axvline(r_inner_MESA.value, c='k', lw=0.5)
+#        axs[i][j].axvline(r_outer_MESA.value, c='k', lw=0.5)
+#
+#
+#axs[0][0].plot(r, T)
+#axs[0][0].plot(rB.flatten()*L_nd, T_nd*T_fieldB['g'][0,0,:], c='k')
+#axs[0][0].plot(rS.flatten()*L_nd, T_nd*T_fieldS['g'][0,0,:], c='k')
+#axs[0][0].set_ylabel('T (K)')
+#
+#axs[0][1].plot(r, np.log(rho/rho_nd))
+#axs[0][1].plot(rB.flatten()*L_nd, ln_rho_fieldB['g'][0,0,:], c='k')
+#axs[0][1].plot(rS.flatten()*L_nd, ln_rho_fieldS['g'][0,0,:], c='k')
+#axs[0][1].set_ylabel(r'$\ln(\rho/\rho_{\rm{nd}})$')
+#
+#axs[1][0].plot(r, inv_Pe_rad)
+#axs[1][0].plot(rB.flatten()*L_nd, inv_Pe_rad_fieldB['g'][0,0,:], c='k')
+#axs[1][0].plot(rS.flatten()*L_nd, inv_Pe_rad_fieldS['g'][0,0,:], c='k')
+#axs[1][0].set_yscale('log')
+#axs[1][0].set_ylabel(r'$\chi_{\rm{rad}}\,L_{\rm{nd}}^{-2}\,\tau_{\rm{nd}}$')
+#
+##axs[0][1].plot(r, np.gradient(inv_Pe_rad, r))
+##axs[0][1].plot(rB.flatten()*L_nd, grad_inv_Pe_B['g'][2,0,0,:]/L_nd, c='k')
+##axs[0][1].plot(rS.flatten()*L_nd, grad_inv_Pe_S['g'][2,0,0,:]/L_nd, c='k')
+##axs[0][1].set_yscale('log')
+#
+#
+##axs[0][3].plot(r, np.log(T/T_nd))
+##axs[0][3].plot(rB.flatten()*L_nd, ln_T_fieldB['g'][0,0,:], c='k')
+##axs[0][3].plot(rS.flatten()*L_nd, ln_T_fieldS['g'][0,0,:], c='k')
+#
+##axs[1][0].plot(r, grad_T*T_nd/L_nd)
+##axs[1][0].plot(rB.flatten()*L_nd, T_nd*grad_T_fieldB['g'][2,0,0,:]/L_nd, c='k')
+##axs[1][0].plot(rS.flatten()*L_nd, T_nd*grad_T_fieldS['g'][2,0,0,:]/L_nd, c='k')
+#
+#
+#
+#axs[1][1].plot(r, H_eff/(rho*T), c='b')
+#axs[1][1].plot(r, eps_nuc / T, c='r')
+#axs[1][1].plot(rB.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k')
+#axs[1][1].plot(rS.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k')
+#axs[1][1].set_ylim(-5e-4, 2e-3)
+##axs[1][1].plot(rB.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k', ls='--')
+##axs[1][1].plot(rS.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k', ls='--')
+##axs[1][1].set_yscale('log')
+#axs[1][1].set_ylabel(r'$H/(\rho T)$ (units)')
+#
+#axs[1][2].plot(r, grad_s)
+#axs[1][2].plot(rB.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldB['g'][2,0,0,:], c='k')
+#axs[1][2].plot(rS.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldS['g'][2,0,0,:], c='k')
+#axs[1][2].set_yscale('log')
+#axs[1][2].set_ylim(1e-6, 1e0)
+#axs[1][2].set_ylabel(r'$\nabla s$ (erg$\,\rm{g}^{-1}\rm{K}^{-1}\rm{cm}^{-1}$)')
+#
+#
+#
+#plt.subplots_adjust(wspace=0.4, hspace=0.4)
+#fig.savefig('dedalus_mesa_figure.png', dpi=200, bbox_inches='tight')
+#
+##Plot a propagation diagram
+#plt.figure()
+#plt.plot(r, np.sqrt(N2), label=r'$N$')
+#plt.plot(r, lamb_freq(1), label=r'$S_1$')
+#plt.plot(r, lamb_freq(10), label=r'$S_{10}$')
+#plt.plot(r, lamb_freq(100), label=r'$S_{100}$')
+#plt.xlim(0, r_outer_MESA.value)
+#plt.xlabel('r (cm)')
+#plt.ylabel('freq (1/s)')
+#plt.yscale('log')
+#plt.legend(loc='best')
+#plt.savefig('{}/propagation_diagram.png'.format(out_dir), dpi=300, bbox_inches='tight')
+#
+#
