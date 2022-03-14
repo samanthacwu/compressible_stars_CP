@@ -263,8 +263,8 @@ r_S2 = (r_S2_MESA/L_nd).value
 r_nd = (r/L_nd).cgs
 
 ### entropy gradient
-grad_s_transition_point = 1.02
-grad_s_width = 0.02
+grad_s_transition_point = 1.04
+grad_s_width = 0.04
 grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
 grad_s_width *= (L_CZ/L_nd).value
 grad_s_center *= (L_CZ/L_nd).value
@@ -316,7 +316,7 @@ rvals_S2 = dedalus_r['S2']
 sim_rad_diff = np.copy(rad_diff_nd) + 1/simulation_Re
 
 ncc_dict = OrderedDict()
-for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s', 'chi_rad', 'grad_chi_rad']:
+for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad']:
     ncc_dict[ncc] = OrderedDict()
     for bn in bases.keys():
         ncc_dict[ncc]['Nmax_{}'.format(bn)] = 32
@@ -332,7 +332,7 @@ ncc_dict['grad_ln_T']['interp_func'] = interp1d(r_nd, dlogTdr*L_nd)
 ncc_dict['T']['interp_func'] = interp1d(r_nd, T/T_nd)
 ncc_dict['grad_T']['interp_func'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
 ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H0))
-ncc_dict['grad_s']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
+ncc_dict['grad_s0']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
 
 ncc_dict['chi_rad']['interp_func'] = interp1d(r_nd, sim_rad_diff)
 ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
@@ -340,13 +340,15 @@ ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd
 ncc_dict['grad_ln_rho']['vector'] = True
 ncc_dict['grad_ln_T']['vector'] = True
 ncc_dict['grad_T']['vector'] = True
-ncc_dict['grad_s']['vector'] = True
+ncc_dict['grad_s0']['vector'] = True
 ncc_dict['grad_chi_rad']['vector'] = True
 
+ncc_dict['grad_s0']['Nmax_B'] = 10
 ncc_dict['ln_T']['Nmax_B'] = 16
 ncc_dict['grad_ln_T']['Nmax_B'] = 17
 ncc_dict['H']['Nmax_B'] = 60
 ncc_dict['H']['Nmax_S1'] = 2
+ncc_dict['H']['Nmax_S2'] = 2
 
 ncc_dict['chi_rad']['Nmax_B'] = 1
 ncc_dict['chi_rad']['Nmax_S1'] = 20
@@ -370,9 +372,9 @@ for bn, basis in bases.items():
     ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
 
 #Further post-process work to make grad_S nice in the ball
-NmaxB_after = resolutions[0][-1] - 1
-ncc_dict['grad_s']['field_B']['g'][2] *= zero_to_one(rvals_B, grad_s_center, width=grad_s_width)
-ncc_dict['grad_s']['field_B']['c'][:,:,:,NmaxB_after:] = 0
+NmaxB_after = 60 - 1
+ncc_dict['grad_s0']['field_B']['g'][2] *= zero_to_one(rvals_B, grad_s_center, width=grad_s_width)
+ncc_dict['grad_s0']['field_B']['c'][:,:,:,NmaxB_after:] = 0
 
 #Post-processing for grad chi rad - doesn't work great...
 diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0].value
@@ -402,14 +404,14 @@ if PLOT:
             rvals.append(dedalus_r[bn].ravel())
             nvals.append(ncc_dict[ncc]['Nmax_{}'.format(bn)])
             if ncc_dict[ncc]['vector']:
-                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
+                dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:]))
             else:
-                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:])
+                dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:]))
 
-        if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s']:
+        if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0']:
             print('log scale for ncc {}'.format(ncc))
             log = True
-        if ncc == 'grad_s': 
+        if ncc == 'grad_s0': 
             axhline = 1
         elif ncc in ['chi_rad', 'grad_chi_rad']:
             axhline = 1/simulation_Re
@@ -417,7 +419,7 @@ if PLOT:
         interp_func = ncc_dict[ncc]['interp_func']
         if ncc == 'H':
             interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_ball, width=0.05*r_ball)*H_eff/(rho*T) ) * (rho_nd*T_nd/H0) )
-        elif ncc == 'grad_s':
+        elif ncc == 'grad_s0':
             interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s)
 
         if ncc == 'grad_T':
@@ -483,11 +485,11 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['cp_mesa'] = cp
     f['cp_mesa'].attrs['units'] = str(cp.unit)
 
-    f['r_ball']   = r_ball
+    f['r_stitch']   = (r_ball, r_S1)
     f['r_outer']   = r_S2
     f['max_dt'] = max_dt
     f['Ma2_r0'] = Ma2_r0
-    for k in ['r_ball', 'r_outer', 'max_dt', 'Ma2_r0']:
+    for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0']:
         f[k].attrs['units'] = 'dimensionless'
 print('finished saving NCCs to {}'.format(out_file))
 
