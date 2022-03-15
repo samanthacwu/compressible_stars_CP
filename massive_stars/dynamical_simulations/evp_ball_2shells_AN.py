@@ -199,10 +199,10 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
                     if cz_KE_frac.real > 0.5:
                         print('evalue is in the CZ, skipping')
                     else:
-                        plt.figure()
-                        plt.plot(r2, ef_u1[2,:])
-                        plt.plot(r2, ef_u2[2,:])
-                        plt.show()
+#                        plt.figure()
+#                        plt.plot(r2, ef_u1[2,:])
+#                        plt.plot(r2, ef_u2[2,:])
+#                        plt.show()
                         good_values1.append(i)
                         good_values2.append(j)
 
@@ -221,7 +221,6 @@ def calculate_duals(vel_ef_lists, bases, namespace):
     vel_ef_lists = list(vel_ef_lists)
     int_field = None
     for i, bn in enumerate(bases.keys()):
-        vel_ef_lists[i] = np.array(vel_ef_lists[i])
         work_fields.append(namespace['dist'].Field(bases=bases[bn]))
         if int_field is None:
             int_field = d3.integ(namespace['rho_{}'.format(bn)]*work_fields[-1])
@@ -239,26 +238,35 @@ def calculate_duals(vel_ef_lists, bases, namespace):
         return int_field.evaluate()['g'].min()
 
 
-    n_modes = vel_ef_lists[0].shape[0]
+    n_modes = len(vel_ef_lists)
     IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
     for i in range(n_modes):
+        for j, bn in enumerate(bases.keys()):
+            vel_ef_lists[i][j] = np.array(vel_ef_lists[i][j])
         if i % 1 == 0: logger.info("duals {}/{}".format(i, n_modes))
         for j in range(n_modes):
             velocity_list1 = []
             velocity_list2 = []
             for k, bn in enumerate(bases.keys()):
-                velocity_list1.append(vel_ef_lists[k][i])
-                velocity_list2.append(vel_ef_lists[k][j])
+                velocity_list1.append(vel_ef_lists[i][k])
+                velocity_list2.append(vel_ef_lists[j][k])
             IP_matrix[i,j] = IP(velocity_list1, velocity_list2)
     
 #    print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
     IP_inv = np.linalg.inv(IP_matrix)
 
     vel_duals = []
+    vel_lists = []
     for i, bn in enumerate(bases.keys()):
-        vel_duals.append(np.zeros_like(vel_ef_lists[i]))
-        for j in range(3):
-            vel_duals[-1][:,j,:] = np.einsum('ij,ik->kj', vel_ef_lists[i][:,j,:], np.conj(IP_inv))
+        for n in range(n_modes):
+            if n == 0:
+                shape = list(vel_ef_lists[n][i].shape)
+                shape = [n_modes,] + shape
+                vel_duals.append(np.zeros(shape))
+                vel_lists.append(np.zeros(shape))
+            vel_lists[-1][n,:,:] = vel_ef_lists[n][i]
+        for j in range(3): #velocity dimensions
+            vel_duals[-1][:,j,:] = np.einsum('ij,ik->kj', vel_lists[-1][:,j,:], np.conj(IP_inv))
 
     return np.concatenate(vel_duals, axis=-1)
 
