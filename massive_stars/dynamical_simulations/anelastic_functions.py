@@ -277,19 +277,14 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
 
 def get_anelastic_variables(bases, bases_keys, variables):
     problem_variables = []
-    problem_taus = []
-    equations = OrderedDict()
-    u_BCs = OrderedDict()
-    s_BCs = OrderedDict()
-    for basis_number, bn in enumerate(bases_keys):
-        basis = bases[bn]
-        phi, theta, r = basis.local_grids(basis.dealias)
-        phi1, theta1, r1 = basis.local_grids((1,1,1))
-
-        for field in ['p', 'u', 's1']:
+    for field in ['p', 'u', 's1']:
+        for basis_number, bn in enumerate(bases_keys):
             problem_variables.append(variables['{}_{}'.format(field, bn)])
-        for tau in ['tau_u', 'tau_s']:
-            if type(basis) == d3.BallBasis:
+
+    problem_taus = []
+    for tau in ['tau_u', 'tau_s']:
+        for basis_number, bn in enumerate(bases_keys):
+            if type(bases[bn]) == d3.BallBasis:
                 problem_taus.append(variables['{}_{}'.format(tau, bn)])
             else:
                 problem_taus.append(variables['{}1_{}'.format(tau, bn)])
@@ -350,6 +345,7 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         problem.add_equation(continuity, condition="ntheta != 0")
         problem.add_equation(continuity_ell0, condition="ntheta == 0")
 
+    for bn, basis in bases.items():
         momentum = equations['momentum_{}'.format(bn)]
         momentum_ell0 = "u_{} = 0".format(bn)
         logger.info('adding eqn "{}" for ntheta != 0'.format(momentum))
@@ -357,13 +353,10 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         problem.add_equation(momentum, condition="ntheta != 0")
         problem.add_equation(momentum_ell0, condition="ntheta == 0")
 
+    for bn, basis in bases.items():
         energy = equations['energy_{}'.format(bn)]
         logger.info('adding eqn "{}"'.format(energy))
         problem.add_equation(energy)
-
-    for BC in s_BCs.values():
-        logger.info('adding BC "{}"'.format(BC))
-        problem.add_equation(BC)
 
     for BC in u_BCs.values():
         logger.info('adding BC "{}" for ntheta != 0'.format(BC))
@@ -379,4 +372,9 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
                 BC = 'tau_u{}_{} = 0'.format(i, bn)
                 logger.info('adding BC "{}" for ntheta == 0'.format(BC))
                 problem.add_equation(BC, condition="ntheta == 0")
+
+    for BC in s_BCs.values():
+        logger.info('adding BC "{}"'.format(BC))
+        problem.add_equation(BC)
+
     return problem

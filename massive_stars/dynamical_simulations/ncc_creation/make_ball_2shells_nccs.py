@@ -182,10 +182,14 @@ r_ball_MESA   = r[core_index]*1.1 #outer radius of BallBasis; inner radius of Sp
 
 # Specify fraction of total star to simulate
 fracStar   = 0.95 #Simulate this much of the star, from r = 0 to r = R_*
-r_S1_frac = 0.95
+r_S1_frac = 0.93
 r_S2_MESA    = fracStar*R_star
 r_S1_MESA    = r_S1_frac*r_S2_MESA
 print('fraction of FULL star simulated: {}, up to r={:.3e}'.format(fracStar, r_S2_MESA))
+
+#round these to nice values
+r_S2_MESA = core_cz_radius*np.around(r_S2_MESA/core_cz_radius, decimals=2)
+r_S1_MESA = core_cz_radius*np.around(r_S1_MESA/core_cz_radius, decimals=2)
 
 #Set things up to slice out the star appropriately
 ball_bool     = r <= r_ball_MESA
@@ -263,8 +267,8 @@ r_S2 = (r_S2_MESA/L_nd).value
 r_nd = (r/L_nd).cgs
 
 ### entropy gradient
-grad_s_transition_point = 1.04
-grad_s_width = 0.04
+grad_s_transition_point = 1.05
+grad_s_width = 0.05
 grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
 grad_s_width *= (L_CZ/L_nd).value
 grad_s_center *= (L_CZ/L_nd).value
@@ -352,7 +356,7 @@ ncc_dict['H']['Nmax_S2'] = 2
 
 ncc_dict['chi_rad']['Nmax_B'] = 1
 ncc_dict['chi_rad']['Nmax_S1'] = 20
-ncc_dict['chi_rad']['Nmax_S2'] = 7
+ncc_dict['chi_rad']['Nmax_S2'] = 10
 
 ncc_dict['H']['grid_only'] = True
 
@@ -379,7 +383,7 @@ ncc_dict['grad_s0']['field_B']['c'][:,:,:,NmaxB_after:] = 0
 #Post-processing for grad chi rad - doesn't work great...
 diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0].value
 gradPe_S1_cutoff = 32
-gradPe_S2_cutoff = 32
+gradPe_S2_cutoff = 15
 ncc_dict['grad_chi_rad']['field_S1']['g'][2,] *= zero_to_one(rvals_S1, diff_transition, width=(r_S2-r_ball)/10)
 ncc_dict['grad_chi_rad']['field_S1']['c'][:,:,:,gradPe_S1_cutoff:] = 0
 ncc_dict['grad_chi_rad']['field_S2']['g'][2,] *= zero_to_one(rvals_S2, diff_transition, width=(r_S2-r_ball)/10)
@@ -391,6 +395,7 @@ ncc_dict['grad_chi_rad']['field_S2']['c'][:,:,:,gradPe_S2_cutoff:] = 0
 #plt.axhline(1/simulation_Re)
 #plt.yscale('log')
 #plt.show()
+#sys.exit()
 
 if PLOT:
     for ncc in ncc_dict.keys():

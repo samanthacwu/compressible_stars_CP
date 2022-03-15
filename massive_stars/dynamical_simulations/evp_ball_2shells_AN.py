@@ -131,7 +131,7 @@ def combine_eigvecs(field, ell_m_bool, bases, namespace, scales=None, shift=True
 
 
 
-def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r_cz=1, cutoff=1e-1):
+def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r_cz=1, cutoff=1e-2):
     """
     Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
     Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -202,10 +202,10 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
                     if cz_KE_frac.real > 0.5:
                         print('evalue is in the CZ, skipping')
                     else:
-#                        plt.figure()
-#                        plt.plot(r2, ef_u1[2,:])
-#                        plt.plot(r2, ef_u2[2,:])
-#                        plt.show()
+                        plt.figure()
+                        plt.plot(r2, ef_u1[2,:])
+                        plt.plot(r2, ef_u2[2,:])
+                        plt.show()
                         good_values1.append(i)
                         good_values2.append(j)
 
@@ -230,7 +230,7 @@ def calculate_duals(vel_ef_lists, bases, namespace):
         else:
             int_field += d3.integ(namespace['rho_{}'.format(bn)]*work_fields[-1])
 
-    print(vel_ef_lists)
+#    print(vel_ef_lists)
 
     def IP(velocity_list1, velocity_list2):
         """ Integrate the bra-ket of two eigenfunctions of velocity. """
@@ -384,6 +384,12 @@ if __name__ == '__main__':
     variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, 
                                             vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                             sponge=sponge, do_rotation=do_rotation)
+#    grad_s0_func = lambda r: 1e4*r**2
+#    for i, bn in enumerate(bases_keys):
+#        variables['grad_s0_{}'.format(bn)]['g'][2,:] = grad_s0_func(variables['r_{}'.format(bn)])
+#        variables['chi_rad_{}'.format(bn)]['g'][:] = 1/Pe
+#        variables['grad_chi_rad_{}'.format(bn)]['g'][2,:] = 0
+ 
     variables.update(locals())
     omega = dist.Field(name='omega')
     variables['dt'] = lambda A: -1j * omega * A
@@ -395,7 +401,9 @@ if __name__ == '__main__':
     problem = set_anelastic_problem(problem, bases, bases_keys, stitch_radii=stitch_radii)
     logger.info('problem built')
 
-    solver = problem.build_solver()
+
+    ncc_cutoff=1e-8
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     logger.info('solver built')
 
     if do_hires:
@@ -412,7 +420,11 @@ if __name__ == '__main__':
                                                 vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                                 sponge=sponge, do_rotation=do_rotation)
 
-
+#        for i, bn in enumerate(bases_keys):
+#            variables_hi['grad_s0_{}'.format(bn)]['g'][2,:] = grad_s0_func(variables_hi['r_{}'.format(bn)])
+#            variables_hi['chi_rad_{}'.format(bn)]['g'][:] = 1/Pe
+#            variables_hi['grad_chi_rad_{}'.format(bn)]['g'][2,:] = 0
+ 
         variables_hi.update(locals())
         omega_hi = dist_hi.Field(name='omega_hi')
         variables_hi['dt'] = lambda A: -1j * omega_hi * A
@@ -420,8 +432,13 @@ if __name__ == '__main__':
         problem_hi = d3.EVP(prob_variables_hi, eigenvalue=omega_hi, namespace=variables_hi)
         problem_hi = set_anelastic_problem(problem_hi, bases_hi, bases_keys_hi, stitch_radii=stitch_radii)
         logger.info('hires problem built')
-        solver_hi = problem_hi.build_solver()
+
+
+        solver_hi = problem_hi.build_solver(ncc_cutoff=ncc_cutoff)
         logger.info('hires solver built')
+
+       
+        
 #    for ncc in vec_nccs:
 #        for bn in bases_keys:
 #            r1 = variables['r_{}'.format(bn)]
@@ -468,7 +485,6 @@ if __name__ == '__main__':
         if do_hires:
             logger.info('solving hires eigenvalue with nr = ({}, {}, {})'.format(nrB_hi, nrS1_hi, nrS2_hi))
             solve_dense(solver_hi, ell)
-            print(variables['u_B']['g'].shape, variables_hi['u_B']['g'].shape, 'meh')
             solver, solver_hi = check_eigen(solver, solver_hi, bases, bases_hi, variables, variables_hi, ell)
     
         #Calculate 'optical depths' of each mode.
@@ -577,7 +593,6 @@ if __name__ == '__main__':
 #            #Kinetic energy
             for i, bn in enumerate(bases_keys):
                 rho = variables['rho_{}'.format(bn)]['g'][0,0,:]
-                print(ef_u_pieces[i].shape)
                 u_squared = np.sum(ef_u_pieces[i]*np.conj(ef_u_pieces[i]), axis=0)
                 variables['KE_{}'.format(bn)]['g'] = (rho*u_squared.real/2)[None,None,:]
             integ_energy = integ_energy_op.evaluate()
