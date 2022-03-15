@@ -50,8 +50,11 @@ def solve_dense(solver, ell):
         this_ell = subproblem.group[1]
         if this_ell != ell:
             continue
+
+        condition_number = np.linalg.cond((subproblem.M_min + 0.5*subproblem.L_min).A)
         #TODO: Output to file.
         logger.info("solving ell = {}".format(ell))
+        logger.info("condition number = {:.3e}".format(condition_number))
         solver.solve_dense(subproblem)
 
         values = solver.eigenvalues 
