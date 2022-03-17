@@ -1,0 +1,11 @@
+[parameters]
+L = 1
+nrB = 128
+nrS1 = 64
+nrS2 = 16
+nrB_hi = 192
+nrS1_hi = 96
+nrS2_hi = 32
+Re = 4e3
+ncc_file = ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-64_S2-16_Re4e3_de1_cutoff1e-08.h5
+ncc_file_hi = ncc_creation/nccs_15msol/ball_2shells_nccs_B-192_S1-96_S2-32_Re4e3_de1_cutoff1e-08.h5

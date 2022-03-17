@@ -1,13 +1,15 @@
 """
 Turns a MESA .data file of a massive star into a .h5 file of NCCs for a d3 run.
+There is a ball basis, and two shell bases.
 
 Usage:
-    make_ball_shell_nccs.py [options]
+    make_ball_2shells_nccs.py [options]
 
 Options:
     --Re=<R>          simulation reynolds/peclet number [default: 4e3]
     --NB=<N>          Maximum radial degrees of freedom (ball) [default: 128]
-    --NS=<N>          Maximum radial degrees of freedom (shell) [default: 128]
+    --NS1=<N>          Maximum radial degrees of freedom (shell) [default: 64]
+    --NS2=<N>          Maximum radial degrees of freedom (shell) [default: 16]
     --file=<f>        Path to MESA log file [default: ../../mesa_models/zams_15Msol/LOGS/profile47.data]
     --out_dir=<d>     output directory [default: nccs_15msol]
     --dealias=<n>     Radial dealiasing factor of simulation [default: 1.5]
@@ -116,13 +118,14 @@ def make_NCC(basis, dist, interp_func, Nmax=32, vector=False, grid_only=False):
 
 ### Read in command line args & generate output path & file
 nrB = NmaxB = int(args['--NB'])
-nrS = NmaxS = int(args['--NS'])
+nrS1 = NmaxS = int(args['--NS1'])
+nrS2 = NmaxS = int(args['--NS2'])
 dealias = float(args['--dealias'])
 simulation_Re = float(args['--Re'])
 read_file = args['--file']
 filename = read_file.split('/LOGS/')[-1]
 out_dir  = args['--out_dir'] + '/'
-out_file = '{:s}/ballShell_nccs_B{}_S{}_Re{}_de{}.h5'.format(out_dir, nrB, nrS, args['--Re'], args['--dealias'])
+out_file = '{:s}/ball_2shells_nccs_B-{}_S1-{}_S2-{}_Re{}_de{}_cutoff{}.h5'.format(out_dir, nrB, nrS1, nrS2, args['--Re'], args['--dealias'], NCC_CUTOFF)
 print('saving output to {}'.format(out_file))
 if not os.path.exists('{:s}'.format(out_dir)):
     os.mkdir('{:s}'.format(out_dir))
@@ -175,17 +178,25 @@ rad_diff        = k_rad / (rho * cp)
 cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
 core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
 core_cz_radius = r[core_index]
-r_inner_MESA   = r[core_index]*1.1 #outer radius of BallBasis; inner radius of SphericalShellBasis
+r_ball_MESA   = r[core_index]*1.1 #outer radius of BallBasis; inner radius of SphericalShellBasis
 
 # Specify fraction of total star to simulate
-fracStar   = 0.975 #Simulate this much of the star, from r = 0 to r = R_*
-r_outer_MESA    = fracStar*R_star
-print('fraction of FULL star simulated: {}, up to r={:.3e}'.format(fracStar, r_outer_MESA))
+fracStar   = 0.95 #Simulate this much of the star, from r = 0 to r = R_*
+r_S1_frac = 0.93
+r_S2_MESA    = fracStar*R_star
+r_S1_MESA    = r_S1_frac*r_S2_MESA
+print('fraction of FULL star simulated: {}, up to r={:.3e}'.format(fracStar, r_S2_MESA))
+
+#round these to nice values
+r_S2_MESA = core_cz_radius*np.around(r_S2_MESA/core_cz_radius, decimals=2)
+r_S1_MESA = core_cz_radius*np.around(r_S1_MESA/core_cz_radius, decimals=2)
 
 #Set things up to slice out the star appropriately
-ball_bool     = r <= r_inner_MESA
-shell_bool    = (r > r_inner_MESA)*(r <= r_outer_MESA)
-sim_bool      = r <= r_outer_MESA
+ball_bool     = r <= r_ball_MESA
+shell_bool    = (r > r_ball_MESA)*(r <= r_S2_MESA)
+S1_bool       = (r > r_ball_MESA)*(r <= r_S1_MESA)
+S2_bool       = (r > r_S1_MESA)*(r <= r_S2_MESA)
+sim_bool      = r <= r_S2_MESA
 
 # Calculate heating function
 # Goal: H_eff= np.gradient(L_conv,r, edge_order=1)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
@@ -194,7 +205,6 @@ eo=2
 H_eff = (1/(4*np.pi*r**2))*np.gradient(Luminosity, r, edge_order=eo) + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
 H_eff_secondary = rho*eps_nuc + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
 H_eff[:2] = H_eff_secondary[:2]
-
 
 sim_H_eff = np.copy(H_eff)
 L_conv_sim = np.zeros_like(L_conv)
@@ -227,7 +237,7 @@ else:
 #Nondimensionalization
 L_CZ    = core_cz_radius
 L_nd    = L_CZ
-#L_nd    = r_outer_MESA - r_inner_MESA
+#L_nd    = r_S2_MESA - r_ball_MESA
 T_nd    = T[0]
 m_nd    = rho[0] * L_nd**3
 H0      = (rho*eps_nuc)[0]
@@ -248,18 +258,17 @@ gamma1_r0  = gamma1[0]
 Ma2_r0 = (u_nd**2 / ((gamma1_r0-1)*cp_r0*T_r0)).cgs
 print('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
-cp_surf = cp[shell_bool][-1]
+cp_surf = cp[S2_bool][-1]
 
 #MESA radial values, in simulation units
-r_inner = (r_inner_MESA/L_nd).value
-r_outer = (r_outer_MESA/L_nd).value
-r_ball_nd  = (r[ball_bool]/L_nd).cgs
-r_shell_nd = (r[shell_bool]/L_nd).cgs
+r_ball = (r_ball_MESA/L_nd).value
+r_S1 = (r_S1_MESA/L_nd).value
+r_S2 = (r_S2_MESA/L_nd).value
 r_nd = (r/L_nd).cgs
 
 ### entropy gradient
-grad_s_transition_point = 1.02
-grad_s_width = 0.02
+grad_s_transition_point = 1.05
+grad_s_width = 0.05
 grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
 grad_s_width *= (L_CZ/L_nd).value
 grad_s_center *= (L_CZ/L_nd).value
@@ -289,34 +298,34 @@ max_dt = max_dt_kepler
 print('needed nyq_dt is {} s / {} % of a heating time (Kepler 30 min is {} %) '.format(nyq_dt*tau_nd, nyq_dt*100, max_dt_kepler*100))
 
 ### Make dedalus domain and bases
-resolutions = ((8, 4, nrB), (8, 4, nrS))
-stitch_radii = (r_inner,)
+resolutions = ((8, 4, nrB), (8, 4, nrS1), (8, 4, nrS2))
+stitch_radii = (r_ball, r_S1)
 dtype=np.float64
 mesh=None
-c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_outer, dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
+c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_S2, dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
 dedalus_r = OrderedDict()
 for bn in bases.keys():
     phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
     dedalus_r[bn] = r_vals
 
-rB = dedalus_r['B']
-rS = dedalus_r['S1']
-bB = bases['B']
-bS = bases['S1']
+rvals_B = dedalus_r['B']
+rvals_S1 = dedalus_r['S1']
+rvals_S2 = dedalus_r['S2']
 
 #construct rad_diff_profile
-sim_rad_diff = np.copy(rad_diff_nd)
-diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0]
-sim_rad_diff[:] = (1/simulation_Re)*one_to_zero(r_nd, diff_transition*1.05, width=0.02*diff_transition)\
-                + rad_diff_nd*zero_to_one(r_nd, diff_transition*0.95, width=0.1*diff_transition)
-
+#sim_rad_diff = np.copy(rad_diff_nd)
+#diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0]
+#sim_rad_diff[:] = (1/simulation_Re)*one_to_zero(r_nd, diff_transition*1.05, width=0.02*diff_transition)\
+#                + rad_diff_nd*zero_to_one(r_nd, diff_transition*0.95, width=0.1*diff_transition)
+sim_rad_diff = np.copy(rad_diff_nd) + 1/simulation_Re
 
 ncc_dict = OrderedDict()
-for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s', 'chi_rad', 'grad_chi_rad']:
+for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad']:
     ncc_dict[ncc] = OrderedDict()
     for bn in bases.keys():
         ncc_dict[ncc]['Nmax_{}'.format(bn)] = 32
         ncc_dict[ncc]['field_{}'.format(bn)] = None
+    ncc_dict[ncc]['Nmax_S2'.format(bn)] = 10
     ncc_dict[ncc]['vector'] = False
     ncc_dict[ncc]['grid_only'] = False 
 
@@ -327,7 +336,7 @@ ncc_dict['grad_ln_T']['interp_func'] = interp1d(r_nd, dlogTdr*L_nd)
 ncc_dict['T']['interp_func'] = interp1d(r_nd, T/T_nd)
 ncc_dict['grad_T']['interp_func'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
 ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H0))
-ncc_dict['grad_s']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
+ncc_dict['grad_s0']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
 
 ncc_dict['chi_rad']['interp_func'] = interp1d(r_nd, sim_rad_diff)
 ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
@@ -335,15 +344,19 @@ ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd
 ncc_dict['grad_ln_rho']['vector'] = True
 ncc_dict['grad_ln_T']['vector'] = True
 ncc_dict['grad_T']['vector'] = True
-ncc_dict['grad_s']['vector'] = True
+ncc_dict['grad_s0']['vector'] = True
 ncc_dict['grad_chi_rad']['vector'] = True
 
+ncc_dict['grad_s0']['Nmax_B'] = 10
 ncc_dict['ln_T']['Nmax_B'] = 16
 ncc_dict['grad_ln_T']['Nmax_B'] = 17
 ncc_dict['H']['Nmax_B'] = 60
 ncc_dict['H']['Nmax_S1'] = 2
+ncc_dict['H']['Nmax_S2'] = 2
+
 ncc_dict['chi_rad']['Nmax_B'] = 1
-ncc_dict['chi_rad']['Nmax_S1'] = 50
+ncc_dict['chi_rad']['Nmax_S1'] = 20
+ncc_dict['chi_rad']['Nmax_S2'] = 10
 
 ncc_dict['H']['grid_only'] = True
 
@@ -356,25 +369,33 @@ for bn, basis in bases.items():
         vector = ncc_dict[ncc]['vector']
         grid_only = ncc_dict[ncc]['grid_only']
         ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only)
+        if ncc == 'grad_T':
+            print(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
 
     #Evaluate for grad chi rad
     ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
 
 #Further post-process work to make grad_S nice in the ball
-NmaxB_after = resolutions[0][-1] - 1
-ncc_dict['grad_s']['field_B']['g'][2] *= zero_to_one(rB, grad_s_center, width=grad_s_width)
-ncc_dict['grad_s']['field_B']['c'][:,:,:,NmaxB_after:] = 0
+NmaxB_after = 60 - 1
+ncc_dict['grad_s0']['field_B']['g'][2] *= zero_to_one(rvals_B, grad_s_center, width=grad_s_width)
+ncc_dict['grad_s0']['field_B']['c'][:,:,:,NmaxB_after:] = 0
 
 #Post-processing for grad chi rad - doesn't work great...
 diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0].value
-gradPe_S_cutoff = 120
-print(rS, diff_transition, (r_outer-r_inner)/30)
-ncc_dict['grad_chi_rad']['field_S1']['g'][2,] *= zero_to_one(rS, diff_transition, width=(r_outer-r_inner)/10)
-ncc_dict['grad_chi_rad']['field_S1']['c'][:,:,:,gradPe_S_cutoff:] = 0
+gradPe_S1_cutoff = 32
+gradPe_S2_cutoff = 15
+ncc_dict['grad_chi_rad']['field_S1']['g'][2,] *= zero_to_one(rvals_S1, diff_transition, width=(r_S2-r_ball)/10)
+ncc_dict['grad_chi_rad']['field_S1']['c'][:,:,:,gradPe_S1_cutoff:] = 0
+ncc_dict['grad_chi_rad']['field_S2']['g'][2,] *= zero_to_one(rvals_S2, diff_transition, width=(r_S2-r_ball)/10)
+ncc_dict['grad_chi_rad']['field_S2']['c'][:,:,:,gradPe_S2_cutoff:] = 0
 
-print(ncc_dict)
-### Log Density 
-
+#plt.plot(rvals_S1.ravel(), ncc_dict['grad_chi_rad']['field_S1']['g'][2,0,0,:])
+#plt.plot(rvals_S2.ravel(), ncc_dict['grad_chi_rad']['field_S2']['g'][2,0,0,:])
+#plt.plot(r_nd, rad_diff_nd)
+#plt.axhline(1/simulation_Re)
+#plt.yscale('log')
+#plt.show()
+#sys.exit()
 
 if PLOT:
     for ncc in ncc_dict.keys():
@@ -388,25 +409,34 @@ if PLOT:
             rvals.append(dedalus_r[bn].ravel())
             nvals.append(ncc_dict[ncc]['Nmax_{}'.format(bn)])
             if ncc_dict[ncc]['vector']:
-                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
+                dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:]))
             else:
-                dedalus_yvals.append(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:])
+                dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:]))
 
-        if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s']:
+        if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0']:
             print('log scale for ncc {}'.format(ncc))
             log = True
-        if ncc == 'grad_s': 
+        if ncc == 'grad_s0': 
             axhline = 1
         elif ncc in ['chi_rad', 'grad_chi_rad']:
             axhline = 1/simulation_Re
 
         interp_func = ncc_dict[ncc]['interp_func']
         if ncc == 'H':
-            interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_inner, width=0.05*r_inner)*H_eff/(rho*T) ) * (rho_nd*T_nd/H0) )
-        elif ncc == 'grad_s':
+            interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_ball, width=0.05*r_ball)*H_eff/(rho*T) ) * (rho_nd*T_nd/H0) )
+        elif ncc == 'grad_s0':
             interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s)
+
+        if ncc == 'grad_T':
+            interp_func = lambda r: -ncc_dict[ncc]['interp_func'](r)
+            ylabel='-{}'.format(ncc)
+            for i in range(len(dedalus_yvals)):
+                dedalus_yvals[i] *= -1
+        else:
+            ylabel = ncc
+
         plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
-                    ylabel=ncc, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
+                    ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                     r_int=stitch_radii, axhline=axhline)
 
 
@@ -460,11 +490,11 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['cp_mesa'] = cp
     f['cp_mesa'].attrs['units'] = str(cp.unit)
 
-    f['r_inner']   = r_inner
-    f['r_outer']   = r_outer
+    f['r_stitch']   = (r_ball, r_S1)
+    f['r_outer']   = r_S2
     f['max_dt'] = max_dt
     f['Ma2_r0'] = Ma2_r0
-    for k in ['r_inner', 'r_outer', 'max_dt', 'Ma2_r0']:
+    for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0']:
         f[k].attrs['units'] = 'dimensionless'
 print('finished saving NCCs to {}'.format(out_file))
 
@@ -473,54 +503,54 @@ print('finished saving NCCs to {}'.format(out_file))
 #
 #for i in range(2):
 #    for j in range(3):
-#        axs[i][j].axvline(r_inner_MESA.value, c='k', lw=0.5)
-#        axs[i][j].axvline(r_outer_MESA.value, c='k', lw=0.5)
+#        axs[i][j].axvline(r_ball_MESA.value, c='k', lw=0.5)
+#        axs[i][j].axvline(r_S2_MESA.value, c='k', lw=0.5)
 #
 #
 #axs[0][0].plot(r, T)
-#axs[0][0].plot(rB.flatten()*L_nd, T_nd*T_fieldB['g'][0,0,:], c='k')
+#axs[0][0].plot(rvals_B.flatten()*L_nd, T_nd*T_fieldB['g'][0,0,:], c='k')
 #axs[0][0].plot(rS.flatten()*L_nd, T_nd*T_fieldS['g'][0,0,:], c='k')
 #axs[0][0].set_ylabel('T (K)')
 #
 #axs[0][1].plot(r, np.log(rho/rho_nd))
-#axs[0][1].plot(rB.flatten()*L_nd, ln_rho_fieldB['g'][0,0,:], c='k')
+#axs[0][1].plot(rvals_B.flatten()*L_nd, ln_rho_fieldB['g'][0,0,:], c='k')
 #axs[0][1].plot(rS.flatten()*L_nd, ln_rho_fieldS['g'][0,0,:], c='k')
 #axs[0][1].set_ylabel(r'$\ln(\rho/\rho_{\rm{nd}})$')
 #
 #axs[1][0].plot(r, inv_Pe_rad)
-#axs[1][0].plot(rB.flatten()*L_nd, inv_Pe_rad_fieldB['g'][0,0,:], c='k')
+#axs[1][0].plot(rvals_B.flatten()*L_nd, inv_Pe_rad_fieldB['g'][0,0,:], c='k')
 #axs[1][0].plot(rS.flatten()*L_nd, inv_Pe_rad_fieldS['g'][0,0,:], c='k')
 #axs[1][0].set_yscale('log')
 #axs[1][0].set_ylabel(r'$\chi_{\rm{rad}}\,L_{\rm{nd}}^{-2}\,\tau_{\rm{nd}}$')
 #
 ##axs[0][1].plot(r, np.gradient(inv_Pe_rad, r))
-##axs[0][1].plot(rB.flatten()*L_nd, grad_inv_Pe_B['g'][2,0,0,:]/L_nd, c='k')
+##axs[0][1].plot(rvals_B.flatten()*L_nd, grad_inv_Pe_B['g'][2,0,0,:]/L_nd, c='k')
 ##axs[0][1].plot(rS.flatten()*L_nd, grad_inv_Pe_S['g'][2,0,0,:]/L_nd, c='k')
 ##axs[0][1].set_yscale('log')
 #
 #
 ##axs[0][3].plot(r, np.log(T/T_nd))
-##axs[0][3].plot(rB.flatten()*L_nd, ln_T_fieldB['g'][0,0,:], c='k')
+##axs[0][3].plot(rvals_B.flatten()*L_nd, ln_T_fieldB['g'][0,0,:], c='k')
 ##axs[0][3].plot(rS.flatten()*L_nd, ln_T_fieldS['g'][0,0,:], c='k')
 #
 ##axs[1][0].plot(r, grad_T*T_nd/L_nd)
-##axs[1][0].plot(rB.flatten()*L_nd, T_nd*grad_T_fieldB['g'][2,0,0,:]/L_nd, c='k')
+##axs[1][0].plot(rvals_B.flatten()*L_nd, T_nd*grad_T_fieldB['g'][2,0,0,:]/L_nd, c='k')
 ##axs[1][0].plot(rS.flatten()*L_nd, T_nd*grad_T_fieldS['g'][2,0,0,:]/L_nd, c='k')
 #
 #
 #
 #axs[1][1].plot(r, H_eff/(rho*T), c='b')
 #axs[1][1].plot(r, eps_nuc / T, c='r')
-#axs[1][1].plot(rB.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k')
+#axs[1][1].plot(rvals_B.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k')
 #axs[1][1].plot(rS.flatten()*L_nd, (H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k')
 #axs[1][1].set_ylim(-5e-4, 2e-3)
-##axs[1][1].plot(rB.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k', ls='--')
+##axs[1][1].plot(rvals_B.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldB['g'][0,0,:], c='k', ls='--')
 ##axs[1][1].plot(rS.flatten()*L_nd, -(H0 / rho_nd / T_nd)*H_fieldS['g'][0,0,:], c='k', ls='--')
 ##axs[1][1].set_yscale('log')
 #axs[1][1].set_ylabel(r'$H/(\rho T)$ (units)')
 #
 #axs[1][2].plot(r, grad_s)
-#axs[1][2].plot(rB.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldB['g'][2,0,0,:], c='k')
+#axs[1][2].plot(rvals_B.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldB['g'][2,0,0,:], c='k')
 #axs[1][2].plot(rS.flatten()*L_nd, (s_nd/L_nd)*grad_s_fieldS['g'][2,0,0,:], c='k')
 #axs[1][2].set_yscale('log')
 #axs[1][2].set_ylim(1e-6, 1e0)
@@ -537,7 +567,7 @@ print('finished saving NCCs to {}'.format(out_file))
 #plt.plot(r, lamb_freq(1), label=r'$S_1$')
 #plt.plot(r, lamb_freq(10), label=r'$S_{10}$')
 #plt.plot(r, lamb_freq(100), label=r'$S_{100}$')
-#plt.xlim(0, r_outer_MESA.value)
+#plt.xlim(0, r_S2_MESA.value)
 #plt.xlabel('r (cm)')
 #plt.ylabel('freq (1/s)')
 #plt.yscale('log')

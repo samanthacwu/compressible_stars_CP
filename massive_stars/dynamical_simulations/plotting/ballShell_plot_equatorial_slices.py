@@ -58,7 +58,7 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # remove_x_mean option removes the (numpy horizontal mean) over phi
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
 plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
-kwargs = {'azimuth_basis' : 'φ', 'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
+kwargs = {'azimuth_basis' : 'phi', 'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
 plotter.add_ball_shell_polar_colormesh(ball='s1_B_eq', shell='s1_S_eq', remove_x_mean=True, divide_x_mean=True, **kwargs)
 plotter.add_ball_shell_polar_colormesh(ball='u_B_eq', shell='u_S_eq', vector_ind=0, cmap='PuOr_r', **kwargs)
 plotter.add_ball_shell_polar_colormesh(ball='u_B_eq', shell='u_S_eq', vector_ind=1, cmap='PuOr_r', **kwargs)
