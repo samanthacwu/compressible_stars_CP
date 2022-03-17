@@ -32,6 +32,7 @@ Options:
     --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
 
     --label=<label>      A label to add to the end of the output directory
+    --cutoff=<c>         NCC cutoff magnitude [default: 1e-8]
 
     --rotation_time=<t>  Rotation timescale, in days (if ncc_file is not None) or sim units (for polytrope)
 """
@@ -201,7 +202,7 @@ if __name__ == '__main__':
 
     logger.info("Problem built")
     # Solver
-    solver = problem.build_solver(ts)
+    solver = problem.build_solver(ts, ncc_cutoff=float(args['--cutoff']))
     solver.stop_sim_time = buoy_end_time*t_buoy
     solver.stop_wall_time = wall_hours * 60 * 60
     logger.info("solver built")
