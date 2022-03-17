@@ -16,6 +16,7 @@ Options:
     --nrS1=<res>          Number of radial grid points in first shell (Nmax+1)   [default: 8]
     --nrS2=<res>          Number of radial grid points in second shell (Nmax+1)   [default: 8]
     --sponge             If flagged, add a damping layer in the shell that damps out waves.
+    --tau_factor=<f>     Multiplication factor on sponge term [default: 1]
 
     --wall_hours=<t>     Max number of wall hours to run simulation for [default: 24]
     --buoy_end_time=<t>  Max number of buoyancy time units to simulate [default: 1e5]
@@ -35,6 +36,7 @@ Options:
     --cutoff=<c>         NCC cutoff magnitude [default: 1e-8]
 
     --rotation_time=<t>  Rotation timescale, in days (if ncc_file is not None) or sim units (for polytrope)
+
 """
 import os
 import time
@@ -95,6 +97,7 @@ if __name__ == '__main__':
     wall_hours = float(args['--wall_hours'])
     buoy_end_time = float(args['--buoy_end_time'])
     sponge = args['--sponge']
+    tau_factor = float(args['--tau_factor'])
 
     # rotation
     do_rotation = False
@@ -141,7 +144,7 @@ if __name__ == '__main__':
     # Output directory
     out_dir = './' + sys.argv[0].split('.py')[0]
     if sponge:
-        out_dir += '_sponge'
+        out_dir += '_sponge_tauF{}'.format(args['--tau_factor'])
     if ncc_file is None:
         out_dir += '_polytrope'
     if do_rotation:
@@ -182,12 +185,15 @@ if __name__ == '__main__':
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 
                             vec_taus=vec_taus, scalar_taus=scalar_taus, 
                             vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                            sponge=sponge, do_rotation=do_rotation)
+                            sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
 
 
     variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe,
                                             vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                             sponge=sponge, do_rotation=do_rotation)
+
+    for i, bn in enumerate(bases.keys()):
+        variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     max_dt, t_buoy, t_rot = timescales
 
     # Put nccs and fields into locals()

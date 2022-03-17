@@ -28,7 +28,7 @@ def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64,
             bases_keys += ['S{}'.format(i)]
     return coords, dist, bases, bases_keys
 
-def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[], scalar_taus=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False):
+def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[], scalar_taus=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, sponge_function=lambda r: r**2):
     variables = OrderedDict()
     for basis_number, bn in enumerate(bases.keys()):
         unit_vectors = ['ephi', 'etheta', 'er', 'ex', 'ey', 'ez']
