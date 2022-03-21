@@ -311,8 +311,10 @@ if __name__ == '__main__':
             radius_vals = (0.5, 1)
             radius_strs = ('0.5', '1')
         else:
-            radius_vals = (0.95*r_outer,)
-            radius_strs = ('0.95R',)
+            value = 0.95*r_outer
+            if basis.radii[0] <= value and basis.radii[1] >= value:
+                radius_vals = (value,)
+                radius_strs = ('0.95R',)
         for r_val, r_str in zip(radius_vals, radius_strs):
                 slices.add_task(u(r=r_val), name='u_{}(r={})'.format(bn, r_str), layout='g')
                 slices.add_task(s1(r=r_val), name='s1_{}(r={})'.format(bn, r_str), layout='g')
@@ -344,8 +346,14 @@ if __name__ == '__main__':
                 radius_vals = (0.90, 1.05)
                 radius_strs = ('0.90', '1.05')
             else:
-                radius_vals = (1.5, 2.0, 2.5, 3.0, 3.5)
-                radius_strs = ('1.50', '2.00', '2.50', '3.00', '3.50')
+                global_radius_vals = (1.5, 2.0, 2.5, 3.0, 3.5)
+                global_radius_strs = ('1.50', '2.00', '2.50', '3.00', '3.50')
+                radius_vals = []
+                radius_strs = []
+                for i, rv in enumerate(global_radius_vals):
+                    if basis.radii[0] <= rv and basis.radii[1] >= rv:
+                        radius_vals.append(rv)
+                        radius_strs.append(global_radius_strs[i])
 
             for r_val, r_str in zip(radius_vals, radius_strs):
                     surface_shell_slices.add_task(ur(r=r_val),         name='ur_{}(r={})'.format(bn, r_str), layout='g')
