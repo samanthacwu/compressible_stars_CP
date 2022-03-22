@@ -61,20 +61,22 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../ncc_creation/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
+star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-16_Re4e3_de1.5_cutoff1e-08.h5'
 with h5py.File(star_file, 'r') as f:
-    rB = f['rB'][()]
-    rS = f['rS'][()]
-    ρB = np.exp(f['ln_ρB'][()])
-    ρS = np.exp(f['ln_ρS'][()])
-    r = np.concatenate((rB.flatten(), rS.flatten()))
-    ρ = np.concatenate((ρB.flatten(), ρS.flatten()))
-    rho_func = interp1d(r,ρ)
-    tau = f['tau'][()]/(60*60*24)
+    rB = f['r_B'][()]
+    rS1 = f['r_S1'][()]
+    rS2 = f['r_S2'][()]
+    rhoB = np.exp(f['ln_rho_B'][()])
+    rhoS1 = np.exp(f['ln_rho_S1'][()])
+    rhoS2 = np.exp(f['ln_rho_S2'][()])
+    r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
+    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
+    rho_func = interp1d(r,rho)
+    tau = f['tau_nd'][()]/(60*60*24)
     r_outer = f['r_outer'][()]
-    radius = r_outer * f['L'][()]
+    radius = r_outer * f['L_nd'][()]
     #Entropy units are erg/K/g
-    s_c = f['s_c'][()]
+    s_c = f['s_nd'][()]
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
@@ -142,8 +144,13 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         raw_freqs = wf['freqs'][()]
         raw_freqs_invDay = wf['freqs_inv_day'][()]
         for i, radius in enumerate(radii):
-            ur = wf['u(r={})_cft'.format(radius)][()]
-            p  = wf['pomega(r={})_cft'.format(radius)][()]
+            for k in wf.keys():
+                if 'r={}'.format(radius) in k:
+                    print(k)
+                    if 'ur_' in k:
+                        ur = wf[k][()]
+                    if 'pomega_' in k:
+                        p = wf[k][()]
             spectrum = radius**2*rho_func(radius)*(ur*np.conj(p)).real
             # Collapse negative frequencies
             for f in raw_freqs:
@@ -157,8 +164,9 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
                 wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
                 wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
     with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'w') as of:
-        print('saving wave flux at r={}'.format(radii[1]))
-        of['wave_flux'] = wf['wave_flux(r={})'.format(radii[1])][()]
+        save_radius = 1.5
+        print('saving wave flux at r=1.5')
+        of['wave_flux'] = wf['wave_flux(r=1.5)'][()]
         of['real_freqs'] = wf['real_freqs'][()]
         of['real_freqs_inv_day'] = wf['real_freqs_inv_day'][()]
         of['ells'] = wf['ells'][()]
