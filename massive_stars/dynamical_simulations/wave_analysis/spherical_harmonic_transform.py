@@ -36,9 +36,8 @@ import h5py
 import numpy as np
 from docopt import docopt
 from configparser import ConfigParser
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
+import dedalus.public as d3
 from dedalus.tools import logging
-from dedalus.tools.parsing import split_equation
 from scipy import sparse
 from mpi4py import MPI
 
@@ -90,10 +89,13 @@ if not reader.idle:
     dtype = np.float64
     dealias = 1
     radius = float(args['--radius'])
-    c = coords.SphericalCoordinates('φ', 'θ', 'r')
+    c = d3.SphericalCoordinates('φ', 'θ', 'r')
     dealias_tuple = (dealias, dealias, dealias)
-    dist = distributor.Distributor((c,), mesh=None, comm=MPI.COMM_SELF, dtype=dtype)
-    basis = basis.ShellBasis(c, resolution, radii=((1-1e-6)*radius, radius), dtype=dtype, dealias=dealias_tuple)
+    Lmax = resolution[1]-1
+    dr = 1e-4
+    shell_vol = (4/3)*np.pi*(radius**3 - (radius-dr)**3)
+    dist = d3.Distributor((c,), mesh=None, comm=MPI.COMM_SELF, dtype=dtype)
+    basis = d3.ShellBasis(c, resolution, radii=(radius-dr, radius), dtype=dtype, dealias=dealias_tuple)
     φg, θg, rg = basis.global_grids(basis.dealias)
 
     ell_maps = basis.ell_maps
@@ -111,20 +113,23 @@ if not reader.idle:
     ell_values = np.arange(max_ell+1).reshape((max_ell+1,1))
     m_values = np.arange(max_m+1).reshape((1,max_m+1))
 
+    scalar_field = dist.Field(bases=basis)
+    vector_field = dist.VectorField(bases=basis, coordsys=c)
+    power_scalar_op = d3.integ(scalar_field**2) / shell_vol
+    power_vector_op = d3.integ(vector_field@vector_field) / shell_vol
+
     slices = dict()
-    for i in range(resolution[0]):
-        for j in range(resolution[1]):
+    for i in range(scalar_field['c'].shape[0]):
+        for j in range(scalar_field['c'].shape[1]):
             groups = basis.elements_to_groups((False, False, False), (np.array((i,)),np.array((j,)), np.array((0,))))
             m = groups[0][0]
             ell = groups[1][0]
             key = '{},{}'.format(ell, m)
+            this_slice = (slice(i, i+1, 1), slice(j, j+1, 1), slice(None))
             if key not in slices.keys():
-                slices[key] = [(m, ell)]
+                slices[key] = [this_slice]
             else:
-                slices[key].append((m, ell))
-
-    scalar_field = dist.Field(bases=basis)
-    vector_field = dist.VectorField(bases=basis, coordsys=c)
+                slices[key].append(this_slice)
 
     out_tsk = OrderedDict()
     for f in fields: out_tsk[f] = []
@@ -165,7 +170,6 @@ if not reader.idle:
                 out_field = np.zeros(shape, dtype=np.complex128)
                 if ni == 0:
                     of.create_dataset(name='tasks/'+f, shape=[len(sim_times),] + shape, dtype=np.complex128)
-                logger.info('file {}, transforming {}, {}/{}'.format(file_num, f, ni+1, len(sim_times)))
                 if scalar:
                     scalar_field['g'] = task_data.reshape(scalar_field['g'].shape)
                 elif vector:
@@ -187,11 +191,16 @@ if not reader.idle:
                                     out_field[v,j,k] = value1 + 1j*value2
 
                 if len(shape) == 3:
-                    out_field[:,0]  /= np.sqrt(2) #m == 0 normalization
-                    out_field[:,1:] /= 2          #m != 0 normalization
+                    out_field[:,0]  /= np.sqrt(2*np.pi) #m == 0 normalization
+                    out_field[:,1:] /= 2*np.sqrt(np.pi)          #m != 0 normalization
                 else:
-                    out_field[:,:,0]  /= np.sqrt(2) #m == 0 normalization
-                    out_field[:,:,1:] /= 2          #m != 0 normalization
+                    out_field[:,:,0]  /= np.sqrt(2*np.pi) #m == 0 normalization
+                    out_field[:,:,1:] /= 2*np.sqrt(np.pi)         #m != 0 normalization
                 of['tasks/'+f][ni, :] = out_field
+                #Check power conservation
+                power_transform = np.sum(out_field * np.conj(out_field)).real
+                power_scalar = power_scalar_op.evaluate()['g'].ravel()[0]
+                power_vector = power_vector_op.evaluate()['g'].ravel()[0]
+                logger.info('finishing file {}, transforming {}, {}/{}'.format(file_num, f, ni+1, len(sim_times)) + ', power factors: scalar {:.3e}, vector {:.3e}'.format(power_scalar/power_transform, power_vector/power_transform))
                 gc.collect()
                 first = False
