@@ -6,7 +6,7 @@ Usage:
 
 Options:
     --data_dir=<dir>     Name of data handler directory [default: slices]
-    --r_outer=<r>        Value of r at outer boundary [default: 3.21]
+    --r_outer=<r>        Value of r at outer boundary [default: 3.45]
     --scale=<s>          resolution scale factor [default: 1]
     --start_file=<n>     start file number [default: 1]
 """
@@ -21,6 +21,7 @@ from plotpal.file_reader import SingleTypeReader, match_basis
 
 import matplotlib
 matplotlib.use('Agg')
+from matplotlib.ticker import FormatStrFormatter
 import matplotlib.pyplot as plt
 
 #TODO: Add outer shell, make things prettier!
@@ -83,6 +84,9 @@ if not plotter.idle:
     ax = fig.add_axes([0, 0, 1, 0.9],projection='3d')
     cax = fig.add_axes([0.05, 0.91, 0.9, 0.08])
 
+    line_ax1 = fig.add_axes([0.18,0.04,0.3, 0.08])
+    line_ax2 = fig.add_axes([0.68,0.04,0.3, 0.08])
+
     s1_mer_data = OrderedDict()
     s1_shell_data = OrderedDict()
 
@@ -139,6 +143,7 @@ if not plotter.idle:
         s1_eq_B = dsets['s1_eq_B'][ni] - mean_s1_B
         s1_eq_S1 = dsets['s1_eq_S1'][ni] - mean_s1_S1
         s1_eq_S2 = dsets['s1_eq_S2'][ni] - mean_s1_S2
+        radial_s1_mean = np.concatenate((mean_s1_B, mean_s1_S1, mean_s1_S2), axis=-1)
         eq_field_s1 = np.concatenate((s1_eq_B, s1_eq_S1, s1_eq_S2), axis=-1)
         radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
         eq_field_s1 /= radial_scaling
@@ -188,10 +193,16 @@ if not plotter.idle:
             for i, d in enumerate([s1_mer_data, s1_shell_data]):
                 sfc = cmap(norm(d['surfacecolor']))
                 d['surf'].set_facecolors(sfc.reshape(sfc.size//4,4))
-        cbar = matplotlib.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='horizontal')
+        cbar = matplotlib.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='horizontal', format=FormatStrFormatter('%.1f'))
         cbar.set_label('normalized s1' + ', t = {:.3e}'.format(time_data['sim_time'][ni]))
+#        cbar.set_ticklabels(["{:.1f}".format(i) for i in cbar.get_ticks()])
         #TODO: fix colorbar tick flickering when plotting in parallel
 
-        fig.savefig('{:s}/{:s}_{:06d}.png'.format(plotter.out_dir, fig_name, time_data['write_number'][ni]), dpi=200)
-        for pax in [cax,]:
+        line1 = line_ax1.plot(r_de.ravel(), radial_s1_mean.ravel())
+        line2 = line_ax2.semilogy(r_de.ravel(), radial_scaling.ravel())
+        line_ax1.set_ylabel(r'$s_1(r)$')
+        line_ax2.set_ylabel(r'$\sigma(s_1)(r)$')
+
+        fig.savefig('{:s}/{:s}_{:06d}.png'.format(plotter.out_dir, fig_name, time_data['write_number'][ni]), dpi=200, bbox_inches='tight')
+        for pax in [cax, line_ax1, line_ax2]:
            pax.clear()

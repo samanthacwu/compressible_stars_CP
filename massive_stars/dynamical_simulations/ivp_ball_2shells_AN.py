@@ -225,10 +225,15 @@ if __name__ == '__main__':
         s1_B.low_pass_filter(scales=0.25)
         s1_S1.fill_random(layout='g', seed=42, distribution='normal', scale=A0)
         s1_S1.low_pass_filter(scales=0.25)
+        s1_S2.fill_random(layout='g', seed=42, distribution='normal', scale=A0)
+        s1_S2.low_pass_filter(scales=0.25)
+        s1_B['g'] *= np.sin(theta1_B)
         s1_B['g'] *= np.sin(theta1_B)
         s1_S1['g'] *= np.sin(theta1_S1)
+        s1_S2['g'] *= np.sin(theta1_S2)
         s1_B['g'] *= np.cos(np.pi*r1_B/r_outer)
         s1_S1['g'] *= np.cos(np.pi*r1_S1/r_outer)
+        s1_S2['g'] *= np.cos(np.pi*r1_S2/r_outer)
 
     ## Analysis Setup
     # Cadence
