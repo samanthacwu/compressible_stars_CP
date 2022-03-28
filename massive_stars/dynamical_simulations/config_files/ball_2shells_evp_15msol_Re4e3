@@ -1,5 +1,5 @@
 [parameters]
-L = 1
+L = 10
 nrB = 128
 nrS1 = 128
 nrS2 = 32

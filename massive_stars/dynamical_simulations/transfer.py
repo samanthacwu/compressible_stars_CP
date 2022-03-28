@@ -99,6 +99,9 @@ for ell in ell_list:
     plt.figure()
     print("ell = %i" % ell)
 
+    xmin = 1e99
+    xmax = -1e99
+
     transfers = []
     oms = []
     depth_list = [10, 1, 0.1, 0.05, 0.01]
@@ -114,6 +117,17 @@ for ell in ell_list:
             rS1 = f['r_S1'][()].flatten()
             rS2 = f['r_S2'][()].flatten()
             r = np.concatenate((rB, rS1, rS2))
+            depthcurve = lambda om: om**(-4)
+            depthfunc = lambda om: (depths[0]/depthcurve(values[0].real))*depthcurve(om)
+
+            omega = np.logspace(-1, 3, 1000)
+#            plt.scatter(values.real, np.exp(-np.array(depths)))
+#            plt.loglog(omega, np.exp(-depthfunc(omega)))
+#            plt.ylim(1e-10, 1e1)
+#            plt.show()
+#            import sys
+#            sys.exit()
+
 
         if j == 0:
             for value in values:
@@ -125,9 +139,14 @@ for ell in ell_list:
         s1_amplitudes = s1_amplitudes[good]
         velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
-     
+
         om0 = values.real[-1]
         om1 = values.real[0]*1.1
+        if om0 < xmin: xmin = om0
+        if om1 > xmax: xmax = om1
+        if j == 0:
+            om0/= 10**(1)
+            print(values.real[-1], om0)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         r0 = 1.05
@@ -143,8 +162,7 @@ for ell in ell_list:
         while peaks > 0:
             om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
 
-    #    plt.loglog(om, T)
-        plt.loglog(om/(2*np.pi), np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
+        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
         oms.append(om)
         transfers.append(T)
 
@@ -167,9 +185,18 @@ for ell in ell_list:
         f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
 #    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
-    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+#    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+
+    maxval = (np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2)).max()
+    plt.ylim(maxval/1e15, maxval*2)
     plt.xlabel('frequency (sim units)')
     plt.legend()
     plt.title("ell = %i" % ell)
+plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
 plt.show()
 
+plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
+plt.ylim(maxval/1e15, maxval*2)
+plt.show()

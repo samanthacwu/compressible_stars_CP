@@ -1,7 +1,7 @@
 [parameters]
-ntheta = 4
+ntheta = 128
 nrB = 128
-nrS1 = 64
-nrS2 = 16
-Re = 4e3
-ncc_file = ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-64_S2-16_Re4e3_de1.5_cutoff1e-06.h5
+nrS1 = 128
+nrS2 = 32
+Re = 1e4
+ncc_file = ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-32_Re1e4_de1.5_cutoff1e-08.h5

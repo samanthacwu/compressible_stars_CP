@@ -8,12 +8,12 @@ Usage:
 Options:
     --Re=<R>          simulation reynolds/peclet number [default: 4e3]
     --NB=<N>          Maximum radial degrees of freedom (ball) [default: 128]
-    --NS1=<N>          Maximum radial degrees of freedom (shell) [default: 64]
-    --NS2=<N>          Maximum radial degrees of freedom (shell) [default: 16]
+    --NS1=<N>          Maximum radial degrees of freedom (shell) [default: 128]
+    --NS2=<N>          Maximum radial degrees of freedom (shell) [default: 32]
     --file=<f>        Path to MESA log file [default: ../../mesa_models/zams_15Msol/LOGS/profile47.data]
     --out_dir=<d>     output directory [default: nccs_15msol]
     --dealias=<n>     Radial dealiasing factor of simulation [default: 1.5]
-    --ncc_cutoff=<f>  NCC coefficient magnitude cutoff [default: 1e-6]
+    --ncc_cutoff=<f>  NCC coefficient magnitude cutoff [default: 1e-8]
 
     --no_plot         If flagged, don't output plots
 """
