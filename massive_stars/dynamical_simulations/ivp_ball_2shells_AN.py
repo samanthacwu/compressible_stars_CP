@@ -364,9 +364,9 @@ if __name__ == '__main__':
                     surface_shell_slices.add_task(ur(r=r_val),         name='ur_{}(r={})'.format(bn, r_str), layout='g')
                     surface_shell_slices.add_task(pomega_hat(r=r_val), name='pomega_{}(r={})'.format(bn, r_str), layout='g')
         else:
-            if type(basis) == d3.BallBasis:
-                pass
-            surface_shell_slices.add_task(s1(r=r_outer), name='s1_{}(r=r_outer)'.format(bn), layout='g')
+            if type(basis) != d3.BallBasis:
+                if basis.radii[1] == r_outer:
+                    surface_shell_slices.add_task(s1(r=r_outer), name='s1_{}(r=r_outer)'.format(bn), layout='g')
 
         logger_handler.add_task(vol_avg(Re*(u_squared)**(1/2)), name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(d3.integ(rho*(u_squared)/2), name='KE_{}'.format(bn), layout='g')
