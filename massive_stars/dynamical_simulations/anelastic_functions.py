@@ -41,11 +41,11 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         #Define problem fields
         for fn in vec_fields:
             key = '{}_{}'.format(fn, bn)
-            logger.info('creating vector field {}'.format(key))
+            logger.debug('creating vector field {}'.format(key))
             variables[key] = dist.VectorField(coords, name=key, bases=basis)
         for fn in scalar_fields:
             key = '{}_{}'.format(fn, bn)
-            logger.info('creating scalar field {}'.format(key))
+            logger.debug('creating scalar field {}'.format(key))
             variables[key] = dist.Field(name=key, bases=basis)
 
         #Taus
@@ -58,17 +58,17 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         for name in tau_names:
             for fn in vec_taus:
                 key = '{}{}_{}'.format(fn, name, bn)
-                logger.info('creating vector tau {}'.format(key))
+                logger.debug('creating vector tau {}'.format(key))
                 variables[key] = dist.VectorField(coords, name=key, bases=S2_basis)
             for fn in scalar_taus:
                 key = '{}{}_{}'.format(fn, name, bn)
-                logger.info('creating scalar tau {}'.format(key))
+                logger.debug('creating scalar tau {}'.format(key))
                 variables[key] = dist.Field(name=key, bases=S2_basis)
         
         #Define problem NCCs
         for fn in vec_nccs + ['er_LHS', 'rvec_LHS']:
             key = '{}_{}'.format(fn, bn)
-            logger.info('creating vector NCC {}'.format(key))
+            logger.debug('creating vector NCC {}'.format(key))
             variables[key] = dist.VectorField(coords, name=key, bases=basis.radial_basis)
             if fn == 'er_LHS':
                 variables[key]['g'][2] = 1
@@ -76,12 +76,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
                 variables[key]['g'][2] = r1
         for fn in scalar_nccs:
             key = '{}_{}'.format(fn, bn)
-            logger.info('creating scalar NCC {}'.format(key))
+            logger.debug('creating scalar NCC {}'.format(key))
             variables[key] = dist.Field(name=key, bases=basis.radial_basis)
 
         #Define identity matrix
         key = 'I_matrix_{}'.format(bn)
-        logger.info('creating identity matrix NCC {}'.format(key))
+        logger.debug('creating identity matrix NCC {}'.format(key))
         variables[key] = dist.TensorField(coords, name=key, bases=basis.radial_basis)
         for i in range(3):
             variables[key]['g'][i,i,:] = 1
@@ -89,7 +89,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         #Define unit vectors
         for fn in unit_vectors:
             key = '{}_{}'.format(fn, bn)
-            logger.info('creating unit vector field {}'.format(key))
+            logger.debug('creating unit vector field {}'.format(key))
             variables[key] = dist.VectorField(coords, name=key, bases=basis)
 
         if sponge:
@@ -142,8 +142,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             variables['div_u_{}'.format(bn)] = div_u = div_u_RHS
 
         #Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
-        variables['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.transpose(grad_u))
-        variables['E_RHS_{}'.format(bn)] = E_RHS = 0.5*(d3.grad(u) + d3.transpose(d3.grad(u)))
+        variables['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
+        variables['E_RHS_{}'.format(bn)] = E_RHS = 0.5*(d3.grad(u) + d3.trans(d3.grad(u)))
         variables['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*I_mat)
         variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*d3.div(u)*I_mat)
         variables['visc_div_stress_{}'.format(bn)] = d3.div(sigma) + d3.dot(sigma, grad_ln_rho)
@@ -310,6 +310,7 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+#                u_BCs['BC_u2_{}'.format(bn)] = "angular(u_{0}(r={1})) = 0".format(bn, 'radius')
                 s_BCs['BC_s_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
             else:
                 shell_name = bases_keys[basis_number+1] 
@@ -329,6 +330,7 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u3_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u4_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+#                u_BCs['BC_u4_{}'.format(bn)] = "angular(u_{0}(r={1})) = 0".format(bn, 'radius')
                 s_BCs['BC_s2_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
             else:
                 shn = bases_keys[basis_number+1] 

@@ -193,8 +193,8 @@ for ell in ell_list:
     plt.xlabel('frequency (sim units)')
     plt.legend()
     plt.title("ell = %i" % ell)
-plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-plt.show()
+    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
+    plt.show()
 
 plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))

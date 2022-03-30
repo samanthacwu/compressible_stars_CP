@@ -53,10 +53,41 @@ def solve_dense(solver, ell):
         if this_ell != ell:
             continue
 
-        condition_number = np.linalg.cond((subproblem.M_min + 0.5*subproblem.L_min).A)
-        #TODO: Output to file.
+        ell = subproblem.group[1]
+        sp = subproblem
+        A = (sp.pre_left.T @ sp.L_min).A
+        B = - (sp.pre_left.T @ sp.M_min).A
+        plt.imshow(np.log10(np.abs(A)))
+        plt.colorbar()
+        plt.savefig("matrices/ell_A_%03i.png" %ell, dpi=600)
+        plt.clf()
+        plt.imshow(np.log10(np.abs(B)))
+        plt.colorbar()
+        plt.savefig("matrices/ell_B_%03i.png" %ell, dpi=600)
+        plt.clf()
+
+        A = (sp.L_min @ sp.pre_right).A
+        B = - (sp.M_min @ sp.pre_right).A
+        plt.imshow(np.log10(np.abs(A)))
+        plt.colorbar()
+        plt.savefig("matrices/cond_ell_A_%03i.png" %ell, dpi=600)
+        plt.clf()
+        plt.imshow(np.log10(np.abs(B)))
+        plt.colorbar()
+        plt.savefig("matrices/cond_ell_B_%03i.png" %ell, dpi=600)
+        plt.clf()
+
+        condition_number_A = np.linalg.cond(A)
+        condition_number_B = np.linalg.cond(B)
+        condition_number_ML = np.linalg.cond(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
+        rank_A = np.linalg.matrix_rank(A)
+        rank_B = np.linalg.matrix_rank(B)
+        rank_ML = np.linalg.matrix_rank(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
         logger.info("solving ell = {}".format(ell))
-        logger.info("condition number = {:.3e}".format(condition_number))
+        logger.info("condition numbers A / B = {:.3e} / {:.3e}".format(condition_number_A, condition_number_B))
+        logger.info("rank A = {:.3e} / {:.3e}, rank B = {:.3e} / {:.3e}".format(rank_A, np.max(A.shape), rank_B, np.max(B.shape)))
+        logger.info("condition number M + L= {:.3e}".format(condition_number_ML))
+        logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
         solver.solve_dense(subproblem)
 
         values = solver.eigenvalues 
@@ -209,11 +240,11 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
                     elif cz_KE_frac.real < 1e-3:
                         print('evalue is spurious, skipping')
                     else:
-                        plt.figure()
-                        plt.plot(r2, ef_u1[2,:])
-                        plt.plot(r2, ef_u2[2,:])
-                        plt.title(v1)
-                        plt.show()
+#                        plt.figure()
+#                        plt.plot(r2, ef_u1[2,:])
+#                        plt.plot(r2, ef_u2[2,:])
+#                        plt.title(v1)
+#                        plt.show()
                         good_values1.append(i)
                         good_values2.append(j)
 
@@ -237,8 +268,6 @@ def calculate_duals(vel_ef_lists, bases, namespace):
             int_field = d3.integ(namespace['rho_{}'.format(bn)]*work_fields[-1])
         else:
             int_field += d3.integ(namespace['rho_{}'.format(bn)]*work_fields[-1])
-
-#    print(vel_ef_lists)
 
     def IP(velocity_list1, velocity_list2):
         """ Integrate the bra-ket of two eigenfunctions of velocity. """
@@ -301,9 +330,11 @@ def calculate_duals(vel_ef_lists, bases, namespace):
     for i in range(I_matrix.shape[0]):
         I_matrix[i,i] = 1
 
-    if np.allclose(I_matrix, IP_check):
+    if np.allclose(I_matrix.real, IP_check.real, rtol=1e-5, atol=1e-5):
         print('velocity duals properly calculated')
     else:
+        for i in range(n_modes):
+            print(np.sum(IP_check[i,:].real), IP_check[i,i].real)
         raise ValueError("Something went wrong in calculating the dual basis.")
 
     return vel_duals
@@ -411,6 +442,7 @@ if __name__ == '__main__':
     scalar_taus = ['tau_s']
     vec_nccs = ['grad_ln_rho', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_chi_rad']
     scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge']
+
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 
                             vec_taus=vec_taus, scalar_taus=scalar_taus, 
@@ -421,6 +453,19 @@ if __name__ == '__main__':
     variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, 
                                             vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                             sponge=sponge, do_rotation=do_rotation)
+
+#    grad_s0_func = lambda r: 1e6*r
+#    grad_T0_func = lambda r: -r
+#    for i, bn in enumerate(bases_keys):
+#        variables['grad_s0_{}'.format(bn)]['g'][2,:] = grad_s0_func(variables['r1_{}'.format(bn)])
+#        variables['grad_T_{}'.format(bn)]['g'][2,:] = grad_T0_func(variables['r1_{}'.format(bn)])
+#        variables['grad_chi_rad_{}'.format(bn)]['g'] = 0
+#        variables['chi_rad_{}'.format(bn)]['g'] = 1/Re
+#        variables['grad_ln_rho_{}'.format(bn)]['g'] = 0
+#        variables['grad_ln_T_{}'.format(bn)]['g'] = 0
+#
+#        grad_s0 = variables['grad_s0_{}'.format(bn)]
+#        print(grad_s0['g'], grad_s0['c'])
  
     variables.update(locals())
     omega = dist.Field(name='omega')
@@ -452,6 +497,13 @@ if __name__ == '__main__':
                                                 vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                                 sponge=sponge, do_rotation=do_rotation)
 
+#        for i, bn in enumerate(bases_keys):
+#            variables_hi['grad_s0_{}'.format(bn)]['g'][2,:] = grad_s0_func(variables_hi['r_{}'.format(bn)])
+#            variables_hi['grad_T_{}'.format(bn)]['g'][2,:] = grad_T0_func(variables_hi['r_{}'.format(bn)])
+#            variables_hi['chi_rad_{}'.format(bn)]['g'] = 1/Re
+#            variables_hi['grad_chi_rad_{}'.format(bn)]['g'] = 0
+#            variables_hi['grad_ln_rho_{}'.format(bn)]['g'] = 0
+#            variables_hi['grad_ln_T_{}'.format(bn)]['g'] = 0
         variables_hi.update(locals())
         omega_hi = dist_hi.Field(name='omega_hi')
         variables_hi['dt'] = lambda A: -1j * omega_hi * A
