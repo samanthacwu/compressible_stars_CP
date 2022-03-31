@@ -13,7 +13,7 @@ Options:
     --file=<f>        Path to MESA log file [default: ../../mesa_models/zams_15Msol/LOGS/profile47.data]
     --out_dir=<d>     output directory [default: nccs_15msol]
     --dealias=<n>     Radial dealiasing factor of simulation [default: 1.5]
-    --ncc_cutoff=<f>  NCC coefficient magnitude cutoff [default: 1e-8]
+    --ncc_cutoff=<f>  NCC coefficient magnitude cutoff [default: 1e-10]
 
     --no_plot         If flagged, don't output plots
 """
@@ -234,18 +234,35 @@ if SMOOTH_H:
 else:
     sim_H_eff = H_eff
 
+#Get N2 info
+N2max_ball = N2[ball_bool].max()
+N2max_shell = N2[shell_bool].max()
+shell_points = len(N2[shell_bool])
+N2plateau = np.median(N2[int(shell_points*0.25):int(shell_points*0.75)])
+f_brunt = np.sqrt(N2max_shell)/(2*np.pi)
+
+
 #Nondimensionalization
 L_CZ    = core_cz_radius
-L_nd    = L_CZ
-#L_nd    = r_S2_MESA - r_ball_MESA
-T_nd    = T[0]
-m_nd    = rho[0] * L_nd**3
+m_core  = rho[0] * L_CZ**3
+T_core  = T[0]
 H0      = (rho*eps_nuc)[0]
-tau_nd  = ((H0*L_nd/m_nd)**(-1/3)).cgs
+tau_heat  = ((H0*L_CZ/m_core)**(-1/3)).cgs #heating timescale
+L_nd    = L_CZ
+#m_nd    = m_core
+#T_nd    = T_core
+#tau_nd  = tau_heat
+#L_nd    = r_S2_MESA - r_ball_MESA
+m_nd    = rho[r==L_nd][0] * L_nd**3 #mass at core cz boundary
+T_nd    = T[r==L_nd][0] #temp at core cz boundary
+tau_nd  = (1/f_brunt).cgs #timescale of max N^2
 rho_nd  = m_nd/L_nd**3
 u_nd    = L_nd/tau_nd
 s_nd    = L_nd**2 / tau_nd**2 / T_nd
+s_motions    = L_nd**2 / tau_heat**2 / T[0]
 rad_diff_nd = inv_Pe_rad = rad_diff * (tau_nd / L_nd**2)
+rad_diff_cutoff = (1/simulation_Re) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
+Re_shift = ((L_nd**2/tau_nd) / (L_CZ**2/tau_heat))
 print('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
 print('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
 
@@ -282,10 +299,6 @@ grad_s_smooth[r/L_nd < grad_s_transition_point] = flat_value
 
 
 # Get some timestepping & wave frequency info
-N2max_ball = N2[ball_bool].max()
-N2max_shell = N2[shell_bool].max()
-shell_points = len(N2[shell_bool])
-N2plateau = np.median(N2[int(shell_points*0.25):int(shell_points*0.75)])
 f_nyq_ball  = np.sqrt(N2max_ball)/(2*np.pi)
 f_nyq_shell = np.sqrt(N2max_shell)/(2*np.pi)
 f_nyq    = 2*np.max((f_nyq_ball*tau_nd, f_nyq_shell*tau_nd))
@@ -317,7 +330,7 @@ rvals_S2 = dedalus_r['S2']
 #diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0]
 #sim_rad_diff[:] = (1/simulation_Re)*one_to_zero(r_nd, diff_transition*1.05, width=0.02*diff_transition)\
 #                + rad_diff_nd*zero_to_one(r_nd, diff_transition*0.95, width=0.1*diff_transition)
-sim_rad_diff = np.copy(rad_diff_nd) + 1/simulation_Re
+sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff #1/simulation_Re
 
 ncc_dict = OrderedDict()
 for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad']:
@@ -369,8 +382,8 @@ for bn, basis in bases.items():
         vector = ncc_dict[ncc]['vector']
         grid_only = ncc_dict[ncc]['grid_only']
         ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only)
-        if ncc == 'grad_T':
-            print(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
+#        if ncc == 'grad_T':
+#            print(ncc_dict[ncc]['field_{}'.format(bn)]['g'][2,0,0,:])
 
     #Evaluate for grad chi rad
     ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
@@ -379,15 +392,18 @@ for bn, basis in bases.items():
 NmaxB_after = 60 - 1
 ncc_dict['grad_s0']['field_B']['g'][2] *= zero_to_one(rvals_B, grad_s_center, width=grad_s_width)
 ncc_dict['grad_s0']['field_B']['c'][:,:,:,NmaxB_after:] = 0
+ncc_dict['grad_s0']['field_B']['c'][np.abs(ncc_dict['grad_s0']['field_B']['c']) < NCC_CUTOFF] = 0
 
 #Post-processing for grad chi rad - doesn't work great...
-diff_transition = r_nd[sim_rad_diff > 1/simulation_Re][0].value
+diff_transition = r_nd[sim_rad_diff > rad_diff_cutoff][0].value
 gradPe_S1_cutoff = 32
 gradPe_S2_cutoff = 15
 ncc_dict['grad_chi_rad']['field_S1']['g'][2,] *= zero_to_one(rvals_S1, diff_transition, width=(r_S2-r_ball)/10)
 ncc_dict['grad_chi_rad']['field_S1']['c'][:,:,:,gradPe_S1_cutoff:] = 0
+ncc_dict['grad_chi_rad']['field_S1']['c'][np.abs(ncc_dict['grad_chi_rad']['field_S1']['c']) < NCC_CUTOFF] = 0
 ncc_dict['grad_chi_rad']['field_S2']['g'][2,] *= zero_to_one(rvals_S2, diff_transition, width=(r_S2-r_ball)/10)
 ncc_dict['grad_chi_rad']['field_S2']['c'][:,:,:,gradPe_S2_cutoff:] = 0
+ncc_dict['grad_chi_rad']['field_S2']['c'][np.abs(ncc_dict['grad_chi_rad']['field_S2']['c']) < NCC_CUTOFF] = 0
 
 #plt.plot(rvals_S1.ravel(), ncc_dict['grad_chi_rad']['field_S1']['g'][2,0,0,:])
 #plt.plot(rvals_S2.ravel(), ncc_dict['grad_chi_rad']['field_S2']['g'][2,0,0,:])
@@ -417,9 +433,9 @@ if PLOT:
             print('log scale for ncc {}'.format(ncc))
             log = True
         if ncc == 'grad_s0': 
-            axhline = 1
+            axhline = s_motions / s_nd
         elif ncc in ['chi_rad', 'grad_chi_rad']:
-            axhline = 1/simulation_Re
+            axhline = rad_diff_cutoff
 
         interp_func = ncc_dict[ncc]['interp_func']
         if ncc == 'H':
@@ -459,6 +475,8 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['rho_nd'].attrs['units']  = str(rho_nd.unit)
     f['T_nd']  = T_nd
     f['T_nd'].attrs['units']  = str(T_nd.unit)
+    f['tau_heat'] = tau_nd 
+    f['tau_heat'].attrs['units'] = str(tau_heat.unit)
     f['tau_nd'] = tau_nd 
     f['tau_nd'].attrs['units'] = str(tau_nd.unit)
     f['m_nd'] = m_nd 
@@ -491,10 +509,11 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['cp_mesa'].attrs['units'] = str(cp.unit)
 
     f['r_stitch']   = (r_ball, r_S1)
+    f['Re_shift'] = Re_shift
     f['r_outer']   = r_S2
     f['max_dt'] = max_dt
     f['Ma2_r0'] = Ma2_r0
-    for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0']:
+    for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift']:
         f[k].attrs['units'] = 'dimensionless'
 print('finished saving NCCs to {}'.format(out_file))
 

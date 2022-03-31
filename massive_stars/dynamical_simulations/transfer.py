@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import h5py
 from scipy import interpolate
 from pathlib import Path
+from scipy.interpolate import interp1d
 
 from docopt import docopt
 from configparser import ConfigParser
@@ -37,6 +38,7 @@ if args['<config>'] is not None:
 if args['--ncc_file'] is not None:
     with h5py.File(args['--ncc_file'], 'r') as mf:
         tau_s = mf['tau_nd'][()]
+        print(tau_s)
         tau = tau_s/(60*60*24)
         r_B = mf['r_B']
         r_S1 = mf['r_S1']
@@ -117,10 +119,11 @@ for ell in ell_list:
             rS1 = f['r_S1'][()].flatten()
             rS2 = f['r_S2'][()].flatten()
             r = np.concatenate((rB, rS1, rS2))
-            depthcurve = lambda om: om**(-4)
-            depthfunc = lambda om: (depths[0]/depthcurve(values[0].real))*depthcurve(om)
+            smooth_oms = f['smooth_oms'][()]
+            smooth_depths = f['smooth_depths'][()]
+            depthfunc = interp1d(smooth_oms, smooth_depths, bounds_error=False, fill_value='extrapolate')
 
-            omega = np.logspace(-1, 3, 1000)
+#            omega = np.logspace(-1, 3, 1000)
 #            plt.scatter(values.real, np.exp(-np.array(depths)))
 #            plt.loglog(omega, np.exp(-depthfunc(omega)))
 #            plt.ylim(1e-10, 1e1)
@@ -139,6 +142,7 @@ for ell in ell_list:
         s1_amplitudes = s1_amplitudes[good]
         velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
+        print('good values: {}'.format(values))
 
         om0 = values.real[-1]
         om1 = values.real[0]*1.1
@@ -149,8 +153,8 @@ for ell in ell_list:
             print(values.real[-1], om0)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-        r0 = 1.05
-        r1 = r0 + 0.05*r.max()
+        r0 = 1.02
+        r1 = r0 + 0.05*(r.max())
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
 #        r_range = np.linspace(r.min(), r.max(), num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)

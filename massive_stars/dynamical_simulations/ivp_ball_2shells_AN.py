@@ -163,6 +163,9 @@ if __name__ == '__main__':
         with h5py.File(args['--ncc_file'], 'r') as f:
             r_stitch = f['r_stitch'][()]
             r_outer = f['r_outer'][()]
+            Re_shift = f['Re_shift'][()]
+        Re *= Re_shift
+        Pe *= Re_shift
     else:
         r_stitch = (1.1, 1.4)
         r_outer = 1.5

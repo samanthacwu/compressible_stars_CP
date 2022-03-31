@@ -117,7 +117,7 @@ for f, ell in zip(ell_files, ell_values):
 #        ax5.plot(r[N2_of_r(r) > 0], ke[N2_of_r(r) > 0], label='ke')
 #        ax5.plot(r[N2_of_r(r) > 0], pe[N2_of_r(r) > 0], label='pe')
 #        ax5.plot(r[N2_of_r(r) > 0], (ke+pe)[N2_of_r(r) > 0], label='sum')
-        ax5.plot(r, wave_flux_eigenfunctions[i,:].real)
+        ax5.plot(r, 4*np.pi*r**2*wave_flux_eigenfunctions[i,:].real)
         ax5.plot(r, wave_flux_eigenfunctions[i,:].imag)
         ax6.plot(r, np.sqrt(N2_of_r(r)), c='r', label='N')
         ax6.plot(r, S_of_r(r), c='k', label='S')

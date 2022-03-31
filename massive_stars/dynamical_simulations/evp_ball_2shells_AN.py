@@ -416,11 +416,16 @@ if __name__ == '__main__':
 
             tau_day = tau_nd/(60*60*24)
             N2_mesa = f['N2_mesa'][()]
+            S1_mesa = f['S1_mesa'][()]
             r_mesa = f['r_mesa'][()]
+            Re_shift = f['Re_shift'][()]
     else:
         r_stitch = (1.1, 1.4)
         r_outer = 1.5
         tau_day = 1
+
+    Re *= Re_shift
+    Pe *= Re_shift
 
     sponge = False
     do_rotation = False
@@ -478,8 +483,11 @@ if __name__ == '__main__':
     problem = set_anelastic_problem(problem, bases, bases_keys, stitch_radii=stitch_radii)
     logger.info('problem built')
 
-
-    ncc_cutoff=1e-8
+    if ncc_file is not None:
+        ncc_cutoff = float(ncc_file.split('.h5')[0].split('_cutoff')[-1])
+    else:
+        ncc_cutoff=1e-8
+    logger.info('using ncc cutoff {:.2e}'.format(ncc_cutoff))
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     logger.info('solver built')
 
@@ -513,6 +521,7 @@ if __name__ == '__main__':
         logger.info('hires problem built')
 
 
+        logger.info('using ncc cutoff {:.2e}'.format(ncc_cutoff))
         solver_hi = problem_hi.build_solver(ncc_cutoff=ncc_cutoff)
         logger.info('hires solver built')
 
@@ -529,11 +538,11 @@ if __name__ == '__main__':
                 solver, solver_hi = check_eigen(solver, solver_hi, bases, bases_hi, variables, variables_hi, ell, cutoff=1e-2)
         
             #Calculate 'optical depths' of each mode.
+            #TODO: Fix this
             depths = []
             if ncc_file is not None:
-                chi_rads = []
+                chi_rad = np.zeros_like(r_mesa)
                 for i, bn in enumerate(bases_keys):
-                    chi_rad = np.ones_like(r_mesa) / Pe
                     local_r_inner, local_r_outer = 0, 0
                     if i == 0:
                         local_r_inner = 0
@@ -545,25 +554,56 @@ if __name__ == '__main__':
                         local_r_outer = radius
                     r_mesa_nd = r_mesa/L_nd
                     good_r = (r_mesa_nd > local_r_inner)*(r_mesa_nd <= local_r_outer)
-                    chi_rad[good_r] = interp1d(variables['r_{}'.format(bn)].flatten(), variables['grad_chi_rad_{}'.format(bn)]['g'][2,0,0,:], 
+                    chi_rad[good_r] = interp1d(variables['r_{}'.format(bn)].flatten(), variables['chi_rad_{}'.format(bn)]['g'][0,0,:], 
                                                bounds_error=False, fill_value='extrapolate')(r_mesa_nd[good_r])
-                    chi_rad *= (L_nd**2 / tau_nd)
+                chi_rad *= (L_nd**2 / tau_nd)
 
                 # from Shiode et al 2013 eqns 4-8 
                 for om in solver.eigenvalues.real:
+                    dim_om = (om.real/tau_nd)
                     Lambda = np.sqrt(ell*(ell+1))
                     kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
                     v_group = (om/tau_nd) / kr_cm
                     gamma_rad = chi_rad * kr_cm**2
-                    depth_integrand = gamma_rad/v_group
+
+                    lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
+                    wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
+
+                    depth_integrand = np.zeros_like(gamma_rad)
+                    depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
 
                     #No optical depth in CZs, or outside of simulation domain...
-                    depth_integrand[N2_mesa < 0] = 0
                     depth_integrand[r_mesa/L_nd > r_outer] = 0
 
                     #Numpy integrate
                     opt_depth = np.trapz(depth_integrand, x=r_mesa)
                     depths.append(opt_depth)
+
+                good_omegas = solver.eigenvalues.real
+                smooth_oms = np.logspace(np.log10(good_omegas.min())-1, np.log10(good_omegas.max())+1, 100)
+                smooth_depths = np.zeros_like(smooth_oms)
+                # from Shiode et al 2013 eqns 4-8 
+                for i, om in enumerate(smooth_oms):
+                    dim_om = (om.real/tau_nd)
+                    Lambda = np.sqrt(ell*(ell+1))
+                    kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
+                    v_group = (om/tau_nd) / kr_cm
+                    gamma_rad = chi_rad * kr_cm**2
+
+                    lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
+                    wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
+
+                    depth_integrand = np.zeros_like(gamma_rad)
+                    depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
+
+                    #No optical depth in CZs, or outside of simulation domain...
+                    depth_integrand[r_mesa/L_nd > r_outer] = 0
+
+                    #Numpy integrate
+                    opt_depth = np.trapz(depth_integrand, x=r_mesa)
+                    smooth_depths[i] = opt_depth
+
+
 
             shape = list(variables['s1_B']['c'].shape[:2])
             good = np.zeros(shape, bool)
@@ -663,6 +703,8 @@ if __name__ == '__main__':
                         f['velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
                 f['rho_full'] = rho_full
                 f['depths'] = np.array(depths)
+                f['smooth_oms'] = smooth_oms
+                f['smooth_depths'] = smooth_depths
 
                 #Pass through nondimensionalization
 
@@ -685,7 +727,6 @@ if __name__ == '__main__':
                             these_pieces.append(f[this_key][()])
                     if len(these_pieces) > 0:
                         velocity_eigenfunctions_pieces.append(these_pieces)
-
         #Calculate duals
         velocity_duals = calculate_duals(velocity_eigenfunctions_pieces, bases, variables)
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'r') as f:
