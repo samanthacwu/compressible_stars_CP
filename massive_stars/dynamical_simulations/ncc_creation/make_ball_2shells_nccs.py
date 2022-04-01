@@ -260,7 +260,7 @@ rho_nd  = m_nd/L_nd**3
 u_nd    = L_nd/tau_nd
 s_nd    = L_nd**2 / tau_nd**2 / T_nd
 #H_nd    = H0
-H_nd    = (m_nd / L_nd) * tau_nd**3
+H_nd    = (m_nd / L_nd) * tau_nd**-3
 s_motions    = L_nd**2 / tau_heat**2 / T[0]
 rad_diff_nd = inv_Pe_rad = rad_diff * (tau_nd / L_nd**2)
 rad_diff_cutoff = (1/simulation_Re) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
