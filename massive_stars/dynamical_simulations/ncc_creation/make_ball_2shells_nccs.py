@@ -259,6 +259,8 @@ tau_nd  = (1/f_brunt).cgs #timescale of max N^2
 rho_nd  = m_nd/L_nd**3
 u_nd    = L_nd/tau_nd
 s_nd    = L_nd**2 / tau_nd**2 / T_nd
+#H_nd    = H0
+H_nd    = (m_nd / L_nd) * tau_nd**3
 s_motions    = L_nd**2 / tau_heat**2 / T[0]
 rad_diff_nd = inv_Pe_rad = rad_diff * (tau_nd / L_nd**2)
 rad_diff_cutoff = (1/simulation_Re) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
@@ -348,7 +350,7 @@ ncc_dict['grad_ln_rho']['interp_func'] = interp1d(r_nd, dlogTdr*L_nd)
 ncc_dict['grad_ln_T']['interp_func'] = interp1d(r_nd, dlogTdr*L_nd)
 ncc_dict['T']['interp_func'] = interp1d(r_nd, T/T_nd)
 ncc_dict['grad_T']['interp_func'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
-ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H0))
+ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H_nd))
 ncc_dict['grad_s0']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
 
 ncc_dict['nu_diff']['interp_func'] = interp1d(r_nd, rad_diff_cutoff*np.ones_like(r_nd))
@@ -444,7 +446,7 @@ if PLOT:
 
         interp_func = ncc_dict[ncc]['interp_func']
         if ncc == 'H':
-            interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_ball, width=0.05*r_ball)*H_eff/(rho*T) ) * (rho_nd*T_nd/H0) )
+            interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_ball, width=0.05*r_ball)*H_eff/(rho*T) ) * (rho_nd*T_nd/H_nd) )
         elif ncc == 'grad_s0':
             interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s)
 
@@ -490,6 +492,8 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['s_nd'].attrs['units'] = str(s_nd.unit)
     f['P_r0']  = P_r0
     f['P_r0'].attrs['units']  = str(P_r0.unit)
+    f['H_nd']  = H_nd
+    f['H_nd'].attrs['units']  = str(H_nd.unit)
     f['H0']  = H0
     f['H0'].attrs['units']  = str(H0.unit)
     f['N2max_ball'] = N2max_ball
