@@ -333,7 +333,7 @@ rvals_S2 = dedalus_r['S2']
 sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff #1/simulation_Re
 
 ncc_dict = OrderedDict()
-for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad']:
+for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad', 'nu_diff']:
     ncc_dict[ncc] = OrderedDict()
     for bn in bases.keys():
         ncc_dict[ncc]['Nmax_{}'.format(bn)] = 32
@@ -351,6 +351,7 @@ ncc_dict['grad_T']['interp_func'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
 ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H0))
 ncc_dict['grad_s0']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
 
+ncc_dict['nu_diff']['interp_func'] = interp1d(r_nd, rad_diff_cutoff*np.ones_like(r_nd))
 ncc_dict['chi_rad']['interp_func'] = interp1d(r_nd, sim_rad_diff)
 ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
 
@@ -370,6 +371,10 @@ ncc_dict['H']['Nmax_S2'] = 2
 ncc_dict['chi_rad']['Nmax_B'] = 1
 ncc_dict['chi_rad']['Nmax_S1'] = 20
 ncc_dict['chi_rad']['Nmax_S2'] = 10
+
+ncc_dict['nu_diff']['Nmax_B'] = 1
+ncc_dict['nu_diff']['Nmax_S1'] = 1
+ncc_dict['nu_diff']['Nmax_S2'] = 1
 
 ncc_dict['H']['grid_only'] = True
 

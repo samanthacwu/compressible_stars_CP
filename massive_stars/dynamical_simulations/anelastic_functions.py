@@ -214,7 +214,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     max_dt = f['max_dt'][()]
 
                 if t_buoy is None:
-                    t_buoy = 1 #assume nondimensionalization on heating ~ buoyancy time
+                    t_buoy = f['t_heat'][()]/f['tau_nd'][()]
 
                 if t_rot is None:
                     if do_rotation:
@@ -301,8 +301,8 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
 
         #Standard Equations
         equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
-        equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + grad_T_{0}*s1_{0} - (1/Re)*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
-        equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + (1/Re)*inv_T_{0}*VH_{0}".format(bn)
+        equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + grad_T_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
+        equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + nu_diff_{0}*inv_T_{0}*VH_{0}".format(bn)
 
         #Boundary conditions
         if type(basis) == d3.BallBasis:

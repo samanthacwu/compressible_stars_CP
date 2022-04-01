@@ -23,6 +23,7 @@ Options:
 
     --duals_only        If flagged, just do the dual calculation, don't do the dense EVP solve.
 """
+import time
 import gc
 import os
 import sys
@@ -43,6 +44,78 @@ logger = logging.getLogger(__name__)
 
 from anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
 
+from scipy.sparse import linalg as spla
+from scipy import sparse
+def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
+    """
+    Perform targeted eigenmode search using the scipy/ARPACK sparse solver
+    for the reformulated generalized eigenvalue problem
+        A.x = λ B.x  ==>  (A - σB)^I B.x = (1/(λ-σ)) x
+    for eigenvalues λ near the target σ.
+    Parameters
+    ----------
+    A, B : scipy sparse matrices
+        Sparse matrices for generalized eigenvalue problem
+    N : int
+        Number of eigenmodes to return
+    target : complex
+        Target σ for eigenvalue search
+    matsolver : matrix solver class
+        Class implementing solve method for solving sparse systems.
+    Other keyword options passed to scipy.sparse.linalg.eigs.
+
+    Taken from dedalus' d3-s2-ncc branch on apr 1, 2022
+    """
+    # Build sparse linear operator representing (A - σB)^I B = C^I B = D
+    C = sparse.csr_matrix(A - target * B)
+    solver = matsolver(C)
+    def matvec(x):
+        return solver.solve(B.dot(x))
+    D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec)
+    # Solve using scipy sparse algorithm
+    evals, evecs = spla.eigs(D, k=N, which='LM', sigma=None, **kw)
+    # Rectify eigenvalues
+    evals = 1 / evals + target
+    return evals, evecs
+
+
+def matrix_info(subproblem):
+    sp = subproblem
+    ell = subproblem.group[1]
+    AL = (sp.pre_left.T @ sp.L_min).A
+    BL = - (sp.pre_left.T @ sp.M_min).A
+    plt.imshow(np.log10(np.abs(AL)))
+    plt.colorbar()
+    plt.savefig("matrices/ell_A_%03i.png" %ell, dpi=600)
+    plt.clf()
+    plt.imshow(np.log10(np.abs(BL)))
+    plt.colorbar()
+    plt.savefig("matrices/ell_B_%03i.png" %ell, dpi=600)
+    plt.clf()
+
+    A = (sp.L_min @ sp.pre_right).A
+    B = - (sp.M_min @ sp.pre_right).A
+    plt.imshow(np.log10(np.abs(A)))
+    plt.colorbar()
+    plt.savefig("matrices/cond_ell_A_%03i.png" %ell, dpi=600)
+    plt.clf()
+    plt.imshow(np.log10(np.abs(B)))
+    plt.colorbar()
+    plt.savefig("matrices/cond_ell_B_%03i.png" %ell, dpi=600)
+    plt.clf()
+
+    condition_number_A = np.linalg.cond(A)
+    condition_number_B = np.linalg.cond(B)
+    condition_number_ML = np.linalg.cond(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
+    rank_A = np.linalg.matrix_rank(A)
+    rank_B = np.linalg.matrix_rank(B)
+    rank_ML = np.linalg.matrix_rank(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
+    logger.info("condition numbers A / B = {:.3e} / {:.3e}".format(condition_number_A, condition_number_B))
+    logger.info("rank A = {:.3e} / {:.3e}, rank B = {:.3e} / {:.3e}".format(rank_A, np.max(A.shape), rank_B, np.max(B.shape)))
+    logger.info("condition number M + L= {:.3e}".format(condition_number_ML))
+    logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
+
+
 def solve_dense(solver, ell):
     """
     Do a dense eigenvalue solve at a specified ell.
@@ -53,42 +126,14 @@ def solve_dense(solver, ell):
         if this_ell != ell:
             continue
 
-        ell = subproblem.group[1]
         sp = subproblem
-        A = (sp.pre_left.T @ sp.L_min).A
-        B = - (sp.pre_left.T @ sp.M_min).A
-        plt.imshow(np.log10(np.abs(A)))
-        plt.colorbar()
-        plt.savefig("matrices/ell_A_%03i.png" %ell, dpi=600)
-        plt.clf()
-        plt.imshow(np.log10(np.abs(B)))
-        plt.colorbar()
-        plt.savefig("matrices/ell_B_%03i.png" %ell, dpi=600)
-        plt.clf()
-
-        A = (sp.L_min @ sp.pre_right).A
-        B = - (sp.M_min @ sp.pre_right).A
-        plt.imshow(np.log10(np.abs(A)))
-        plt.colorbar()
-        plt.savefig("matrices/cond_ell_A_%03i.png" %ell, dpi=600)
-        plt.clf()
-        plt.imshow(np.log10(np.abs(B)))
-        plt.colorbar()
-        plt.savefig("matrices/cond_ell_B_%03i.png" %ell, dpi=600)
-        plt.clf()
-
-        condition_number_A = np.linalg.cond(A)
-        condition_number_B = np.linalg.cond(B)
-        condition_number_ML = np.linalg.cond(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
-        rank_A = np.linalg.matrix_rank(A)
-        rank_B = np.linalg.matrix_rank(B)
-        rank_ML = np.linalg.matrix_rank(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
-        logger.info("solving ell = {}".format(ell))
-        logger.info("condition numbers A / B = {:.3e} / {:.3e}".format(condition_number_A, condition_number_B))
-        logger.info("rank A = {:.3e} / {:.3e}, rank B = {:.3e} / {:.3e}".format(rank_A, np.max(A.shape), rank_B, np.max(B.shape)))
-        logger.info("condition number M + L= {:.3e}".format(condition_number_ML))
-        logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
+        matrix_info(sp)
+        ell = subproblem.group[1]
+        logger.info("dense solving ell = {}".format(ell))
+        start_time = time.time()
         solver.solve_dense(subproblem)
+        end_time = time.time()
+        logger.info('dense solve done in {:.2f} sec'.format(end_time - start_time))
 
         values = solver.eigenvalues 
         vectors = solver.eigenvectors
@@ -108,9 +153,69 @@ def solve_dense(solver, ell):
         values = values[order]
         vectors = vectors[:, order]
 
+        #Get rid of purely diffusive modes
+        goodvals = np.abs(values.real/values.imag) > 1e-5
+        values = values[goodvals]
+        vectors = vectors[:, goodvals]
+
         #Update solver
         solver.eigenvalues = values
         solver.eigenvectors = vectors
+        return solver
+
+def solve_sparse(solver, ell, eigenvalues):
+    """
+    Perform targeted sparse eigenvalue search for selected pencil.
+    Parameters
+    ----------
+    pencil : pencil object
+        Pencil for which to solve the EVP
+    N : int
+        Number of eigenmodes to solver for.  Note: the dense method may
+        be more efficient for finding large numbers of eigenmodes.
+    target : complex
+        Target eigenvalue for search.
+    rebuild_coeffs : bool, optional
+        Flag to rebuild cached coefficient matrices (default: False)
+    Other keyword options passed to scipy.sparse.linalg.eigs.
+    """
+
+    """
+    Do a dense eigenvalue solve at a specified ell.
+    Sort the eigenvalues and eigenvectors according to damping rate.
+    """
+    for subproblem in solver.subproblems:
+        this_ell = subproblem.group[1]
+        if this_ell != ell:
+            continue
+
+        ell = subproblem.group[1]
+        sp = subproblem
+        matrix_info(sp)
+
+        A = (sp.L_min @ sp.pre_right).A
+        B = - (sp.M_min @ sp.pre_right).A
+        logger.info("sparse solving ell = {}".format(ell))
+
+        N = 1
+        A = (sp.L_min @ sp.pre_right).A
+        B = - (sp.M_min @ sp.pre_right).A
+
+        full_evals = []
+        full_evecs = []
+        start_time = time.time()
+        for i, target in enumerate(eigenvalues):
+            evalue, evec = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=solver.matsolver)
+            full_evals.append(evalue.ravel())
+            full_evecs.append(evec.ravel())
+            print('sparse hi: {} / target: {}'.format(evalue, target))
+        end_time = time.time()
+        logger.info('sparse solve done in {:.2f} sec'.format(end_time - start_time))
+        solver.eigenvalues = np.array(full_evals)
+        solver.eigenvectors = np.swapaxes(np.array(full_evecs), 0, 1)
+        solver.eigenvalue_subproblem = sp
+        logger.info('shapes: {} / {}'.format(solver.eigenvalues.shape, solver.eigenvectors.shape))
+
         return solver
 
 def combine_eigvecs(field, ell_m_bool, bases, namespace, scales=None, shift=True):
@@ -220,6 +325,7 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
             if goodness < cutoff:# or (j == 0 and (i == 2 or i == 3)):# and (np.abs(v1.imag - v2.imag)/np.abs(v1.imag)).min() < 1e-1:
                 
                 solver1.set_state(i, subsystem1)
+                print(solver1.eigenvectors.shape, solver2.eigenvectors.shape)
                 solver2.set_state(j, subsystem2)
 
                 ef_u1, ef_u1_pieces = combine_eigvecs('u', good, bases1, namespace1, scales=scales)
@@ -233,6 +339,12 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
                 vector_diff = np.max(np.abs(ef_u1 - ef_u2))
                 print(v1/(2*np.pi), v2/(2*np.pi), vector_diff)
 #                if vector_diff < np.sqrt(cutoff) and cz_KE_frac < 0.5:
+                plt.figure()
+                plt.plot(r2, ef_u1[2,:])
+                plt.plot(r2, ef_u2[2,:])
+                plt.title(v1)
+                plt.show()
+
                 if vector_diff < np.sqrt(cutoff):
                     print('good evalue w/ vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
                     if cz_KE_frac.real > 0.5:
@@ -240,11 +352,6 @@ def check_eigen(solver1, solver2, bases1, bases2, namespace1, namespace2, ell, r
                     elif cz_KE_frac.real < 1e-3:
                         print('evalue is spurious, skipping')
                     else:
-#                        plt.figure()
-#                        plt.plot(r2, ef_u1[2,:])
-#                        plt.plot(r2, ef_u2[2,:])
-#                        plt.title(v1)
-#                        plt.show()
                         good_values1.append(i)
                         good_values2.append(j)
 
@@ -423,6 +530,7 @@ if __name__ == '__main__':
         r_stitch = (1.1, 1.4)
         r_outer = 1.5
         tau_day = 1
+        Re_shift = 1
 
     Re *= Re_shift
     Pe *= Re_shift
@@ -446,7 +554,7 @@ if __name__ == '__main__':
     vec_taus = ['tau_u']
     scalar_taus = ['tau_s']
     vec_nccs = ['grad_ln_rho', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge']
+    scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge', 'nu_diff']
 
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 
@@ -534,7 +642,8 @@ if __name__ == '__main__':
 
             if do_hires:
                 logger.info('solving hires eigenvalue with nr = ({}, {}, {})'.format(nrB_hi, nrS1_hi, nrS2_hi))
-                solve_dense(solver_hi, ell)
+                print(solver.eigenvectors.shape)
+                solver_hi = solve_sparse(solver_hi, ell, solver.eigenvalues)
                 solver, solver_hi = check_eigen(solver, solver_hi, bases, bases_hi, variables, variables_hi, ell, cutoff=1e-2)
         
             #Calculate 'optical depths' of each mode.

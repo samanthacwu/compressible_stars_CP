@@ -167,6 +167,7 @@ if __name__ == '__main__':
         Re *= Re_shift
         Pe *= Re_shift
     else:
+        Re_shift = 1
         r_stitch = (1.1, 1.4)
         r_outer = 1.5
     logger.info('r_stitch: {} / r_outer: {:.2f}'.format(r_stitch, r_outer))
@@ -244,7 +245,7 @@ if __name__ == '__main__':
     lum_dt   = 0.5*t_buoy
     visual_dt = 0.05*t_buoy
     outer_shell_dt = max_dt
-    if Re > 1e4:
+    if Re/Re_shift > 1e4:
         checkpoint_time = 2*t_buoy
     else:
         checkpoint_time = 10*t_buoy
@@ -332,7 +333,7 @@ if __name__ == '__main__':
             slices.add_task(s1(phi=az_val), name='s1_{}(phi={})'.format(bn, phi_str), layout='g')
 
         # Add scalars for simple evolution tracking
-        scalars.add_task(vol_avg(Re*(u_squared)**(1/2)), name='Re_avg_{}'.format(bn),  layout='g')
+        scalars.add_task(vol_avg((u_squared)**(1/2) / nu_diff), name='Re_avg_{}'.format(bn),  layout='g')
         scalars.add_task(vol_avg(rho*u_squared/2), name='KE_{}'.format(bn),   layout='g')
         scalars.add_task(vol_avg(rho*T*s1), name='TE_{}'.format(bn),  layout='g')
         scalars.add_task(vol_avg(am_Lx), name='angular_momentum_x_{}'.format(bn), layout='g')
@@ -344,7 +345,7 @@ if __name__ == '__main__':
         profiles.add_task(s2_avg(s1), name='s1_profile_{}'.format(bn), layout='g')
         profiles.add_task(lum_prof(rho*ur*pomega_hat),   name='wave_lum_{}'.format(bn), layout='g')
         profiles.add_task(lum_prof(rho*ur*h),            name='enth_lum_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(-rho*visc_flux_r/Re), name='visc_lum_{}'.format(bn), layout='g')
+        profiles.add_task(lum_prof(-nu_diff*rho*visc_flux_r), name='visc_lum_{}'.format(bn), layout='g')
         profiles.add_task(lum_prof(-rho*T*d3.dot(er, d3.grad(s1)/Pe)), name='cond_lum_{}'.format(bn), layout='g')
         profiles.add_task(lum_prof(0.5*rho*ur*u_squared), name='KE_lum_{}'.format(bn),   layout='g')
 
@@ -371,7 +372,7 @@ if __name__ == '__main__':
                 if basis.radii[1] == r_outer:
                     surface_shell_slices.add_task(s1(r=r_outer), name='s1_{}(r=r_outer)'.format(bn), layout='g')
 
-        logger_handler.add_task(vol_avg(Re*(u_squared)**(1/2)), name='Re_avg_{}'.format(bn), layout='g')
+        logger_handler.add_task(vol_avg((u_squared)**(1/2)/nu_diff), name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(d3.integ(rho*(u_squared)/2), name='KE_{}'.format(bn), layout='g')
 
     #CFL setup
