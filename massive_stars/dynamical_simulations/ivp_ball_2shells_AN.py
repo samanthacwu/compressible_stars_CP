@@ -184,7 +184,7 @@ if __name__ == '__main__':
     vec_taus = ['tau_u']
     scalar_taus = ['tau_s']
     vec_nccs = ['grad_ln_rho', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge']
+    scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge', 'nu_diff']
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 
                             vec_taus=vec_taus, scalar_taus=scalar_taus, 

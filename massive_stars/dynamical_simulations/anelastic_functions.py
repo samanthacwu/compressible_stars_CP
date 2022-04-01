@@ -214,7 +214,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     max_dt = f['max_dt'][()]
 
                 if t_buoy is None:
-                    t_buoy = f['t_heat'][()]/f['tau_nd'][()]
+                    t_buoy = f['tau_heat'][()]/f['tau_nd'][()]
 
                 if t_rot is None:
                     if do_rotation:
