@@ -33,7 +33,7 @@ Options:
     --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
 
     --label=<label>      A label to add to the end of the output directory
-    --cutoff=<c>         NCC cutoff magnitude [default: 1e-8]
+    --cutoff=<c>         NCC cutoff magnitude [default: 1e-10]
 
     --rotation_time=<t>  Rotation timescale, in days (if ncc_file is not None) or sim units (for polytrope)
 
@@ -199,6 +199,7 @@ if __name__ == '__main__':
     for i, bn in enumerate(bases.keys()):
         variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     max_dt, t_buoy, t_rot = timescales
+    logger.info('timescales -- max_dt {}, t_buoy {}, t_rot {}'.format(max_dt, t_buoy, t_rot))
 
     # Put nccs and fields into locals()
     locals().update(variables)
@@ -282,6 +283,7 @@ if __name__ == '__main__':
         u = variables['u_{}'.format(bn)]
         p = variables['p_{}'.format(bn)]
         s1 = variables['s1_{}'.format(bn)]
+        nu_diff = variables['nu_diff_{}'.format(bn)]
 
         variables['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
         variables['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)

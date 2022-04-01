@@ -272,7 +272,7 @@ P_r0      = P[0]
 T_r0      = T[0]
 cp_r0     = cp[0]
 gamma1_r0  = gamma1[0]
-Ma2_r0 = (u_nd**2 / ((gamma1_r0-1)*cp_r0*T_r0)).cgs
+Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((gamma1_r0-1)*cp_r0*T_r0)).cgs
 print('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
 cp_surf = cp[S2_bool][-1]
@@ -308,7 +308,7 @@ kepler_tau     = 30*60*u.s
 max_dt_kepler  = kepler_tau/tau_nd
 
 max_dt = max_dt_kepler
-print('needed nyq_dt is {} s / {} % of a heating time (Kepler 30 min is {} %) '.format(nyq_dt*tau_nd, nyq_dt*100, max_dt_kepler*100))
+print('needed nyq_dt is {} s / {} % of a nondimensional time (Kepler 30 min is {} %) '.format(nyq_dt*tau_nd, nyq_dt*100, max_dt_kepler*100))
 
 ### Make dedalus domain and bases
 resolutions = ((8, 4, nrB), (8, 4, nrS1), (8, 4, nrS2))
@@ -480,7 +480,7 @@ with h5py.File('{:s}'.format(out_file), 'w') as f:
     f['rho_nd'].attrs['units']  = str(rho_nd.unit)
     f['T_nd']  = T_nd
     f['T_nd'].attrs['units']  = str(T_nd.unit)
-    f['tau_heat'] = tau_nd 
+    f['tau_heat'] = tau_heat
     f['tau_heat'].attrs['units'] = str(tau_heat.unit)
     f['tau_nd'] = tau_nd 
     f['tau_nd'].attrs['units'] = str(tau_nd.unit)
