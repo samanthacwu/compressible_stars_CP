@@ -38,6 +38,7 @@ from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from scipy import sparse
 from mpi4py import MPI
+from scipy.interpolate import interp1d
 
 from plotpal.file_reader import SingleTypeReader as SR
 import matplotlib.pyplot as plt
@@ -66,14 +67,25 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
+star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-32_Re4e3_de1.5_cutoff1e-10.h5'
 with h5py.File(star_file, 'r') as f:
-    tau = f['tau'][()]/(60*60*24)
+    rB = f['r_B'][()]
+    rS1 = f['r_S1'][()]
+    rS2 = f['r_S2'][()]
+    rhoB = np.exp(f['ln_rho_B'][()])
+    rhoS1 = np.exp(f['ln_rho_S1'][()])
+    rhoS2 = np.exp(f['ln_rho_S2'][()])
+    r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
+    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
+    rho_func = interp1d(r,rho)
+    tau = f['tau_nd'][()]/(60*60*24)
     r_outer = f['r_outer'][()]
-    radius = r_outer * f['L'][()]
+    radius = r_outer * f['L_nd'][()]
     #Entropy units are erg/K/g
-    s_c = f['s_c'][()]
-    N2plateau_sim = f['N2plateau'][()] * f['tau'][()]**2
+    s_c = f['s_nd'][()]
+    N2plateau = f['N2plateau'][()] * (60*60*24)**2
+
+    N2plateau_sim = f['N2plateau'][()] * tau**2
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
@@ -178,7 +190,7 @@ with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
 
 
 good = freqs >= 0
-min_freq = 3e-1
+min_freq = 3e-3
 max_freq = freqs.max()
 for k, powspec in powers_per_ell.items():
     if len(powspec.shape) != 3:
@@ -189,9 +201,9 @@ for k, powspec in powers_per_ell.items():
         good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
                 
 
-        print(k, good_axis, powspec.shape, len(ells.flatten()))
+        print(powspec.shape, ells.shape)
         sum_power = np.sum(powspec, axis=good_axis).squeeze()
-        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
+        sum_power_ell2 = np.sum((powspec/ells[:,:,0,0]**2).reshape(powspec.shape)[:,ells[0,:,0,0] > 0], axis=good_axis).squeeze()
             
         ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
         ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2

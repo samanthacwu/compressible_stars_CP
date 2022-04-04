@@ -61,7 +61,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-16_Re4e3_de1.5_cutoff1e-08.h5'
+star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-32_Re4e3_de1.5_cutoff1e-10.h5'
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]
@@ -173,7 +173,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         
 
 fig = plt.figure()
-freqs_for_dfdell = [1, 5, 8]
+freqs_for_dfdell = [1e-2, 5e-2, 8e-2]
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
     freqs = rf['real_freqs'][()]
     ells = rf['ells'][()].flatten()
@@ -191,7 +191,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
         plt.title('f = {} 1/day'.format(f))
         plt.xlabel(r'$\ell$')
         plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
-        plt.ylim(1e-25, 1e-9)
+        plt.ylim(1e-33, 1e-17)
         plt.xlim(1, ells.max())
         fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
         plt.clf()
@@ -213,7 +213,7 @@ for ell in range(11):
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
     plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
-    plt.ylim(1e-25, 1e-9)
+    plt.ylim(1e-33, 1e-17)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
     

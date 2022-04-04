@@ -11,6 +11,7 @@ import time
 import sys
 from collections import OrderedDict
 from pathlib import Path
+import palettable
 
 import h5py
 import numpy as np
@@ -109,45 +110,48 @@ for root_dir in root_dirs:
     
 f_norm_pow = -17/2
 ell_norm_pow = 4
+ell = 5
+freq = 5
 
 pub_fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(7.5,4))
+for i in range(2):
+    axs[i][1].set_prop_cycle('color', palettable.colorbrewer.qualitative.Dark2_8.mpl_colors)
+    axs[i][0].set_prop_cycle('color', palettable.colorbrewer.qualitative.Set1_8.mpl_colors)
+    axs[0][i].axvline(freq, c='k')
+    axs[1][i].axvline(ell, c='k')
+
+    axs[0][i].set_ylim(1e-22, 1e-8)
+    axs[1][i].set_ylim(1e-13, 1e-4)
 
 print(len(ells_list), len(full_out_dirs), len(wave_fluxes))
 
 for i, full_out_dir in enumerate(full_out_dirs):
     if Re[i] == np.max(Re):
         ells = ells_list[i]
-        freq = freqs[i][:,None]
+        these_freqs = freqs[i][:,None]
         flux = wave_fluxes[i][0]
-        print(ells.shape, freq.shape, flux.shape)
-        detrended = flux/(ells**ell_norm_pow * freq**f_norm_pow)
-        window = np.abs(detrended[(ells > 0)*(ells <= 10)*(freq > 2)*(freq <= 8)])
+        detrended = flux/(ells**ell_norm_pow * these_freqs**f_norm_pow)
+        window = np.abs(detrended[(ells > 0)*(ells <= 10)*(these_freqs > 2)*(these_freqs <= 8)])
         good = np.isfinite(np.log10(window))
         A0 = 10**(np.mean(np.log10(window[good])))
         f0_sec = 1/tau_sec
         A0_ur2_sim = 2*A0/(r_rcb*ρ_rcb*np.sqrt(N2_plateau_sim))
         A0_ur2_sec = A0_ur2_sim * f0_sec**(-f_norm_pow) * L_sim**2 / tau_sec**2 #cm^2/s^2
         for j, radius in enumerate(radii):
-            ell = 5
             wave_flux = wave_fluxes[i][j][:,ell]
-            freq = freqs[i]
-            axs[0][0].loglog(freq, np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+            axs[0][0].loglog(freqs[i], np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
 
-            freq = 5
             f_ind = np.argmin(np.abs(freqs[i] - freq))
             wave_flux = wave_fluxes[i][j][f_ind, :]
             ells = ells_list[i].flatten()
-            axs[1][0].loglog(ells, wave_flux/ells**4/freq**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-    ell = 5
+            axs[1][0].loglog(ells, wave_flux/freq**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
     wave_flux = wave_fluxes[i][0][:,ell]
-    freq = freqs[i]
-    axs[0][1].loglog(freq, np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+    axs[0][1].loglog(freqs[i], np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
 
-    freq = 5
     f_ind = np.argmin(np.abs(freqs[i] - freq))
     wave_flux = wave_fluxes[i][0][f_ind, :]
     ells = ells_list[i].flatten()
-    axs[1][1].loglog(ells, wave_flux/ells**4/freq**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+    axs[1][1].loglog(ells, wave_flux/freq**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
 
     
 pub_fig.savefig('./scratch/pubfig.png', dpi=300, bbox_inches='tight')

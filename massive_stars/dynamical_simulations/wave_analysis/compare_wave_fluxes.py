@@ -60,7 +60,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../mesa_stars/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
+star_file = '../ncc_creation/nccs_40msol/ballShell_nccs_B96_S96_Re1e3_de1.5.h5'
 with h5py.File(star_file, 'r') as f:
     rB = f['rB'][()]
     rS = f['rS'][()]
@@ -92,12 +92,15 @@ wave_fluxes = []
 ells_list = []
 freqs = []
 rotation = []
+tauF = []
 for root_dir in root_dirs:
     print('reading {}'.format(root_dir))
     for piece in root_dir.split('_'):
         if resolution.match(piece):
             res.append(piece)
             break
+        if 'tauF' in piece:
+            tauF.append(float(piece.split('tauF')[-1]))
         if 'Re' in piece:
             Re.append(float(piece.split('Re')[-1]))
         if 'rotation' in piece:
@@ -109,12 +112,9 @@ for root_dir in root_dirs:
     with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'r') as rf:
         freqs.append(rf['real_freqs'][()])
 #        freqs_inv_day.append(rf['real_freqs_inv_day'][()])
-        ells_list.append(rf['ells'][:,:,0])
+        ells_list.append(rf['ells'][:,:,0,0])
         wave_fluxes.append(rf['wave_flux'][()])
 
-u_r = []
-for i in range(len(ells_list)):
-    u_r.append(np.sqrt(2*np.sqrt(ells_list[i]*(ells_list[i]+1)) * wave_fluxes[i] / (1 * ρ_rcb * np.sqrt(N2_plateau))))
 print('rho_rcb: {}, N_plateau: {}'.format(ρ_rcb, np.sqrt(N2_plateau)))
 
 
@@ -146,7 +146,7 @@ for f in freqs_for_dfdell:
         wave_flux = wave_fluxes[i][f_ind, :]
         ells = ells_list[i].flatten()
 #        plt.loglog(ells, ells*wave_flux, label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
-        plt.loglog(ells, wave_flux/ells**4/f**(f_norm_pow), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        plt.loglog(ells, wave_flux/ells**4/f**(f_norm_pow), label='tauF={}, Re={}, res={}, rot={}'.format(tauF[i], Re[i], res[i], rotation[i]))
         shift = (wave_flux)[ells == 2]
         plt.title('f = {} sim units'.format(f))
         plt.xlabel(r'$\ell$')
@@ -168,7 +168,7 @@ for ell in range(11):
         if ell == 0: continue
         wave_flux = wave_fluxes[i][:,ell]
         freq = freqs[i]
-        plot = plt.loglog(freq, np.abs(wave_flux), label='Re={}, res={}, rot={}'.format(Re[i], res[i], rotation[i]))
+        plot = plt.loglog(freq, np.abs(wave_flux), label='tauF={}, Re={}, res={}, rot={}'.format(tauF[i], Re[i], res[i], rotation[i]))
 #        if Re[i] == np.max(Re):
 ##            for p in [-15/2]:
 ##                shift = (wave_flux)[freq > 2][0] / 2**(p)
@@ -195,7 +195,7 @@ for ell in range(11):
         plt.xlabel('freq (sim units)')
         plt.ylabel(r'$F(\omega,\ell)|_\ell$')
 #        plt.ylabel(r'$f^{-13/2}\frac{\partial^2 F}{\partial \ln f}$')
-        plt.ylim(1e-20, 1e-7)
+        plt.ylim(1e-30, 1e-12)
     fit_label = r'${{{:.3e}}} f^{{{:.1f}}} \ell^{{{:.1f}}}$'.format(A0, f_norm_pow, ell_norm_pow)
     plt.loglog(freq, A0*freq**(f_norm_pow)*ell**(ell_norm_pow), c='k', label=fit_label)
     plt.legend(loc='lower left', fontsize=8)
