@@ -1,28 +1,3 @@
-"""
-d3 script for eigenvalue problem of anelastic convection / waves in a massive star.
-
-Usage:
-    evp_ball_2shells_AN.py [options]
-    evp_ball_2shells_AN.py <config> [options]
-
-Options:
-    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 5e1]
-    --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --L=<Lmax>           Angular resolution (Lmax   [default: 1]
-    --nrB=<Nmax>          The ball radial degrees of freedom (Nmax+1)   [default: 64]
-    --nrS1=<Nmax>          The shell radial degrees of freedom (Nmax+1)   [default: 64]
-    --nrS2=<Nmax>          The shell radial degrees of freedom (Nmax+1)   [default: 16]
-    --nrB_hi=<Nmax>       The hires-ball radial degrees of freedom (Nmax+1)
-    --nrS1_hi=<Nmax>       The hires-shell radial degrees of freedom (Nmax+1)
-    --nrS2_hi=<Nmax>       The hires-shell radial degrees of freedom (Nmax+1)
-
-    --label=<label>      A label to add to the end of the output directory
-
-    --ncc_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
-    --ncc_file_hi=<f>   path to a .h5 file of ICCs, curated from a MESA model (for hires solve)
-
-    --duals_only        If flagged, just do the dual calculation, don't do the dense EVP solve.
-"""
 import time
 import gc
 import os
@@ -42,7 +17,7 @@ from scipy.interpolate import interp1d
 import logging
 logger = logging.getLogger(__name__)
 
-from anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
+from .anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
 
 from scipy.sparse import linalg as spla
 from scipy import sparse
