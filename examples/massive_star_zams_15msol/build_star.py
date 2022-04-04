@@ -225,6 +225,9 @@ if __name__ == '__main__':
     Re_shift = ((L_nd**2/tau_nd) / (L_CZ**2/tau_heat))
     print('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
     print('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
+
+    #construct rad_diff_profile
+    sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
     
     #Central values
     rho_r0    = rho[0]
@@ -274,22 +277,28 @@ if __name__ == '__main__':
         phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
     
-    #construct rad_diff_profile
-    #sim_rad_diff = np.copy(rad_diff_nd)
-    #diff_transition = r_nd[sim_rad_diff > 1/config['reynolds_target']][0]
-    #sim_rad_diff[:] = (1/config['reynolds_target'])*one_to_zero(r_nd, diff_transition*1.05, width=0.02*diff_transition)\
-    #                + rad_diff_nd*zero_to_one(r_nd, diff_transition*0.95, width=0.1*diff_transition)
-    sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff #1/config['reynolds_target']
-    
+
+    ncc_config_file = 'ncc_specs.cfg'
+    ncc_config_file = Path(ncc_config_file)
+    ncc_config_p = ConfigParser()
+    ncc_config_p.optionxform = str
+    ncc_config_p.read(str(ncc_config_file))
     ncc_dict = OrderedDict()
-    for ncc in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T', 'H', 'grad_s0', 'chi_rad', 'grad_chi_rad', 'nu_diff']:
+    for ncc in ncc_config_p.keys():
+        print(ncc)
+        if ncc == 'defaults' or ncc == 'DEFAULT':
+            continue
         ncc_dict[ncc] = OrderedDict()
-        for bn in bases.keys():
-            ncc_dict[ncc]['Nmax_{}'.format(bn)] = 32
+        if 'nr_max' in ncc_config_p[ncc].keys():
+            nr_max = ncc_config_p[ncc]['nr_max']
+        else:
+            nr_max = ncc_config_p['defaults']['nr_max']
+        nr_max = [int(n) for n in nr_max.split(',')]
+        for i, bn in enumerate(bases.keys()):
+            ncc_dict[ncc]['Nmax_{}'.format(bn)] = nr_max[i]
             ncc_dict[ncc]['field_{}'.format(bn)] = None
-        ncc_dict[ncc]['Nmax_S2'.format(bn)] = 10
-        ncc_dict[ncc]['vector'] = False
-        ncc_dict[ncc]['grid_only'] = False 
+        ncc_dict[ncc]['vector'] = ncc_config_p.getboolean(ncc, 'vector')
+        ncc_dict[ncc]['grid_only'] = ncc_config_p.getboolean(ncc, 'grid_only')
     
     ncc_dict['ln_rho']['interp_func'] = interp1d(r_nd, np.log(rho/rho_nd))
     ncc_dict['ln_T']['interp_func'] = interp1d(r_nd, np.log(T/T_nd))
@@ -299,38 +308,14 @@ if __name__ == '__main__':
     ncc_dict['grad_T']['interp_func'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
     ncc_dict['H']['interp_func'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H_nd))
     ncc_dict['grad_s0']['interp_func'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
-    
     ncc_dict['nu_diff']['interp_func'] = interp1d(r_nd, config['prandtl']*rad_diff_cutoff*np.ones_like(r_nd))
     ncc_dict['chi_rad']['interp_func'] = interp1d(r_nd, sim_rad_diff)
     ncc_dict['grad_chi_rad']['interp_func'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
     
-    ncc_dict['grad_ln_rho']['vector'] = True
-    ncc_dict['grad_ln_T']['vector'] = True
-    ncc_dict['grad_T']['vector'] = True
-    ncc_dict['grad_s0']['vector'] = True
-    ncc_dict['grad_chi_rad']['vector'] = True
-    
-    ncc_dict['grad_s0']['Nmax_B'] = 10
-    ncc_dict['ln_T']['Nmax_B'] = 16
-    ncc_dict['grad_ln_T']['Nmax_B'] = 17
-    ncc_dict['H']['Nmax_B'] = 60
-    ncc_dict['H']['Nmax_S1'] = 2
-    ncc_dict['H']['Nmax_S2'] = 2
-    
-    ncc_dict['chi_rad']['Nmax_B'] = 1
-    ncc_dict['chi_rad']['Nmax_S1'] = 20
-    ncc_dict['chi_rad']['Nmax_S2'] = 10
-    
-    ncc_dict['nu_diff']['Nmax_B'] = 1
-    ncc_dict['nu_diff']['Nmax_S1'] = 1
-    ncc_dict['nu_diff']['Nmax_S2'] = 1
-    
-    ncc_dict['H']['grid_only'] = True
-    
-    
     for bn, basis in bases.items():
         rvals = dedalus_r[bn]
         for ncc in ncc_dict.keys():
+            print(ncc)
             interp_func = ncc_dict[ncc]['interp_func']
             Nmax = ncc_dict[ncc]['Nmax_{}'.format(bn)]
             vector = ncc_dict[ncc]['vector']
