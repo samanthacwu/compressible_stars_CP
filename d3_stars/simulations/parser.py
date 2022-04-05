@@ -6,7 +6,7 @@ from configparser import ConfigParser
 import logging
 logger = logging.getLogger(__name__)
 
-def parse_std_config(config_file, out_dir='star'):
+def parse_std_config(config_file, star_dir='star'):
     config = OrderedDict()
     raw_config = OrderedDict()
     config_file = Path(config_file)
@@ -29,21 +29,28 @@ def parse_std_config(config_file, out_dir='star'):
         config[n] = v
         raw_config[n] = v
 
+    for n, v in config_p.items('eigenvalue'):
+        raw_config[n] = v
+        if n in ['lmax',]:
+            config[n] = int(v)
+        elif n in ['hires_factor',]:
+            config[n] = float(v)
+
     for k in ['reynolds_target', 'prandtl', 'ncc_cutoff', 'n_dealias', 'l_dealias']:
         config[k] = float(config[k])
 
     if float(config['r_bounds'][0].lower()) != 0:
         raise ValueError("The inner basis must currently be a BallBasis; set the first value of r_bounds to zero.")
 
-    out_file = '{:s}/star_'.format(out_dir)
-    out_file += (len(config['nr'])*"{}+").format(*tuple(config['nr']))[:-1]
-    out_file += '_bounds{}-{}'.format(config['r_bounds'][0], config['r_bounds'][-1])
-    out_file += '_Re{}_de{}_cutoff{}.h5'.format(raw_config['reynolds_target'], raw_config['n_dealias'], raw_config['ncc_cutoff'])
-    logger.info('star file: {}'.format(out_file))
-    if not os.path.exists('{:s}'.format(out_dir)):
-        os.mkdir('{:s}'.format(out_dir))
+    star_file = '{:s}/star_'.format(star_dir)
+    star_file += (len(config['nr'])*"{}+").format(*tuple(config['nr']))[:-1]
+    star_file += '_bounds{}-{}'.format(config['r_bounds'][0], config['r_bounds'][-1])
+    star_file += '_Re{}_de{}_cutoff{}.h5'.format(raw_config['reynolds_target'], raw_config['n_dealias'], raw_config['ncc_cutoff'])
+    logger.info('star file: {}'.format(star_file))
+    if not os.path.exists('{:s}'.format(star_dir)):
+        os.mkdir('{:s}'.format(star_dir))
 
-    return config, raw_config, out_dir, out_file
+    return config, raw_config, star_dir, star_file
 
 
 def parse_ncc_config(ncc_config_file):

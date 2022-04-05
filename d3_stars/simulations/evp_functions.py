@@ -55,28 +55,31 @@ def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
 
 
 def matrix_info(subproblem):
+    if not os.path.exists('evp_matrices'):
+        os.mkdir('evp_matrices')
+
     sp = subproblem
     ell = subproblem.group[1]
     AL = (sp.pre_left.T @ sp.L_min).A
     BL = - (sp.pre_left.T @ sp.M_min).A
     plt.imshow(np.log10(np.abs(AL)))
     plt.colorbar()
-    plt.savefig("matrices/ell_A_%03i.png" %ell, dpi=600)
+    plt.savefig("evp_matrices/ell_A_%03i.png" %ell, dpi=600)
     plt.clf()
     plt.imshow(np.log10(np.abs(BL)))
     plt.colorbar()
-    plt.savefig("matrices/ell_B_%03i.png" %ell, dpi=600)
+    plt.savefig("evp_matrices/ell_B_%03i.png" %ell, dpi=600)
     plt.clf()
 
     A = (sp.L_min @ sp.pre_right).A
     B = - (sp.M_min @ sp.pre_right).A
     plt.imshow(np.log10(np.abs(A)))
     plt.colorbar()
-    plt.savefig("matrices/cond_ell_A_%03i.png" %ell, dpi=600)
+    plt.savefig("evp_matrices/cond_ell_A_%03i.png" %ell, dpi=600)
     plt.clf()
     plt.imshow(np.log10(np.abs(B)))
     plt.colorbar()
-    plt.savefig("matrices/cond_ell_B_%03i.png" %ell, dpi=600)
+    plt.savefig("evp_matrices/cond_ell_B_%03i.png" %ell, dpi=600)
     plt.clf()
 
     condition_number_A = np.linalg.cond(A)
