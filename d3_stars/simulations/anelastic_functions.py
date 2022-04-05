@@ -226,7 +226,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                         t_rot = np.inf
 
                 if sponge:
-                    f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+                    f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
             for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_T']:
                 variables['{}_{}'.format(k, bn)].change_scales((1,1,1))

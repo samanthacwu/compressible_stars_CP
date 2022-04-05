@@ -36,6 +36,20 @@ def parse_std_config(config_file, star_dir='star'):
         elif n in ['hires_factor',]:
             config[n] = float(v)
 
+    for n, v in config_p.items('dynamics'):
+        raw_config[n] = v
+        if n in ['ntheta',]:
+            config[n] = int(v)
+        elif n in ['safety', 'cfl_max_r', 'wall_hours', 'buoy_end_time', 'tau_factor', 'rotation_time', 'a0']:
+            config[n] = float(v)
+        elif n in ['sponge',]:
+            config[n] = config_p.getboolean('dynamics', n)
+        elif n == 'mesh':
+            mesh = [int(m) for m in v.split(',')]
+        else:
+            config[n] = v
+
+
     for k in ['reynolds_target', 'prandtl', 'ncc_cutoff', 'n_dealias', 'l_dealias']:
         config[k] = float(config[k])
 
