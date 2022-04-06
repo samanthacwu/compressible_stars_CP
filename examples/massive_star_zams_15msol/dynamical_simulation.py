@@ -42,7 +42,6 @@ import os
 import time
 import sys
 from collections import OrderedDict
-from operator import itemgetter
 from pathlib import Path
 
 import h5py
@@ -58,6 +57,7 @@ logger = logging.getLogger(__name__)
 
 from d3_stars.simulations.anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
 from d3_stars.simulations.parser import parse_std_config
+from d3_stars.simulations.outputs import initialize_outputs
 
 # Define smooth Heaviside functions
 from scipy.special import erf
@@ -228,140 +228,16 @@ if __name__ == '__main__':
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
 
-    ## Analysis Setup
-    # Cadence
-    scalar_dt = 0.25*t_buoy
-    lum_dt   = 0.5*t_buoy
-    visual_dt = 0.05*t_buoy
-    outer_shell_dt = max_dt
-    if Re/Re_shift > 1e4:
-        checkpoint_time = 2*t_buoy
-    else:
-        checkpoint_time = 10*t_buoy
+    analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
 
-    analysis_tasks = []
-    slices = solver.evaluator.add_file_handler('{:s}/slices'.format(out_dir), sim_dt=visual_dt, max_writes=40)
-    scalars = solver.evaluator.add_file_handler('{:s}/scalars'.format(out_dir), sim_dt=scalar_dt, max_writes=np.inf)
-    profiles = solver.evaluator.add_file_handler('{:s}/profiles'.format(out_dir), sim_dt=visual_dt, max_writes=100)
-    if sponge:
-        surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
-    else:
-        surface_shell_slices = solver.evaluator.add_file_handler('{:s}/wave_shell_slices'.format(out_dir), sim_dt=100000*max_dt, max_writes=20)
-    analysis_tasks.append(slices)
-    analysis_tasks.append(scalars)
-    analysis_tasks.append(profiles)
-    analysis_tasks.append(surface_shell_slices)
-
-    checkpoint = solver.evaluator.add_file_handler('{:s}/checkpoint'.format(out_dir), max_writes=1, sim_dt=checkpoint_time)
-    checkpoint.add_tasks(solver.state, layout='g')
-    analysis_tasks.append(checkpoint)
-
-
+    ## Loop output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
-
-    az_avg = lambda A: d3.Average(A, coords.coords[0])
-    s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
-
     for bn, basis in bases.items():
-        phi, theta, r = itemgetter('phi_'+bn, 'theta_'+bn, 'r_'+bn)(variables)
-        phi1, theta1, r1 = itemgetter('phi1_'+bn, 'theta1_'+bn, 'r1_'+bn)(variables)
-        ex, ey, ez = itemgetter('ex_'+bn, 'ey_'+bn, 'ez_'+bn)(variables)
-        T, rho = itemgetter('T_{}'.format(bn), 'rho_{}'.format(bn))(variables)
-        div_u, E = itemgetter('div_u_RHS_{}'.format(bn), 'E_RHS_{}'.format(bn))(variables)
+        vol_avg = variables['vol_avg_{}'.format(bn)]
         u = variables['u_{}'.format(bn)]
-        p = variables['p_{}'.format(bn)]
-        s1 = variables['s1_{}'.format(bn)]
         nu_diff = variables['nu_diff_{}'.format(bn)]
-
-        variables['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
-        variables['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
-        r_vals['g'] = r1
-        r_vec['g'][2] = r1
-        r_vals = d3.Grid(r_vals).evaluate()
-        er = d3.Grid(variables['er_{}'.format(bn)]).evaluate()
-
+        rho = variables['rho_{}'.format(bn)]
         u_squared = d3.dot(u, u)
-        ur = d3.dot(er, u)
-        pomega_hat = p - 0.5*u_squared
-        h = pomega_hat + T*s1
-        visc_flux = 2*(d3.dot(u, E) - (1/3) * u * div_u)
-        visc_flux_r = d3.dot(er, visc_flux)
-
-        angular_momentum = d3.cross(r_vec, rho*u)
-        am_Lx = d3.dot(ex, angular_momentum)
-        am_Ly = d3.dot(ey, angular_momentum)
-        am_Lz = d3.dot(ez, angular_momentum)
-
-        if type(basis) == d3.BallBasis:
-            volume  = (4/3)*np.pi*r_stitch[0]**3
-        else:
-            index = int(bn.split('S')[-1])-1
-            Ri = r_stitch[index]
-            volume  = (4/3)*np.pi*(r_outer**3-Ri**3)
-
-        vol_avg = variables['vol_avg_{}'.format(bn)] = lambda A: d3.Integrate(A/volume, coords)
-        lum_prof = variables['lum_prof_{}'.format(bn)] = lambda A: s2_avg((4*np.pi*r_vals**2) * A)
-
-        # Add slices for making movies
-        slices.add_task(u(theta=np.pi/2), name='u_eq_{}'.format(bn), layout='g')
-        slices.add_task(s1(theta=np.pi/2), name='s1_eq_{}'.format(bn), layout='g')
-
-        if type(basis) == d3.BallBasis:
-            radius_vals = (0.5, 1)
-            radius_strs = ('0.5', '1')
-        else:
-            value = 0.95*r_outer
-            if basis.radii[0] <= value and basis.radii[1] >= value:
-                radius_vals = (value,)
-                radius_strs = ('0.95R',)
-        for r_val, r_str in zip(radius_vals, radius_strs):
-                slices.add_task(u(r=r_val), name='u_{}(r={})'.format(bn, r_str), layout='g')
-                slices.add_task(s1(r=r_val), name='s1_{}(r={})'.format(bn, r_str), layout='g')
-
-        for az_val, phi_str in zip([0, np.pi/2, np.pi, 3*np.pi/2], ['0', '0.5*pi', 'pi', '1.5*pi',]):
-            slices.add_task(u(phi=az_val),  name='u_{}(phi={})'.format(bn, phi_str), layout='g')
-            slices.add_task(s1(phi=az_val), name='s1_{}(phi={})'.format(bn, phi_str), layout='g')
-
-        # Add scalars for simple evolution tracking
-        scalars.add_task(vol_avg((u_squared)**(1/2) / nu_diff), name='Re_avg_{}'.format(bn),  layout='g')
-        scalars.add_task(vol_avg(rho*u_squared/2), name='KE_{}'.format(bn),   layout='g')
-        scalars.add_task(vol_avg(rho*T*s1), name='TE_{}'.format(bn),  layout='g')
-        scalars.add_task(vol_avg(am_Lx), name='angular_momentum_x_{}'.format(bn), layout='g')
-        scalars.add_task(vol_avg(am_Ly), name='angular_momentum_y_{}'.format(bn), layout='g')
-        scalars.add_task(vol_avg(am_Lz), name='angular_momentum_z_{}'.format(bn), layout='g')
-        scalars.add_task(vol_avg(d3.dot(angular_momentum, angular_momentum)), name='square_angular_momentum_{}'.format(bn), layout='g')
-
-        # Add profiles to track structure and fluxes
-        profiles.add_task(s2_avg(s1), name='s1_profile_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(rho*ur*pomega_hat),   name='wave_lum_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(rho*ur*h),            name='enth_lum_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(-nu_diff*rho*visc_flux_r), name='visc_lum_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(-rho*T*d3.dot(er, d3.grad(s1)/Pe)), name='cond_lum_{}'.format(bn), layout='g')
-        profiles.add_task(lum_prof(0.5*rho*ur*u_squared), name='KE_lum_{}'.format(bn),   layout='g')
-
-        # Output high-cadence S2 shells for wave output tasks
-        if sponge:
-            if type(basis) == d3.BallBasis:
-                radius_vals = (0.90, 1.05)
-                radius_strs = ('0.90', '1.05')
-            else:
-                global_radius_vals = (1.5, 2.0, 2.5, 3.0, 3.5)
-                global_radius_strs = ('1.50', '2.00', '2.50', '3.00', '3.50')
-                radius_vals = []
-                radius_strs = []
-                for i, rv in enumerate(global_radius_vals):
-                    if basis.radii[0] <= rv and basis.radii[1] >= rv:
-                        radius_vals.append(rv)
-                        radius_strs.append(global_radius_strs[i])
-
-            for r_val, r_str in zip(radius_vals, radius_strs):
-                    surface_shell_slices.add_task(ur(r=r_val),         name='ur_{}(r={})'.format(bn, r_str), layout='g')
-                    surface_shell_slices.add_task(pomega_hat(r=r_val), name='pomega_{}(r={})'.format(bn, r_str), layout='g')
-        else:
-            if type(basis) != d3.BallBasis:
-                if basis.radii[1] == r_outer:
-                    surface_shell_slices.add_task(s1(r=r_outer), name='s1_{}(r=r_outer)'.format(bn), layout='g')
-
         logger_handler.add_task(vol_avg((u_squared)**(1/2)/nu_diff), name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(d3.integ(rho*(u_squared)/2), name='KE_{}'.format(bn), layout='g')
 
@@ -372,8 +248,7 @@ if __name__ == '__main__':
         heaviside_cfl['g'][:,:, r1_B.flatten() > CFL_max_r] = 0
     heaviside_cfl = d3.Grid(heaviside_cfl).evaluate()
 
-    #initial_max_dt = max_dt
-    initial_max_dt = np.min((visual_dt, t_rot*0.5))
+    initial_max_dt = max_dt
     while initial_max_dt < max_dt:
         max_dt /= 2
     if timestep is None:
@@ -390,6 +265,8 @@ if __name__ == '__main__':
     just_wrote    = False
     slice_time = np.inf
     Re0 = 0
+    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+    surface_shell_slices = even_analysis_tasks['shells']
     try:
         while solver.proceed:
             if max_dt_check and timestep < outer_shell_dt:

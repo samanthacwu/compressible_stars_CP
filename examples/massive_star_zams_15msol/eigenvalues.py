@@ -30,7 +30,7 @@ if __name__ == '__main__':
     config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
     Lmax = config['lmax']
     ntheta = Lmax + 1
-    nphi = 2*ntheta
+    nphi = 4#2*ntheta
     hires_factor = config['hires_factor']
     do_hires = hires_factor != 1
 
