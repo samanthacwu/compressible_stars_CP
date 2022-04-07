@@ -26,5 +26,5 @@ if __name__ == '__main__':
     for ell in eigenvalues.ells:
         eigenvalues.solve(ell)
         eigenvalues.check_eigen()
-#        eigenvalues.output()
-#        eigenvalues.get_duals()
+        eigenvalues.output()
+        eigenvalues.get_duals()
