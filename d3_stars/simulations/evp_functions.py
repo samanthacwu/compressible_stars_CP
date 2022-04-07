@@ -619,7 +619,7 @@ class StellarEVP():
 #                plt.show()
 
                 if vector_diff < np.sqrt(cutoff):
-                    logger.info('good evalue w/ vdiff', vector_diff, 'czfrac', cz_KE_frac.real)
+                    logger.info('good evalue w/ vdiff {} and czfrac {}'.format(vector_diff, cz_KE_frac.real))
                     if cz_KE_frac.real > 0.5:
                         logger.info('evalue is in the CZ, skipping')
                     elif cz_KE_frac.real < 1e-3:

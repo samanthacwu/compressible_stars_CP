@@ -324,12 +324,10 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
         ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config['ncc_cutoff']] = 0
     
     #Post-processing for grad chi rad - doesn't work great...
-    diff_transition = r_nd[sim_rad_diff > rad_diff_cutoff][0].value
     nr_post = ncc_dict['grad_chi_rad']['nr_post']
     nr_post = [int(n) for n in nr_post.split(',')]
-    for bn in bases.keys():
+    for i, bn in enumerate(bases.keys()):
         if bn == 'B': continue
-        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'][2,] *= zero_to_one(dedalus_r[bn], diff_transition, width=(r_bound_nd[-1]-r_bound_nd[-2])/10)
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config['ncc_cutoff']] = 0
     
