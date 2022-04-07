@@ -29,14 +29,14 @@ output_tasks['Ly'] = 'dot(ey_{0},' + output_tasks['L'] + ')'
 output_tasks['Lz'] = 'dot(ez_{0},' + output_tasks['L'] + ')'
 output_tasks['L_squared'] = 'dot(' + output_tasks['L'] + ',' + output_tasks['L'] + ')'
 
-output_tasks['visc_flux'] = '-2*rho_{0}*nu_diff_{0}*(dot(u_{0}, E_RHS_{0}) - (1/3) * u_{0} * div_u_{0})'
-output_tasks['wave_flux'] = 'rho_{0}*u_{0}*(' + output_tasks['pomega_hat'] + ')'
-output_tasks['enth_flux'] = 'rho_{0}*u_{0}*(' + output_tasks['enthalpy'] + ')'
-output_tasks['cond_flux'] = '-rho_{0}*T_{0}*chi_rad_{0}*grad(s1_{0})'
-output_tasks['KE_flux']   = '0.5*rho_{0}*u_{0}*' + output_tasks['u_squared']
+output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-2*rho_{0}*nu_diff_{0}*(dot(u_{0}, E_RHS_{0}) - (1/3) * u_{0} * div_u_{0}))'
+output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(rho_{0}*u_{0}*(' + output_tasks['pomega_hat'] + '))'
+output_tasks['enth_lum'] = '(4*np.pi*r_vals_{0}**2)*(rho_{0}*u_{0}*(' + output_tasks['enthalpy'] + '))'
+output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*T_{0}*chi_rad_{0}*grad(s1_{0}))'
+output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(0.5*rho_{0}*u_{0}*' + output_tasks['u_squared'] + ')'
 
-for flux in ['visc_flux', 'wave_flux', 'enth_flux', 'cond_flux', 'KE_flux']:
-    output_tasks['{}_r'.format(flux)] = 'dot(er_{0}, ' + output_tasks[flux] + ')'
+for lum in ['visc_lum', 'wave_lum', 'enth_lum', 'cond_lum', 'KE_lum']:
+    output_tasks['{}_r'.format(lum)] = 'dot(er_{0}, ' + output_tasks[lum] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales
@@ -67,9 +67,6 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     def vol_avg(A, volume):
         return d3.Integrate(A/volume, coords)
 
-    def luminosity(A, rvals):
-        return s2_avg(4*np.pi*r_vals**2*A)
-
     for bn, basis in bases.items():
         solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
         solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
@@ -83,9 +80,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
             vol = namespace['volume_{}'.format(bn)]  = (4/3)*np.pi*(Ro**3 - Ri**3)
 
         solver.problem.namespace['vol_avg_{}'.format(bn)] = functools.partial(vol_avg, volume=vol)
-        solver.problem.namespace['luminosity_{}'.format(bn)] = functools.partial(luminosity, rvals=r_vals)
         namespace['vol_avg_{}'.format(bn)] = solver.problem.namespace['vol_avg_{}'.format(bn)]
-        namespace['luminosity_{}'.format(bn)] = solver.problem.namespace['luminosity_{}'.format(bn)]
     
 
     for k in config.keys():
@@ -177,15 +172,5 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                         task_str = 's2_avg({})'.format(fieldstr)
                         task = eval(task_str, dict(solver.problem.namespace))
                         handler.add_task(task, name='s2_avg({}_{})'.format(fieldname, bn))
-
-                elif config[k]['type'] == 'luminosity':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-
-                    for item in items:
-                        fieldname = config[k][item]
-                        fieldstr = output_tasks[fieldname].format(bn)
-                        task_str = 'luminosity_{}({})'.format(bn, fieldstr)
-                        task = eval(task_str, dict(solver.problem.namespace))
-                        handler.add_task(task, name='luminosity({}_{})'.format(fieldname, bn))
 
     return analysis_tasks, even_analysis_tasks
