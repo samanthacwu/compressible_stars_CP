@@ -1,42 +1,5 @@
 """
-d3 script for anelastic convection in a stitched BallBasis and ShellBasis domain.
-
-A config file can be provided which overwrites any number of the options below, but command line flags can also be used if preferred.
-Note that options specified in a cnofig file override command line arguments.
-
-Usage:
-    ivp_ball_2shells_AN.py [options]
-    ivp_ball_2shells_AN.py <config> [options]
-
-Options:
-    --Re=<Re>            The Reynolds number of the numerical diffusivities [default: 2e2]
-    --Pr=<Prandtl>       The Prandtl number  of the numerical diffusivities [default: 1]
-    --ntheta=<res>       Number of theta grid points (Lmax+1)   [default: 4]
-    --nrB=<res>          Number of radial grid points in ball (Nmax+1)   [default: 24]
-    --nrS1=<res>          Number of radial grid points in first shell (Nmax+1)   [default: 8]
-    --nrS2=<res>          Number of radial grid points in second shell (Nmax+1)   [default: 8]
-    --sponge             If flagged, add a damping layer in the shell that damps out waves.
-    --tau_factor=<f>     Multiplication factor on sponge term [default: 1]
-
-    --wall_hours=<t>     Max number of wall hours to run simulation for [default: 24]
-    --buoy_end_time=<t>  Max number of buoyancy time units to simulate [default: 1e5]
-
-    --mesh=<n,m>         The processor mesh over which to distribute the cores
-
-    --RK222              Use RK222 (default is SBDF2)
-    --SBDF4              Use SBDF4 (default is SBDF2)
-    --safety=<s>         Timestep CFL safety factor [default: 0.2]
-    --CFL_max_r=<r>      zero out velocities above this radius value for CFL
-
-    --ncc_file=<f>      path to a .h5 file of ICCs, curated from a MESA model
-    --restart=<chk_f>    path to a checkpoint file to restart from
-    --A0=<A>             Amplitude of random noise initial conditions [default: 1e-6]
-
-    --label=<label>      A label to add to the end of the output directory
-    --cutoff=<c>         NCC cutoff magnitude [default: 1e-10]
-
-    --rotation_time=<t>  Rotation timescale, in days (if ncc_file is not None) or sim units (for polytrope)
-
+d3 script for a dynamical simulation of anelastic convection.
 """
 import os
 import time
@@ -194,8 +157,8 @@ if __name__ == '__main__':
 
     for i, bn in enumerate(bases.keys()):
         variables['sponge_{}'.format(bn)]['g'] *= tau_factor
-    max_dt, t_buoy, t_rot = timescales
-    logger.info('timescales -- max_dt {}, t_buoy {}, t_rot {}'.format(max_dt, t_buoy, t_rot))
+    t_kep, t_heat, t_rot = timescales
+    logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
 
     # Put nccs and fields into locals()
     locals().update(variables)
@@ -210,7 +173,7 @@ if __name__ == '__main__':
     logger.info("Problem built")
     # Solver
     solver = problem.build_solver(ts, ncc_cutoff=config['ncc_cutoff'])
-    solver.stop_sim_time = buoy_end_time*t_buoy
+    solver.stop_sim_time = buoy_end_time*t_heat
     solver.stop_wall_time = wall_hours * 60 * 60
     logger.info("solver built")
 
@@ -230,7 +193,7 @@ if __name__ == '__main__':
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
 
-    ## Loop output Setup
+    ## Logger output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
     for bn, basis in bases.items():
         vol_avg = variables['vol_avg_{}'.format(bn)]
@@ -248,7 +211,8 @@ if __name__ == '__main__':
         heaviside_cfl['g'][:,:, r1_B.flatten() > CFL_max_r] = 0
     heaviside_cfl = d3.Grid(heaviside_cfl).evaluate()
 
-    initial_max_dt = max_dt
+    max_dt = t_kep
+    initial_max_dt = 0.05*t_heat 
     while initial_max_dt < max_dt:
         max_dt /= 2
     if timestep is None:
@@ -331,7 +295,7 @@ if __name__ == '__main__':
         solver.log_stats()
 
         logger.info('making final checkpoint')
-        fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_buoy)
+        fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_heat)
         fcheckpoint.add_tasks(solver.state, layout='g')
         solver.step(timestep)
 
