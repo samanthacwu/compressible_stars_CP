@@ -1,3 +1,4 @@
+import functools
 from operator import itemgetter
 from collections import OrderedDict
 import numpy as np
@@ -63,6 +64,30 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     config = ConfigParser()
     config.read(str(config_file))
 
+    def vol_avg(A, volume):
+        return d3.Integrate(A/volume, coords)
+
+    def luminosity(A, rvals):
+        return s2_avg(4*np.pi*r_vals**2*A)
+
+    for bn, basis in bases.items():
+        solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
+        solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
+        r_vals['g'] = namespace['r1_{}'.format(bn)]
+        r_vec['g'][2] = namespace['r1_{}'.format(bn)]
+
+        if type(basis) == d3.BallBasis:
+            vol = namespace['volume_{}'.format(bn)]  = (4/3)*np.pi*basis.radius**3
+        else:
+            Ri, Ro = basis.radii[0], basis.radii[1]
+            vol = namespace['volume_{}'.format(bn)]  = (4/3)*np.pi*(Ro**3 - Ri**3)
+
+        solver.problem.namespace['vol_avg_{}'.format(bn)] = functools.partial(vol_avg, volume=vol)
+        solver.problem.namespace['luminosity_{}'.format(bn)] = functools.partial(luminosity, rvals=r_vals)
+        namespace['vol_avg_{}'.format(bn)] = solver.problem.namespace['vol_avg_{}'.format(bn)]
+        namespace['luminosity_{}'.format(bn)] = solver.problem.namespace['luminosity_{}'.format(bn)]
+    
+
     for k in config.keys():
         if 'handler-' in k or k == 'checkpoint':
             h_name = config[k]['name']
@@ -73,7 +98,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
             elif time_unit == 'kepler':
                 t_unit = t_kepler
             else:
-                print('t unit not found; using t_unit = 1')
+                logger.info('t unit not found; using t_unit = 1')
                 t_unit = 1
             sim_dt = float(config[k]['dt_factor'])*t_unit
             if k == 'checkpoint':
@@ -93,10 +118,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                 handler = analysis_tasks[config[k]['handler']]
 
             for bn, basis in bases.items():
-                solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
-                solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
-                r_vals['g'] = namespace['r1_{}'.format(bn)]
-                r_vec['g'][2] = namespace['r1_{}'.format(bn)]
+
                 if config[k]['type'] == 'equator':
                     items = [item for item in config[k].keys() if 'field' in item ]
                     for item in items:
@@ -139,20 +161,13 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                             task = eval('({})(r={})'.format(fieldstr, interp), dict(solver.problem.namespace))
                             handler.add_task(task, name='shell({}_{},r={})'.format(fieldname, bn, base_interp))
                 elif config[k]['type'] == 'vol_avg':
-                    if type(basis) == d3.BallBasis:
-                        volume  = (4/3)*np.pi*basis.radius**3
-                    else:
-                        Ri, Ro = basis.radii[0], basis.radii[1]
-                        volume  = (4/3)*np.pi*(Ro**3 - Ri**3)
                     items = [item for item in config[k].keys() if 'field' in item ]
-                    solver.problem.namespace['vol_avg_{}'.format(bn)] = lambda A: d3.Integrate(A/volume, coords)
-                    namespace['vol_avg_{}'.format(bn)] = solver.problem.namespace['vol_avg_{}'.format(bn)]
 
                     for item in items:
                         fieldname = config[k][item]
                         fieldstr = output_tasks[fieldname].format(bn)
                         task = eval('vol_avg_{}({})'.format(bn, fieldstr), dict(solver.problem.namespace))
-                        handler.add_task(task, name='vol_avg({}_{},r={})'.format(fieldname, bn, base_interp))
+                        handler.add_task(task, name='vol_avg({}_{})'.format(fieldname, bn))
                 elif config[k]['type'] == 's2_avg':
                     items = [item for item in config[k].keys() if 'field' in item ]
 
@@ -165,8 +180,6 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
 
                 elif config[k]['type'] == 'luminosity':
                     items = [item for item in config[k].keys() if 'field' in item ]
-                    solver.problem.namespace['luminosity_{}'.format(bn)] = lambda A: s2_avg((4*np.pi*r_vals**2) * A)
-                    namespace['luminosity_{}'.format(bn)] = solver.problem.namespace['luminosity_{}'.format(bn)]
 
                     for item in items:
                         fieldname = config[k][item]

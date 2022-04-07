@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 from d3_stars.simulations.anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
 from d3_stars.simulations.parser import parse_std_config
-from d3_stars.simulations.outputs import initialize_outputs
+from d3_stars.simulations.outputs import initialize_outputs, output_tasks
 
 # Define smooth Heaviside functions
 from scipy.special import erf
@@ -196,13 +196,10 @@ if __name__ == '__main__':
     ## Logger output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
     for bn, basis in bases.items():
-        vol_avg = variables['vol_avg_{}'.format(bn)]
-        u = variables['u_{}'.format(bn)]
-        nu_diff = variables['nu_diff_{}'.format(bn)]
-        rho = variables['rho_{}'.format(bn)]
-        u_squared = d3.dot(u, u)
-        logger_handler.add_task(vol_avg((u_squared)**(1/2)/nu_diff), name='Re_avg_{}'.format(bn), layout='g')
-        logger_handler.add_task(d3.integ(rho*(u_squared)/2), name='KE_{}'.format(bn), layout='g')
+        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_KE = eval('integ(' + output_tasks['KE'].format(bn) + ')', dict(solver.problem.namespace))
+        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_KE, name='KE_{}'.format(bn), layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
