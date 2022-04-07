@@ -150,9 +150,6 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['VH_{}'.format(bn)] = 2*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
 
 
-        # Grid-lock some operators / define grad's
-        for field in ['H', 'inv_T']:
-            variables['{}_{}'.format(field, bn)] = d3.Grid(variables['{}_{}'.format(field, bn)]).evaluate()
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
@@ -172,7 +169,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             variables['sponge_term_{}'.format(bn)] = 0
     return variables
 
-def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False):
+def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, scales=None):
     logger.info('using NCC file {}'.format(ncc_file))
     max_dt = None
     t_buoy = None
@@ -180,17 +177,20 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
     logger.info('collecing nccs for {}'.format(bases.keys()))
     for basis_number, bn in enumerate(bases.keys()):
         basis = bases[bn]
-        phi, theta, r = basis.local_grids(basis.dealias)
+        ncc_scales = scales
+        if ncc_scales is None:
+            ncc_scales = basis.dealias
+        phi, theta, r = basis.local_grids(ncc_scales)
         phi1, theta1, r1 = basis.local_grids((1,1,1))
         # Load MESA NCC file or setup NCCs using polytrope
         a_vector = variables['{}_{}'.format(vec_fields[0], bn)]
-        grid_slices  = dist.layouts[-1].slices(a_vector.domain, basis.dealias[-1])
-        a_vector.change_scales(basis.dealias)
+        grid_slices  = dist.layouts[-1].slices(a_vector.domain, ncc_scales[-1])
+        a_vector.change_scales(ncc_scales)
         local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
         if ncc_file is not None:
             logger.info('reading NCCs from {}'.format(ncc_file))
             for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_T']:
-                variables['{}_{}'.format(k, bn)].change_scales(basis.dealias)
+                variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
                 for k in vec_nccs:
                     if '{}_{}'.format(k, bn) not in f.keys():
@@ -226,8 +226,10 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                         t_rot = np.inf
 
                 if sponge:
-                    f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_shell'][()])/(2*np.pi)
+                    f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_T']:
+                variables['{}_{}'.format(k, bn)].change_scales((1,1,1))
 
         else:
             logger.info("Using polytropic initial conditions")
@@ -261,7 +263,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['grad_s0_{}'.format(bn)].change_scales(1)
                 print(variables['grad_s0_{}'.format(bn)]['g'].shape, 'grad_s0_{}'.format(bn))
                 variables['grad_s0_{}'.format(bn)]['g'][2]  = grad_s0_func(r1)
-                for f in ['grad_ln_rho', 'grad_ln_T', 'grad_T']: variables['{}_{}'.format(f, bn)].change_scales(basis.dealias)
+                for f in ['grad_ln_rho', 'grad_ln_T', 'grad_T']: variables['{}_{}'.format(f, bn)].change_scales(ncc_scales)
                 variables['grad_ln_rho_{}'.format(bn)]['g']   = grad_ln_rho_full['g'][:,0,0,None,None,:]
                 variables['grad_ln_T_{}'.format(bn)]['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
                 variables['grad_T_{}'.format(bn)]['g']      = grad_T_full['g'][:,0,0,None,None,:]
@@ -272,6 +274,11 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
+
+
+    # Grid-lock some operators / define grad's
+    for field in ['H', 'inv_T']:
+        variables['{}_{}'.format(field, bn)] = d3.Grid(variables['{}_{}'.format(field, bn)]).evaluate()
 
     return variables, (max_dt, t_buoy, t_rot)
 
