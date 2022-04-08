@@ -196,7 +196,7 @@ if __name__ == '__main__':
     ## Logger output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
     for bn, basis in bases.items():
-        re_avg = eval('vol_avg_{}'.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
+        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
         integ_KE = eval('integ(' + output_tasks['KE'].format(bn) + ')', dict(solver.problem.namespace))
         logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(integ_KE, name='KE_{}'.format(bn), layout='g')
