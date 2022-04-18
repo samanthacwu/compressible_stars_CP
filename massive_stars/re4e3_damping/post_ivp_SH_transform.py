@@ -5,10 +5,10 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    spherical_harmonic_transform.py <root_dir> [options]
+    post_ivp_SH_transform.py [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: wave_shell_slices]
+    --data_dir=<dir>                    Name of data handler directory [default: shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
@@ -40,19 +40,22 @@ import dedalus.public as d3
 from dedalus.tools import logging
 from scipy import sparse
 from mpi4py import MPI
+import matplotlib.pyplot as plt
+from dedalus.tools.config import config
+
+
+from d3_stars.simulations.parser import parse_std_config
 
 from plotpal.file_reader import SingleTypeReader as SR
-import matplotlib.pyplot as plt
 
 import logging
 logger = logging.getLogger(__name__)
 
-from dedalus.tools.config import config
 
 args = docopt(__doc__)
 
 # Read in master output directory
-root_dir    = args['<root_dir>']
+root_dir    = './'
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
@@ -78,12 +81,12 @@ if not reader.idle:
     else:
         fields = [args['--field'],]
 
-    resolution_regex = re.compile('(.*)x(.*)x(.*)')
-    field_regex = re.compile('(.*)\(r=(.*)\)')
-    for str_bit in root_dir.split('_'):
-        if resolution_regex.match(str_bit):
-            res_strs = str_bit.split('x')
-            resolution = (int(res_strs[0]), int(res_strs[1]), 1)
+    config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
+    out_dir = './'
+    ntheta = config['ntheta']
+    nphi = 2*ntheta
+
+    resolution = (nphi, ntheta, 1)
 
     # Parameters
     dtype = np.float64

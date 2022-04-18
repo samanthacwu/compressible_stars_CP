@@ -2,12 +2,12 @@
 This script computes the wave flux in a d3 spherical simulation
 
 Usage:
-    spherical_harmonci_wave_flux.py <root_dir> [options]
+    post_ivp_SH_wave_flux.py [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_wave_shell_slices]
+    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
-    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
+    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 100]
     --n_files=<num_files>               Total number of files to plot
     --dpi=<dpi>                         Image pixel density [default: 200]
 
@@ -41,13 +41,14 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 
-from power_spectrum_functions import clean_cfft, normalize_cfft_power
+from d3_stars.simulations.parser import parse_std_config
+from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
 
 args = docopt(__doc__)
-res = re.compile('(.*)\(r=(.*)\)')
+res = re.compile('(.*),r=(.*)')
 
 # Read in master output directory
-root_dir    = args['<root_dir>']
+root_dir    = './'
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
@@ -61,7 +62,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-32_Re4e3_de1.5_cutoff1e-10.h5'
+config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]
@@ -88,9 +89,9 @@ with h5py.File(reader.files[0], 'r') as f:
 radii = []
 for f in fields:
     if res.match(f):
-        radius = float(f.split('r=')[-1].split(')')[0])
+        radius_str = f.split('r=')[-1].split(')')[0]
         if radius not in radii:
-            radii.append(radius)
+            radii.append(radius_str)
 if not args['--no_ft']:
     times = []
     print('getting times...')
@@ -140,10 +141,15 @@ if not args['--no_ft']:
 
 #Get spectrum = rho*(real(ur*conj(p)))
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
-    if 'wave_flux(r={})'.format(radii[0]) not in wf.keys():
+    if 'wave_luminosity(r={})'.format(radii[0]) not in wf.keys():
         raw_freqs = wf['freqs'][()]
         raw_freqs_invDay = wf['freqs_inv_day'][()]
-        for i, radius in enumerate(radii):
+        for i, radius_str in enumerate(radii):
+            if 'R' in radius_str:
+                radius = float(radius_str.replace('R', ''))*r_outer
+            else:
+                radius = float(radius_str)
+
             for k in wf.keys():
                 if 'r={}'.format(radius) in k:
                     print(k)
@@ -151,7 +157,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
                         ur = wf[k][()]
                     if 'pomega_' in k:
                         p = wf[k][()]
-            spectrum = radius**2*rho_func(radius)*(ur*np.conj(p)).real
+            spectrum = 4*np.pi*radius**2*rho_func(radius)*(ur*np.conj(p)).real
             # Collapse negative frequencies
             for f in raw_freqs:
                 if f < 0:
@@ -159,14 +165,14 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
             # Sum over m's.
             spectrum = spectrum[raw_freqs >= 0,:]
             spectrum = np.sum(spectrum, axis=2)
-            wf['wave_flux(r={})'.format(radius)] = spectrum
+            wf['wave_luminosity(r={})'.format(radius_str)] = spectrum
             if i == 0:
                 wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
                 wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
-    with h5py.File('{}/wave_flux.h5'.format(full_out_dir), 'w') as of:
+    with h5py.File('{}/wave_luminosity.h5'.format(full_out_dir), 'w') as of:
         save_radius = 1.5
-        print('saving wave flux at r=1.5')
-        of['wave_flux'] = wf['wave_flux(r=1.5)'][()]
+        print('saving wave luminosity at r=1.5')
+        of['wave_luminosity'] = wf['wave_luminosity(r=1.5)'][()]
         of['real_freqs'] = wf['real_freqs'][()]
         of['real_freqs_inv_day'] = wf['real_freqs_inv_day'][()]
         of['ells'] = wf['ells'][()]
@@ -180,17 +186,21 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
     for f in freqs_for_dfdell:
         print('plotting f = {}'.format(f))
         f_ind = np.argmin(np.abs(freqs - f))
-        for radius in radii:
+        for i, radius_str in enumerate(radii):
+            if 'R' in radius_str:
+                radius = float(radius_str.replace('R', ''))*r_outer
+            else:
+                radius = float(radius_str)
             if radius < 1: continue
-            wave_flux = rf['wave_flux(r={})'.format(radius)][f_ind, :]
-            plt.loglog(ells, ells*wave_flux, label='r={}'.format(radius))
-            if radius == radii[1]:
-                shift = (ells*wave_flux)[ells == 2]
+            wave_luminosity = rf['wave_luminosity(r={})'.format(radius)][f_ind, :]
+            plt.loglog(ells, ells*wave_luminosity, label='r={}'.format(radius))
+            if i == 1:
+                shift = (ells*wave_luminosity)[ells == 2]
         plt.loglog(ells, shift*(ells/2)**4, c='k', label=r'$\ell^4$')
         plt.legend(loc='best')
         plt.title('f = {} 1/day'.format(f))
         plt.xlabel(r'$\ell$')
-        plt.ylabel(r'$\frac{\partial^2 F}{\partial\ln\ell}$')
+        plt.ylabel('wave luminosity')
         plt.ylim(1e-33, 1e-17)
         plt.xlim(1, ells.max())
         fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
@@ -202,17 +212,22 @@ for ell in range(11):
     print('plotting ell = {}'.format(ell))
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
         freqs = rf['real_freqs'][()]
-        for radius in radii:
+        for i, radius_str in enumerate(radii):
+            if 'R' in radius_str:
+                radius = float(radius_str.replace('R', ''))*r_outer
+            else:
+                radius = float(radius_str)
+
             if radius < 1: continue
-            wave_flux = rf['wave_flux(r={})'.format(radius)][:,ell]
-            plt.loglog(freqs, freqs*wave_flux, label='r={}'.format(radius))
-            if radius == radii[1]:
-                shift = (freqs*wave_flux)[freqs > 1][0]
-    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 1][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
+            wave_luminosity = rf['wave_luminosity(r={})'.format(radius)][:,ell]
+            plt.loglog(freqs, freqs*wave_luminosity, label='r={}'.format(radius))
+            if i == 1:
+                shift = (freqs*wave_luminosity)[freqs > 1e-2][0]
+    plt.loglog(freqs, shift*10*(freqs/freqs[freqs > 1e-2][0])**(-13/2), c='k', label=r'$f^{-13/2}$')
     plt.legend(loc='best')
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
-    plt.ylabel(r'$\frac{\partial^2 F}{\partial \ln f}$')
+    plt.ylabel('wave luminosity')
     plt.ylim(1e-33, 1e-17)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
