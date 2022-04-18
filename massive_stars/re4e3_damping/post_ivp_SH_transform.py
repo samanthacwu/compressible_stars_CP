@@ -69,6 +69,9 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
+
+config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
+
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_transform_{}'.format(data_dir)
 reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files, distribution='even-file')
@@ -81,8 +84,6 @@ if not reader.idle:
     else:
         fields = [args['--field'],]
 
-    config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-    out_dir = './'
     ntheta = config['ntheta']
     nphi = 2*ntheta
 
