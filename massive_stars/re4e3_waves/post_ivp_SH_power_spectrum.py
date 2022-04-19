@@ -5,10 +5,10 @@ The fields specified in 'fig_type' are plotted (temperature and enstrophy by def
 To plot a different set of fields, add a new fig type number, and expand the fig_type if-statement.
 
 Usage:
-    spherical_harmonic_power_spectrum.py <root_dir> [options]
+    post_ivp_SH_power_spectrum.py [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_wave_shell_slices]
+    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
@@ -19,7 +19,7 @@ Options:
 
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
-    --plot_only
+    --no_ft
     --field=<f>                         If specified, only transform this field
 """
 import gc
@@ -48,12 +48,13 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 
-from power_spectrum_functions import clean_cfft, normalize_cfft_power
+from d3_stars.simulations.parser import parse_std_config
+from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
 
 args = docopt(__doc__)
 
 # Read in master output directory
-root_dir    = args['<root_dir>']
+root_dir    = './'
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
@@ -67,7 +68,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-star_file = '../ncc_creation/nccs_15msol/ball_2shells_nccs_B-128_S1-128_S2-32_Re4e3_de1.5_cutoff1e-10.h5'
+config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]
@@ -102,7 +103,7 @@ else:
     fields = [args['--field'],]
 
 
-if not args['--plot_only']:
+if not args['--no_ft']:
     times = []
     print('getting times...')
     ells = ms = None
@@ -189,6 +190,8 @@ with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
     freqs = out_f['freqs'][()]
 
 
+
+
 good = freqs >= 0
 min_freq = 3e-3
 max_freq = freqs.max()
@@ -224,13 +227,13 @@ for k, powspec in powers_per_ell.items():
         plt.xlim(min_freq, max_freq)
         plt.ylim(ymin, ymax)
         plt.legend(loc='best')
-        k_out = k.replace('(', '_').replace(')', '_').replace('=', '')
+        k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
 
         plt.savefig('{}/{}_v{}_summed_power.png'.format(full_out_dir, k_out, v), dpi=600)
 
         plt.clf()
 
-        for ell in range(1, 11):
+        for ell in range(1, 21):
             plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
             plt.xlim(min_freq, max_freq)
             plt.ylim(ymin, ymax)

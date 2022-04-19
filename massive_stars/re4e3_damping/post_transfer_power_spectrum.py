@@ -80,8 +80,9 @@ for ell in range(64):
         shift_ind = np.argmax(wave_lum_ell)
         shift_freq = freqs[shift_ind]
         shift = (wave_lum_ell)[shift_ind]#freqs > 1e-2][0]
-        wave_luminosity_power = lambda f: shift*(f/shift_freq)**(-15/2)
-        wave_flux_rcb = lambda f: wave_luminosity_power(f)/(4*np.pi*1**2*rho_func(1))
+        if ell == 1:
+            wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-19/2)*ell**4
+        wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
         ur2 = lambda f: 2*np.sqrt(ell*(ell+1)) * wave_flux_rcb(f) / (1 * rho_func(1) * N2plateau)
@@ -94,7 +95,7 @@ for ell in range(64):
         plt.title('ell={}'.format(ell))
         plt.xlabel('freqs (sim units)')
         plt.ylabel(r'power')
-        plt.ylim(1e-33, 1e-10)
+        plt.ylim(1e-30, 1e-14)
         plt.xlim(3e-3, 1.4)
         fig.savefig('{}/s1_simulated_freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
         plt.clf()
@@ -109,6 +110,12 @@ plt.loglog(freqs, sum_ells_power, c='k')
 plt.title('summed over ells')
 plt.xlabel('freqs (sim units)')
 plt.ylabel(r'power')
-plt.ylim(1e-33, 1e-10)
+plt.ylim(1e-30, 1e-14)
 plt.xlim(3e-3, 1.4)
 fig.savefig('{}/s1_simulated_freq_spectrum_summed_ells.png'.format(full_out_dir), dpi=300, bbox_inches='tight')
+
+
+with h5py.File('{}/simulated_powers.h5'.format(full_out_dir), 'w') as f:
+    f['powers'] = powers
+    f['freqs'] = freqs
+    f['sum_powers'] = sum_ells_power

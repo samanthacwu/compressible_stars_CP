@@ -223,11 +223,17 @@ for ell in range(11):
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
             plt.loglog(freqs, freqs*wave_luminosity, label='r={}'.format(radius_str))
-            if i == 1:
-                shift_ind = np.argmax(wave_luminosity*freqs)
+            if ell == 1 and i == 1:
+                shift_ind = np.argmax(wave_luminosity)
                 shift_freq = freqs[shift_ind]
-                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-    plt.loglog(freqs, shift*(freqs/shift_freq)**(-17/2), c='k', label=r'$f^{-17/2}$')
+                shift = (wave_luminosity)[shift_ind]#freqs > 1e-2][0]
+                if ell == 1:
+                    wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-19/2)*ell**4
+
+#                shift_ind = np.argmax(wave_luminosity*freqs)
+#                shift_freq = freqs[shift_ind]
+#                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
+    plt.loglog(freqs, freqs*wave_luminosity_power(freqs, ell), c='k', label=r'$f^{-17/2}$')
     plt.legend(loc='best')
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
