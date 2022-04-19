@@ -13,7 +13,8 @@
 #    echo $p
 #done
 
-pleiades_dir=/nobackup/eanders/d3_stars/massive_stars/re4e3_damping/damping_theory_power/
+pleiades_dir=/nobackup/eanders/d3_stars/massive_stars/re4e3_damping_bak/damping_theory_power/
+#pleiades_dir=/nobackup/eanders/d3_stars/massive_stars/re4e3_damping/damping_theory_power/
 local_dir=damping_theory_power
 files=()
 mkdir $local_dir
@@ -27,7 +28,7 @@ do
     fi
 done
 
-files=(${files[@]},s1_simulated_freq_spectrum_summed_ells.png)
+files=(${files[@]},s1_simulated_freq_spectrum_summed_ells.png,simulated_powers.h5)
 
 
 files={${files[@]}}
