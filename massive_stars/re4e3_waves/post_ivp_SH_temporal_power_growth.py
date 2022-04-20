@@ -41,7 +41,6 @@ from mpi4py import MPI
 from scipy.interpolate import interp1d
 
 from plotpal.file_reader import SingleTypeReader as SR
-import matplotlib.pyplot as plt
 
 import logging
 logger = logging.getLogger(__name__)
@@ -104,7 +103,7 @@ else:
 
 
 
-temporal_chunks = 100
+temporal_chunks = 10
 
 
 if not args['--no_ft']:
@@ -128,6 +127,7 @@ if not args['--no_ft']:
         wf['time_chunks'] = np.array(time_chunks)
     with h5py.File('{}/transforms.h5'.format(full_out_dir), 'w') as wf:
         wf['ells']  = ells
+        wf['time_chunks'] = np.array(time_chunks)
 
     #TODO: only load in one ell and m at a time, that'll save memory.
     data_cubes = dict()
@@ -201,64 +201,93 @@ if not args['--no_ft']:
                 wf['freqs_inv_day'] = np.array(freq_arrs[f])/tau
 
 
-#powers_per_ell = OrderedDict()
-#with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
-#    for f in fields:
-#        powers_per_ell[f] = out_f['{}_power_per_ell'.format(f)][()]
-#    ells = out_f['ells'][()]
-#    freqs = out_f['freqs'][()]
-#
-#
-#
-#
-#good = freqs >= 0
-#min_freq = 3e-3
-#max_freq = freqs.max()
-#for k, powspec in powers_per_ell.items():
-#    if len(powspec.shape) != 3:
-#        powspec = np.expand_dims(powspec, axis=0)
-#    full_powspec = np.copy(powspec)
-#    for v in range(full_powspec.shape[0]):
-#        powspec = full_powspec[v,:]
-#        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
-#                
-#
-#        print(powspec.shape, ells.shape)
-#        sum_power = np.sum(powspec, axis=good_axis).squeeze()
-#        sum_power_ell2 = np.sum((powspec/ells[:,:,0,0]**2).reshape(powspec.shape)[:,ells[0,:,0,0] > 0], axis=good_axis).squeeze()
-#            
-#        ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
-#        ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
-#
-#        plt.figure()
-#        if len(sum_power.shape) > 1:
-#            for i in range(sum_power.shape[1]):
-#                plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
-#                plt.plot(freqs[good], sum_power_ell2[good, i], c = 'orange', label=r'axis {}, sum over $\ell$ values with $\ell^{-2}$'.format(i))
-#        else:
-#            plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
-#            plt.plot(freqs[good], sum_power_ell2[good], c = 'orange', label=r'sum over $\ell$ values with $\ell^{-2}$')
-#        plt.yscale('log')
-#        plt.xscale('log')
-#        plt.ylabel(r'Power ({})'.format(k))
-#        plt.xlabel(r'Frequency (sim units)')
-#        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
-#        plt.xlim(min_freq, max_freq)
-#        plt.ylim(ymin, ymax)
-#        plt.legend(loc='best')
-#        k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
-#
-#        plt.savefig('{}/{}_v{}_summed_power.png'.format(full_out_dir, k_out, v), dpi=600)
-#
-#        plt.clf()
-#
-#        for ell in range(1, 21):
-#            plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
-#            plt.xlim(min_freq, max_freq)
-#            plt.ylim(ymin, ymax)
-#            plt.title('ell={}'.format(ell))
-#            plt.xlabel('frequency (sim units)')
-#            plt.ylabel('Power')
-#            plt.savefig('{}/{}_v{}_ell_{:03d}.png'.format(full_out_dir, k_out, v, ell), dpi=200, bbox_inches='tight')
-#            plt.clf()
-#
+powers_per_ell = OrderedDict()
+with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
+    for f in fields:
+        powers_per_ell[f] = out_f['{}_power_per_ell'.format(f)][()]
+    ells = out_f['ells'][()]
+    freqs_chunks = out_f['freqs'][()]
+    time_chunks = out_f['time_chunks'][()]
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+norm = mpl.colors.Normalize(vmin=time_chunks.min(), vmax=time_chunks.max())
+sm = plt.cm.ScalarMappable(cmap='plasma', norm=norm)
+sm.set_array([])
+
+fig = plt.figure()
+ax = fig.add_axes([0, 0, 1, 0.9])
+cax = fig.add_axes([0.05, 0.925, 0.9, 0.05])
+
+cbar = mpl.colorbar.ColorbarBase(cax, cmap=mpl.cm.get_cmap('plasma'), norm=norm, orientation='horizontal', ticklocation='top')
+cbar.set_label('sim time')
+
+min_freq = 3e-3
+max_freq = freqs_chunks.max()
+for k, powspec_chunks in powers_per_ell.items():
+    k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
+    for i, tchunk in enumerate(time_chunks):
+        powspec = powspec_chunks[i,:]
+        if len(powspec.shape) != 3:
+            powspec = np.expand_dims(powspec, axis=0)
+        full_powspec = np.copy(powspec)
+        
+        freqs = freqs_chunks[i,:]
+        times = time_chunks[i,:]
+        color = sm.to_rgba(np.median(times))
+        good = freqs >= 0
+
+        v = 0
+        powspec = full_powspec[v,:]
+        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
+                
+        sum_power = np.sum(powspec, axis=good_axis).squeeze()
+        sum_power_ell2 = np.sum((powspec/ells[:,:,0,0]**2).reshape(powspec.shape)[:,ells[0,:,0,0] > 0], axis=good_axis).squeeze()
+            
+        ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
+        ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
+
+        if len(sum_power.shape) > 1:
+            for j in range(sum_power.shape[1]):
+                ax.plot(freqs[good], sum_power[good, j], c = color)#, label=r'axis {}, sum over $\ell$ values'.format(j))
+#                    ax.plot(freqs[good], sum_power_ell2[good, j], c = color, ls='--', label=r'axis {}, sum over $\ell$ values with $\ell^{-2}$'.format(j))
+        else:
+            ax.plot(freqs[good], sum_power[good], c = color)#, label=r'sum over $\ell$ values')
+#                ax.plot(freqs[good], sum_power_ell2[good], c = color, ls='--', label=r'sum over $\ell$ values with $\ell^{-2}$')
+        ax.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
+#        ax.legend(loc='best')
+
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ax.set_ylabel(r'summed Power ({})'.format(k))
+    ax.set_xlabel(r'Frequency (sim units)')
+    ax.set_xlim(min_freq, max_freq)
+    ax.set_ylim(ymin, ymax)
+
+    fig.savefig('{}/{}_summed_power.png'.format(full_out_dir, k_out), dpi=600)
+
+    ax.clear()
+
+    for ell in range(1, 21):
+        print('plotting ell = {}'.format(ell))
+        for i, tchunk in enumerate(time_chunks):
+            powspec = powspec_chunks[i,:]
+            if len(powspec.shape) != 3:
+                powspec = np.expand_dims(powspec, axis=0)
+            full_powspec = np.copy(powspec)
+            
+            freqs = freqs_chunks[i,:]
+            times = time_chunks[i,:]
+            color = sm.to_rgba(np.median(times))
+            good = freqs >= 0
+
+            ax.loglog(freqs[good], powspec[0,good,ells.flatten()==ell], c=color)
+        ax.text(0.02, 0.95, 'ell={}'.format(ell), ha='left', transform=ax.transAxes)
+        ax.set_xlim(min_freq, max_freq)
+        ax.set_ylim(ymin, ymax)
+        ax.set_xlabel('frequency (sim units)')
+        ax.set_ylabel('Power')
+        fig.savefig('{}/{}_ell_{:03d}.png'.format(full_out_dir, k_out, ell), dpi=200, bbox_inches='tight')
+        ax.clear()
+
