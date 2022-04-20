@@ -49,12 +49,11 @@ with h5py.File(star_file, 'r') as f:
     rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
     rho_func = interp1d(r,rho)
     tau_nd = f['tau_nd'][()]
-    tau = f['tau_nd'][()]/(60*60*24)
-    r_outer = f['r_outer'][()]
-    radius = r_outer * f['L_nd'][()]
     #Entropy units are erg/K/g
-    s_c = f['s_nd'][()]
     N2plateau = f['N2plateau'][()] * tau_nd**2
+    N2mesa = f['N2_mesa'][()] * tau_nd**2
+    r_mesa = f['r_mesa'][()] / f['L_nd'][()]
+    N2_func = interp1d(r_mesa, N2mesa)
 
 full_out_dir = 'damping_theory_power'
 if not os.path.exists(full_out_dir):
@@ -81,11 +80,13 @@ for ell in range(64):
         shift_freq = freqs[shift_ind]
         shift = (wave_lum_ell)[shift_ind]#freqs > 1e-2][0]
         if ell == 1:
-            wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-19/2)*ell**4
+            print(shift/shift_freq**(-19/2))
+            wave_luminosity_power = lambda f, this_ell: shift*(f/shift_freq)**(-19/2)*this_ell**4
         wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
-        ur2 = lambda f: 2*np.sqrt(ell*(ell+1)) * wave_flux_rcb(f) / (1 * rho_func(1) * N2plateau)
+        kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
+        ur2 = lambda f: np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau
         surface_s1_power = lambda f: np.exp(-depthfunc(f))*transfer_interp(f)**2 * ur2(f)
 
         powers.append(surface_s1_power(freqs))
@@ -104,6 +105,7 @@ for ell in range(64):
         
 
 powers = np.array(powers)
+print(powers.shape)
 sum_ells_power = np.sum(powers, axis=0)
 plt.loglog(freqs, sum_ells_power, c='k')
 #    plt.legend(loc='best')

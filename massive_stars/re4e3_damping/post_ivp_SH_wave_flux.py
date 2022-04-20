@@ -181,6 +181,52 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         
 
 fig = plt.figure()
+for ell in range(11):
+    if ell == 0: continue
+    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+        freqs = rf['real_freqs'][()]
+        for i, radius_str in enumerate(radii):
+            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
+            if ell == 3 and i == 1:
+                this_ell = 3
+                shift_ind = np.argmax(wave_luminosity)
+                shift_freq = freqs[shift_ind]
+                shift = (wave_luminosity)[shift_ind]#freqs > 1e-2][0]
+                wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-10)*(ell/this_ell)**4
+                wave_luminosity_str = r'{:.2e}'.format(shift/shift_freq**(-10) / this_ell**4) + r'$f^{-10}\ell^4$'
+                break
+
+for ell in range(11):
+    if ell == 0: continue
+    print('plotting ell = {}'.format(ell))
+    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+
+        freqs = rf['real_freqs'][()]
+        for i, radius_str in enumerate(radii):
+            if 'R' in radius_str:
+                radius = float(radius_str.replace('R', ''))*r_outer
+            else:
+                radius = float(radius_str)
+
+            if radius < 1: continue
+            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
+            plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
+#                shift_ind = np.argmax(wave_luminosity*freqs)
+#                shift_freq = freqs[shift_ind]
+#                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
+    plt.loglog(freqs, wave_luminosity_power(freqs, ell), c='k', label=wave_luminosity_str)
+    plt.legend(loc='best')
+    plt.title('ell={}'.format(ell))
+    plt.xlabel('freqs (sim units)')
+    plt.ylabel(r'|wave luminosity|')
+    plt.ylim(1e-33, 1e-17)
+    fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
+    plt.clf()
+    
+    
+
+
+
 freqs_for_dfdell = [1e-2, 5e-2, 8e-2]
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
     freqs = rf['real_freqs'][()]
@@ -195,52 +241,16 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
                 radius = float(radius_str)
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][f_ind, :])
-            plt.loglog(ells, ells*wave_luminosity, label='r={}'.format(radius_str))
-            if i == 1:
-                shift = (ells*wave_luminosity)[ells == 2]
-        plt.loglog(ells, shift*(ells/2)**4, c='k', label=r'$\ell^4$')
+            plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
+        plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')
         plt.title('f = {} 1/day'.format(f))
         plt.xlabel(r'$\ell$')
-        plt.ylabel(r'$\ell$|wave luminosity|')
+        plt.ylabel(r'|wave luminosity|')
         plt.ylim(1e-33, 1e-17)
         plt.xlim(1, ells.max())
         fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
         plt.clf()
     
  
-for ell in range(11):
-    if ell == 0: continue
-    print('plotting ell = {}'.format(ell))
-    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-        freqs = rf['real_freqs'][()]
-        for i, radius_str in enumerate(radii):
-            if 'R' in radius_str:
-                radius = float(radius_str.replace('R', ''))*r_outer
-            else:
-                radius = float(radius_str)
-
-            if radius < 1: continue
-            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            plt.loglog(freqs, freqs*wave_luminosity, label='r={}'.format(radius_str))
-            if ell == 1 and i == 1:
-                shift_ind = np.argmax(wave_luminosity)
-                shift_freq = freqs[shift_ind]
-                shift = (wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-                if ell == 1:
-                    wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-19/2)*ell**4
-
-#                shift_ind = np.argmax(wave_luminosity*freqs)
-#                shift_freq = freqs[shift_ind]
-#                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-    plt.loglog(freqs, freqs*wave_luminosity_power(freqs, ell), c='k', label=r'$f^{-17/2}$')
-    plt.legend(loc='best')
-    plt.title('ell={}'.format(ell))
-    plt.xlabel('freqs (sim units)')
-    plt.ylabel(r'$f$|wave luminosity|')
-    plt.ylim(1e-33, 1e-17)
-    fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
-    plt.clf()
-    
-    
 
