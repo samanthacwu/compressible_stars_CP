@@ -40,7 +40,7 @@ with h5py.File(star_file, 'r') as f:
     rho = np.concatenate(rhos, axis=-1)
 rho = interpolate.interp1d(r.flatten(), rho.flatten())
 
-def transfer_function(om, values, u_dual, u_outer, r_range):
+def transfer_function(om, values, u_dual, u_outer, r_range, ell):
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
     dr = np.gradient(r_range)[None, :, None]
@@ -49,7 +49,10 @@ def transfer_function(om, values, u_dual, u_outer, r_range):
     values           = values[:, None, None]
     u_dual           = u_dual[:, :,    None]
     u_outer         = u_outer[:, None, None]
-    T = (2*np.pi**2*rho(r_range)*r_range**3*om)*u_dual*u_outer/(om-values)
+    k_h = np.sqrt(ell * (ell + 1)) / r_range
+    Forcing = (np.pi/2) * (om / k_h**2)  #technically times ur at r_rcb
+    Amp = 2 * np.pi * r_range**2 * rho(r_range) * u_dual * Forcing /(om - values)
+    T = Amp * u_outer
     return np.sum(np.abs(np.sum(T*dr, axis=0)), axis=0)/np.sum(dr)
 
 def refine_peaks(om, T, *args):
@@ -112,9 +115,9 @@ for ell in ell_list:
             smooth_depths = f['smooth_depths'][()]
             depthfunc = interp1d(smooth_oms, smooth_depths, bounds_error=False, fill_value='extrapolate')
 
-        if j == 0:
-            for value in values:
-                plt.axvline(value.real/(2*np.pi), c='k')
+#        if j == 0:
+#            for value in values:
+#                plt.axvline(value.real/(2*np.pi), c='k')
 
         good = depths < d_filter
 
@@ -140,13 +143,13 @@ for ell in ell_list:
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
         print(s1_amplitudes)
 
-        T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range)
+        T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range, ell)
 
         peaks = 1
         while peaks > 0:
-            om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
+            om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range, ell)
 
-        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
+#        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
         oms.append(om)
         transfers.append(T)
 
@@ -169,18 +172,18 @@ for ell in ell_list:
         f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
 #    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
-    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+#    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 #    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 
     maxval = (np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2)).max()
-    plt.ylim(maxval/1e15, maxval*2)
-    plt.xlabel('frequency (sim units)')
-    plt.legend()
-    plt.title("ell = %i" % ell)
-    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-    plt.show()
+#    plt.ylim(maxval/1e15, maxval*2)
+#    plt.xlabel('frequency (sim units)')
+#    plt.legend()
+#    plt.title("ell = %i" % ell)
+#    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
+#    plt.show()
 
-plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
-plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-plt.ylim(maxval/1e15, maxval*2)
-plt.show()
+#plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+#plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
+#plt.ylim(maxval/1e15, maxval*2)
+#plt.show()
