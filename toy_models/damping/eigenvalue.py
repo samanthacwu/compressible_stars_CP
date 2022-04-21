@@ -279,7 +279,7 @@ nu = (Rayleigh / Prandtl)**(-1/2)
 r_transition=1
 radius=2
 
-resolutions = [(4, 4, Nr), (4, 4, int(Nr*3/2))]
+resolutions = [(4, 32, Nr), (4, 32, int(Nr*3/2))]
 
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
