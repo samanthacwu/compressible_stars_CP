@@ -7,7 +7,7 @@ Usage:
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: SH_transform_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
-    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 100]
+    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 40]
     --n_files=<num_files>               Total number of files to plot
     --dpi=<dpi>                         Image pixel density [default: 200]
 

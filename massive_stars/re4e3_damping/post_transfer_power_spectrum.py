@@ -58,6 +58,22 @@ with h5py.File(star_file, 'r') as f:
 full_out_dir = 'damping_theory_power'
 if not os.path.exists(full_out_dir):
     os.makedirs(full_out_dir)
+
+
+#Fit wave luminosity
+for ell in range(11):
+    if ell == 3:
+        wave_lum_ell = np.abs(wave_luminosity[:,ell])
+        shift_ind = np.argmax(wave_lum_ell)
+        shift_freq = freqs[shift_ind]
+        shift = (wave_lum_ell)[shift_ind]#freqs > 1e-2][0]
+
+        this_ell = 3
+        wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-10)*(ell/this_ell)**4
+        wave_luminosity_str = r'{:.2e}'.format(shift/shift_freq**(-10) / this_ell**4) + r'$f^{-10}\ell^4$'
+        break
+
+
         
 powers = []
 fig = plt.figure()
@@ -75,13 +91,6 @@ for ell in range(64):
             transfer_freq = ef['om'][()]/(2*np.pi)
             transfer_interp = interp1d(transfer_freq, transfer_func, bounds_error=False, fill_value=0)
 
-        wave_lum_ell = np.abs(wave_luminosity[:,ell])
-        shift_ind = np.argmax(wave_lum_ell)
-        shift_freq = freqs[shift_ind]
-        shift = (wave_lum_ell)[shift_ind]#freqs > 1e-2][0]
-        if ell == 1:
-            print(shift/shift_freq**(-19/2))
-            wave_luminosity_power = lambda f, this_ell: shift*(f/shift_freq)**(-19/2)*this_ell**4
         wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
