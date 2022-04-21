@@ -29,15 +29,71 @@ To run, restart, and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 internally_heated_convection.py --restart
     $ mpiexec -n 4 python3 plot_ball.py slices/*.h5
 """
-
-import time
-import sys
+import os, gc, time, sys
 import numpy as np
 import dedalus.public as d3
 import logging
+import h5py
 logger = logging.getLogger(__name__)
 
-from d3_stars.simulations.evp_functions import solve_dense, combine_eigvecs, calculate_duals, scipy_sparse_eigs, matrix_info
+import matplotlib.pyplot as plt
+
+from d3_stars.simulations.evp_functions import solve_dense, combine_eigvecs, scipy_sparse_eigs, matrix_info
+
+def calculate_duals(vel_ef_lists, basis, dist):
+    """
+    Calculate the dual basis of the velocity eigenvectors.
+    """
+    vel_ef_lists = list(vel_ef_lists)
+    work_field = dist.Field(bases=basis)
+    int_field = d3.integ(work_field)
+
+    def IP(velocity1, velocity2):
+        """ Integrate the bra-ket of two eigenfunctions of velocity. """
+        velocity1 = velocity1
+        velocity2 = velocity2
+        work_field['g'] = np.sum(np.conj(velocity1)*velocity2, axis=0)
+        return int_field.evaluate()['g'].min()
+
+
+    n_modes = len(vel_ef_lists)
+    IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+    for i in range(n_modes):
+        vel_ef_lists[i] = np.array(vel_ef_lists[i])
+        if i % 1 == 0: logger.info("duals {}/{}".format(i, n_modes))
+        for j in range(n_modes):
+            IP_matrix[i,j] = IP(vel_ef_lists[i], vel_ef_lists[j])
+
+    logger.info('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
+    IP_inv = np.linalg.inv(IP_matrix)
+
+    #TODO:fix
+    total_nr = vel_ef_lists[0].shape[-1]
+    vel_duals = np.zeros((n_modes, 3, total_nr), dtype=np.complex128)
+    vel_efs = np.zeros((n_modes, 3, total_nr), dtype=np.complex128)
+    for n in range(n_modes):
+        vel_efs[n, :, :] = vel_ef_lists[n]
+    for j in range(3): #velocity dimensions
+        vel_duals[:,j,:] = np.einsum('ij,jk->ik', np.conj(IP_inv), vel_efs[:,j,:])
+
+    #Check that velocity duals were evaluated correctly
+    IP_check = np.zeros_like(IP_matrix)
+    for i in range(n_modes):
+        for j in range(n_modes):
+            IP_check[i,j] = IP(vel_duals[i], vel_ef_lists[j])
+    I_matrix = np.zeros_like(IP_matrix)
+    for i in range(I_matrix.shape[0]):
+        I_matrix[i,i] = 1
+
+    if np.allclose(I_matrix.real, IP_check.real, rtol=1e-5, atol=1e-5):
+        logger.info('velocity duals properly calculated')
+    else:
+        logger.info('something went wrong in velocity dual calc; IP_check info:')
+        for i in range(n_modes):
+            logger.info('{}, {}'.format(np.sum(IP_check[i,:].real), IP_check[i,i].real))
+        raise ValueError("Something went wrong in calculating the dual basis.")
+
+    return vel_duals
 
 def combine_eigvecs(solver, field, ell_m_bool, scales=None, shift=True):
     if len(field.tensorsig) == 1:
@@ -52,7 +108,10 @@ def combine_eigvecs(solver, field, ell_m_bool, scales=None, shift=True):
 
     field['c']
     field.towards_grid_space()
-    ef = field.data[:,ell_m_bool,:].squeeze()
+    if vector:
+        ef = field.data[:,ell_m_bool,:].squeeze()
+    else:
+        ef = field.data[ell_m_bool,:].squeeze()
 
     if shift:
         if vector:
@@ -165,10 +224,14 @@ def check_eigen(solver, solver_lo, cutoff=1e-2, r_cz=1):
         if goodness < cutoff:
             
             solver.set_state(0, subsystem)
-            solver_lo.set_state(0, subsystem_lo)
+            solver_lo.set_state(i, subsystem_lo)
 
             ef_u1 = combine_eigvecs(solver_lo, solver_lo.problem.namespace['u'], good, scales=(1,1,3/2))
             ef_u2 = combine_eigvecs(solver, solver.problem.namespace['u'], good)
+
+#            plt.plot(hires_r, ef_u1[2,:])
+#            plt.plot(hires_r, ef_u2[2,:])
+#            plt.show()
 
             #If mode KE is inside of the convection zone then it's a bad mode.
             mode_KE = np.sum(ef_u2*np.conj(ef_u2), axis=0).real/2
@@ -177,18 +240,18 @@ def check_eigen(solver, solver_lo, cutoff=1e-2, r_cz=1):
             cz_KE_frac = cz_KE/tot_KE
             vector_diff = np.max(np.abs(ef_u1 - ef_u2))
 
-            print(vector_diff)
+#            print(vector_diff)
             if vector_diff < np.sqrt(cutoff):
                 logger.info('good evalue w/ vdiff {} and czfrac {}'.format(vector_diff, cz_KE_frac.real))
-                if cz_KE_frac.real > 0.5:
+                if cz_KE_frac.real > 0.9:
                     logger.info('evalue is in the CZ, skipping')
                 elif cz_KE_frac.real < 1e-3:
                     logger.info('evalue is spurious, skipping')
                 else:
                     good_values.append(i)
 
-    solver.eigenvalues  = solver.eigenvalues[good_values]
-    solver.eigenvectors = solver.eigenvectors[:, good_values]
+    solver_lo.eigenvalues  = solver_lo.eigenvalues[good_values]
+    solver_lo.eigenvectors = solver_lo.eigenvectors[:, good_values]
 
 
 
@@ -244,7 +307,7 @@ for rn, res in enumerate(resolutions):
     r_vec['g'][2] = r
 
     ns['grad_T0_source'] = grad_T0_source = dist.VectorField(coords, bases=basis.radial_basis)
-    grad_T0_source['g'][2] = S * r# * zero_to_one(r, r_transition, width=0.1)
+    grad_T0_source['g'][2] = S * r * zero_to_one(r, r_transition, width=0.1)
 
     ns['lift'] = lift = lambda A: d3.Lift(A, basis, -1)
     ns['strain_rate'] = strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
@@ -275,4 +338,85 @@ for ell in range(1,3):
             solver.eigenvalues = solvers[0].eigenvalues
             solver.eigenvectors = solvers[0].eigenvectors
             check_eigen(solver, solvers[0])
+    
+    solver = solvers[0]
+    
+    locals().update(solver.problem.namespace)
 
+    #Calculate 'optical depths' of each mode.
+    shape = list(T['c'].shape[:2])
+    good = np.zeros(shape, bool)
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            grid_space = (False,False)
+            elements = (np.array((i,)),np.array((j,)))
+            m, this_ell = basis.sphere_basis.elements_to_groups(grid_space, elements)
+            if this_ell == ell and m == 1:
+                good[i,j] = True
+
+    integ_energy_op = 0.5*d3.dot(u, u)
+    T_surf = T(r=radius)
+
+    integ_energies = np.zeros_like(solver.eigenvalues, dtype=np.float64) 
+    T_amplitudes = np.zeros_like(solver.eigenvalues, dtype=np.float64)  
+    velocity_eigenfunctions = []
+    temperature_eigenfunctions = []
+    wave_flux_eigenfunctions = []
+
+    for sbsys in solver.subsystems:
+        ss_m, ss_ell, r_couple = sbsys.group
+        if ss_ell == ell and ss_m == 1:
+            subsystem = sbsys
+            break
+
+
+    for i, e in enumerate(solver.eigenvalues):
+        solver.set_state(i, subsystem)
+
+        ef_u = combine_eigvecs(solver, solver.problem.namespace['u'], good, shift=False)
+        ef_T = combine_eigvecs(solver, solver.problem.namespace['T'], good, shift=False)
+        ef_p = combine_eigvecs(solver, solver.problem.namespace['p'], good, shift=False)
+
+        #normalize & store eigenvectors
+        shift = np.max(np.abs(ef_u[2,:]))
+        for data in [ef_u, ef_T, ef_p]:
+            data[:] /= shift
+
+        velocity_eigenfunctions.append(ef_u)
+        temperature_eigenfunctions.append(ef_T)
+
+        #Wave flux
+        wave_flux = ef_u[2,:]*np.conj(ef_p).squeeze()
+        wave_flux_eigenfunctions.append(wave_flux)
+
+    #            #Kinetic energy
+        integ_energy = integ_energy_op.evaluate()
+        integ_energies[i] = integ_energy['g'].min().real / 2 #factor of 2 accounts for spherical harmonic integration (we're treating the field like an ell = 0 one)
+
+        #Surface temperature perturbations
+        T['g'] = ef_T
+        T_surf_vals = T_surf.evaluate()['g'] / np.sqrt(2) #sqrt(2) accounts for spherical harmonic integration
+        T_amplitudes[i] = np.abs(T_surf_vals.max())
+
+    out_dir = 'eigenvalues'
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as f:
+        f['good_evalues'] = solver.eigenvalues
+        f['good_omegas']  = solver.eigenvalues.real
+        f['T_amplitudes']  = T_amplitudes
+        f['integ_energies'] = integ_energies
+        f['wave_flux_eigenfunctions'] = np.array(wave_flux_eigenfunctions)
+        f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
+        f['temperature_eigenfunctions'] = np.array(temperature_eigenfunctions)
+        f['r'] = r
+
+    velocity_duals = calculate_duals(velocity_eigenfunctions, basis, dist)
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'r') as f:
+        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(out_dir, ell), 'w') as df:
+            for k in f.keys():
+                df.create_dataset(k, data=f[k])
+            df['velocity_duals'] = velocity_duals
+
+    gc.collect()
