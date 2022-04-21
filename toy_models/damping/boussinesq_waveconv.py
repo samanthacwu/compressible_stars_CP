@@ -52,10 +52,10 @@ Nphi, Ntheta, Nr = 128, 64, 96
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 3/2
-S=1
-stop_sim_time = 200
+S=100
+stop_sim_time = 100
 timestepper = d3.SBDF2
-max_timestep = 0.01
+max_timestep = 0.005
 dtype = np.float64
 mesh = [8,8]
 
@@ -137,7 +137,7 @@ slices.add_task(T(phi=3/2*np.pi), scales=dealias, name='T(phi=3/2*pi)')
 slices.add_task(d3.Average(F, coords.S2coordsys), scales=dealias, name='F')
 slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
 
-shells = solver.evaluator.add_file_handler('shells', sim_dt=0.5/S, max_writes=1000)
+shells = solver.evaluator.add_file_handler('shells', sim_dt=0.5/S, max_writes=100)
 shells.add_task(T(r=r_transition), scales=dealias, name='T(r=r_transition)')
 shells.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
 shells.add_task(u(r=r_transition), scales=dealias, name='u(r=r_transition)')
