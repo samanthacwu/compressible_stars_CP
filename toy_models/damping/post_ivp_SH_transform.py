@@ -35,16 +35,13 @@ from pathlib import Path
 import h5py
 import numpy as np
 from docopt import docopt
-from configparser import ConfigParser
 import dedalus.public as d3
 from dedalus.tools import logging
 from scipy import sparse
 from mpi4py import MPI
 import matplotlib.pyplot as plt
-from dedalus.tools.config import config
 
 
-from d3_stars.simulations.parser import parse_std_config
 
 from plotpal.file_reader import SingleTypeReader as SR
 
@@ -82,9 +79,8 @@ if not reader.idle:
     else:
         fields = [args['--field'],]
 
-    print(fields)
 
-    ntheta = config['ntheta']
+    ntheta = 64
     nphi = 2*ntheta
 
     resolution = (nphi, ntheta, 1)
@@ -175,9 +171,13 @@ if not reader.idle:
                 if ni == 0:
                     of.create_dataset(name='tasks/'+f, shape=[len(sim_times),] + shape, dtype=np.complex128)
                 if scalar:
+                    scalar_field.change_scales(1.5)
                     scalar_field['g'] = task_data.reshape(scalar_field['g'].shape)
+                    vector_field['g'] = 0
                 elif vector:
+                    vector_field.change_scales(1.5)
                     vector_field['g'] = task_data.reshape(vector_field['g'].shape)
+                    scalar_field['g'] = 0
                 for j, ell in enumerate(ell_values.squeeze()):
                     for k, m in enumerate(m_values.squeeze()):
                         if '{},{}'.format(ell,m) in slices.keys():

@@ -15,7 +15,7 @@ from configparser import ConfigParser
 from d3_stars.simulations.anelastic_functions import make_bases
 from d3_stars.simulations.parser import parse_std_config
 
-Lmax = 10
+Lmax = 64
 radius = 2
 dealias = 1
 

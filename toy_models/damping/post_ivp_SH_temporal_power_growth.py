@@ -32,7 +32,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 from docopt import docopt
-from configparser import ConfigParser
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
@@ -45,9 +44,7 @@ from plotpal.file_reader import SingleTypeReader as SR
 import logging
 logger = logging.getLogger(__name__)
 
-from dedalus.tools.config import config
 
-from d3_stars.simulations.parser import parse_std_config
 from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
 
 args = docopt(__doc__)
@@ -67,26 +64,6 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-with h5py.File(star_file, 'r') as f:
-    rB = f['r_B'][()]
-    rS1 = f['r_S1'][()]
-    rS2 = f['r_S2'][()]
-    rhoB = np.exp(f['ln_rho_B'][()])
-    rhoS1 = np.exp(f['ln_rho_S1'][()])
-    rhoS2 = np.exp(f['ln_rho_S2'][()])
-    r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
-    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
-    rho_func = interp1d(r,rho)
-    tau = f['tau_nd'][()]/(60*60*24)
-    r_outer = f['r_outer'][()]
-    radius = r_outer * f['L_nd'][()]
-    #Entropy units are erg/K/g
-    s_c = f['s_nd'][()]
-    N2plateau = f['N2plateau'][()] * (60*60*24)**2
-
-    N2plateau_sim = f['N2plateau'][()] * tau**2
-    N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
 if 'SH_transform' in data_dir:
@@ -192,13 +169,12 @@ if not args['--no_ft']:
             power_per_ell_arrs[f].append(power_per_ell)
         with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r+') as wf:
             wf['{}_power_per_ell'.format(f)] = np.array(power_per_ell_arrs[f])
-            wf['freqs'] = np.array(power_freq_arrs[f])
-            wf['freqs_inv_day'] = np.array(power_freq_arrs[f])/tau
+            if f == fields[0]:
+                wf['freqs'] = np.array(power_freq_arrs[f])
         with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
             wf['{}_cft'.format(f)] = np.array(transform_arrs[f])
-            if i == 0:
+            if i == 0 and f == fields[0]:
                 wf['freqs'] = np.array(freq_arrs[f])
-                wf['freqs_inv_day'] = np.array(freq_arrs[f])/tau
 
 
 powers_per_ell = OrderedDict()
@@ -255,7 +231,7 @@ for k, powspec_chunks in powers_per_ell.items():
         else:
             ax.plot(freqs[good], sum_power[good], c = color)#, label=r'sum over $\ell$ values')
 #                ax.plot(freqs[good], sum_power_ell2[good], c = color, ls='--', label=r'sum over $\ell$ values with $\ell^{-2}$')
-        ax.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
+#        ax.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
 #        ax.legend(loc='best')
 
     ax.set_yscale('log')

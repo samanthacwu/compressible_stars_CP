@@ -279,7 +279,7 @@ nu = (Rayleigh / Prandtl)**(-1/2)
 r_transition=1
 radius=2
 
-resolutions = [(4, 32, Nr), (4, 32, int(Nr*3/2))]
+resolutions = [(4, Ntheta, Nr), (4, Ntheta, int(Nr*3/2))]
 
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
@@ -330,7 +330,7 @@ for rn, res in enumerate(resolutions):
     solver = problem.build_solver()
     solvers.append(solver)
 
-for ell in range(1,3):
+for ell in range(1,Ntheta):
     for sn, solver in enumerate(solvers):
         if sn == 0:
             solve_dense(solver, ell)
