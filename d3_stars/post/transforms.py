@@ -61,10 +61,10 @@ class SHTransformer():
                         out_field[i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(scalar_field**2)
         #check power
         power_transform = np.sum(out_field * np.conj(out_field)).real
-        if not np.allclose(power_transform/power_grid, 1):
-            raise ValueError("Transform is not conserving power")
-        
-        return out_field
+        if (np.allclose(power_transform, 0) and np.allclose(power_grid, 0)) or np.allclose(power_transform/power_grid, 1): 
+            return out_field
+        else:
+            raise ValueError("Scalar Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
     def transform_vector_field(self, grid_data):
         self.vector_field['g'] = grid_data
@@ -85,9 +85,8 @@ class SHTransformer():
                             out_field[v,i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(vector_field**2)
         #check power
         power_transform = np.sum(out_field * np.conj(out_field)).real
-        print(power_transform/power_grid)
-        if not np.allclose(power_transform/power_grid, 1):
-            raise ValueError("Transform is not conserving power")
-        
-        return out_field
+        if (np.allclose(power_transform, 0) and np.allclose(power_grid, 0)) or np.allclose(power_transform/power_grid, 1): 
+            return out_field
+        else:
+            raise ValueError("Vector Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
