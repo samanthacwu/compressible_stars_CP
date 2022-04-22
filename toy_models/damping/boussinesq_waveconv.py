@@ -53,7 +53,7 @@ Rayleigh = 1e6
 Prandtl = 1
 dealias = 1
 S=100
-stop_sim_time = 100
+stop_sim_time = 200
 timestepper = d3.SBDF2
 max_timestep = 0.005
 dtype = np.float64
@@ -89,16 +89,20 @@ lift = lambda A: d3.Lift(A, basis, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=radius), index=1))
 
-force_freqs = np.logspace(-2, 0, 100)[None,None,None,:,None]#phi,theta,r,f,ell
+force_freqs = np.logspace(-2, 2, 100)[None,None,None,:,None]#phi,theta,r,f,ell
 force_ells = np.arange(1, 10)[None,None,None,None,:]
 force_norm = force_freqs.size*force_ells.size
+powf = -4
+powl = 4
+scaling = ((force_freqs/force_freqs.min())**(powf)*(force_ells/force_ells.max())**(powl))
 
 de_phi, de_theta, de_r = dist.local_grids(basis, scales=basis.dealias)
 theta_force = de_theta[:,:,:,None,None]
 force_spatial = np.exp(-(de_r - r_transition)**2/0.1**2)[:,:,:,None,None] * np.cos(force_ells*theta_force)
+
 def F_func(time):
     warmup = zero_to_one(time, 100*max_timestep, width=10*max_timestep)
-    return warmup*np.sum(np.sum(force_spatial*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1) / force_norm
+    return warmup*np.sum(np.sum(scaling*force_spatial*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1) / force_norm
 
 
 damper = dist.Field(bases=basis.radial_basis)
@@ -144,13 +148,13 @@ slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
 slices.add_task(F(phi=0), scales=dealias, name='F')
 
 shells = solver.evaluator.add_file_handler('shells', sim_dt=0.5/S, max_writes=100)
-shells.add_task(T(r=1), scales=dealias, name='T(r=1)')
-shells.add_task(T(r=1.25), scales=dealias, name='T(r=1.25)')
-shells.add_task(T(r=1.4), scales=dealias, name='T(r=1.4)')
-shells.add_task(T(r=1.5), scales=dealias, name='T(r=1.5)')
-shells.add_task(T(r=1.6), scales=dealias, name='T(r=1.6)')
-shells.add_task(T(r=1.75), scales=dealias, name='T(r=1.75)')
-shells.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
+shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
+shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
+shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
+shells.add_task(p(r=1.5), scales=dealias, name='p(r=1.5)')
+shells.add_task(p(r=1.6), scales=dealias, name='p(r=1.6)')
+shells.add_task(p(r=1.75), scales=dealias, name='p(r=1.75)')
+shells.add_task(p(r=radius), scales=dealias, name='p(r=radius)')
 shells.add_task(u(r=1), scales=dealias, name='u(r=1)')
 shells.add_task(u(r=1.25), scales=dealias, name='u(r=1.25)')
 shells.add_task(u(r=1.4), scales=dealias, name='u(r=1.4)')
