@@ -29,7 +29,7 @@ To run, restart, and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 internally_heated_convection.py --restart
     $ mpiexec -n 4 python3 plot_ball.py slices/*.h5
 """
-
+import traceback
 import sys
 import numpy as np
 import dedalus.public as d3
@@ -48,16 +48,16 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 128, 64, 96
+Nphi, Ntheta, Nr = 32, 64, 128
 Rayleigh = 1e6
 Prandtl = 1
-dealias = 3/2
+dealias = 1
 S=100
 stop_sim_time = 100
 timestepper = d3.SBDF2
 max_timestep = 0.005
 dtype = np.float64
-mesh = [8,8]
+mesh = [8,8]#2,32]
 
 r_transition=1
 radius=2
@@ -91,25 +91,31 @@ shear_stress = d3.angular(d3.radial(strain_rate(r=radius), index=1))
 
 force_freqs = np.logspace(-2, 0, 100)[None,None,None,:,None]#phi,theta,r,f,ell
 force_ells = np.arange(1, 10)[None,None,None,None,:]
+force_norm = force_freqs.size*force_ells.size
 
 de_phi, de_theta, de_r = dist.local_grids(basis, scales=basis.dealias)
-force_spatial = np.exp(-(de_r - r_transition)**2/0.1**2)[:,:,:,None,None]
 theta_force = de_theta[:,:,:,None,None]
+force_spatial = np.exp(-(de_r - r_transition)**2/0.1**2)[:,:,:,None,None] * np.cos(force_ells*theta_force)
 def F_func(time):
-    return np.sum(np.sum(force_spatial*np.cos(force_ells*theta_force)*np.sin(2*np.pi*force_freqs*time)*zero_to_one(time, 100*max_timestep, width=10*max_timestep),axis=-1),axis=-1)
+    warmup = zero_to_one(time, 100*max_timestep, width=10*max_timestep)
+    return warmup*np.sum(np.sum(force_spatial*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1) / force_norm
+
+
+damper = dist.Field(bases=basis.radial_basis)
+damper.change_scales(basis.dealias)
+damper['g'] = zero_to_one(r, radius*0.925, width=radius*0.025)
 
 F = dist.VectorField(coords, bases=basis)
-#F = d3.Grid(dist.VectorField(coords, bases=basis)).evaluate()
 F.change_scales(basis.dealias)
 F['g'][0] = F_func(0)
 
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
+problem.add_equation("dt(u) + u*damper*S - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
 problem.add_equation("dt(T) + u@grad_T0_source - kappa*lap(T) + lift(tau_T) = 0")
 problem.add_equation("shear_stress = 0")  # Stress free
-problem.add_equation("radial(u(r=radius)) = 0")  # No penetration
+problem.add_equation("radial(u(r=radius)) = 0")  # Impermeable
 problem.add_equation("radial(grad(T)(r=radius)) = 0")
 problem.add_equation("integ(p) = 0")  # Pressure gauge
 
@@ -119,9 +125,8 @@ solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
 if not restart:
-    T.fill_random('g', seed=42, distribution='normal', scale=0.01) # Random noise
-    T.low_pass_filter(scales=0.5)
-    T['g'] += 1 - r**2 # Add equilibrium state
+#    T.fill_random('g', seed=42, distribution='normal', scale=0.01) # Random noise
+#    T.low_pass_filter(scales=0.5)
     file_handler_mode = 'overwrite'
     initial_timestep = max_timestep
 else:
@@ -134,13 +139,24 @@ slices = solver.evaluator.add_file_handler('slices', sim_dt=0.1, max_writes=10, 
 slices.add_task(T(phi=0), scales=dealias, name='T(phi=0)')
 slices.add_task(T(phi=np.pi), scales=dealias, name='T(phi=pi)')
 slices.add_task(T(phi=3/2*np.pi), scales=dealias, name='T(phi=3/2*pi)')
-slices.add_task(d3.Average(F, coords.S2coordsys), scales=dealias, name='F')
 slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
+slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
+slices.add_task(F(phi=0), scales=dealias, name='F')
 
 shells = solver.evaluator.add_file_handler('shells', sim_dt=0.5/S, max_writes=100)
-shells.add_task(T(r=r_transition), scales=dealias, name='T(r=r_transition)')
+shells.add_task(T(r=1), scales=dealias, name='T(r=1)')
+shells.add_task(T(r=1.25), scales=dealias, name='T(r=1.25)')
+shells.add_task(T(r=1.4), scales=dealias, name='T(r=1.4)')
+shells.add_task(T(r=1.5), scales=dealias, name='T(r=1.5)')
+shells.add_task(T(r=1.6), scales=dealias, name='T(r=1.6)')
+shells.add_task(T(r=1.75), scales=dealias, name='T(r=1.75)')
 shells.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
-shells.add_task(u(r=r_transition), scales=dealias, name='u(r=r_transition)')
+shells.add_task(u(r=1), scales=dealias, name='u(r=1)')
+shells.add_task(u(r=1.25), scales=dealias, name='u(r=1.25)')
+shells.add_task(u(r=1.4), scales=dealias, name='u(r=1.4)')
+shells.add_task(u(r=1.5), scales=dealias, name='u(r=1.5)')
+shells.add_task(u(r=1.6), scales=dealias, name='u(r=1.6)')
+shells.add_task(u(r=1.75), scales=dealias, name='u(r=1.75)')
 shells.add_task(u(r=radius), scales=dealias, name='u(r=radius)')
 
 #checkpoints = solver.evaluator.add_file_handler('checkpoints', sim_dt=10, max_writes=1, mode=file_handler_mode)
@@ -153,6 +169,7 @@ shells.add_task(u(r=radius), scales=dealias, name='u(r=radius)')
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(u@u, name='u2')
+flow.add_property(F@F, name='F2')
 
 timestep = max_timestep
 # Main loop
@@ -163,12 +180,13 @@ try:
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             max_u = np.sqrt(flow.max('u2'))
-            logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
-        F['g'][0] = F_func(solver.sim_time)
-
-except:
+            max_f = np.sqrt(flow.max('F2'))
+            logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e, max(f) = %e" %(solver.iteration, solver.sim_time, timestep, max_u, max_f))
+        F['g'] = F_func(solver.sim_time)
+except Exception:
     logger.error('Exception raised, triggering end of main loop.')
-    raise
+    print(traceback.format_exc()) 
+    sys.stdout.flush()
 finally:
     solver.log_stats()
 
