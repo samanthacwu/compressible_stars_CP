@@ -7,7 +7,7 @@ Usage:
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: SH_transform_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
-    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 40]
+    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 2]
     --n_files=<num_files>               Total number of files to plot
     --dpi=<dpi>                         Image pixel density [default: 200]
 
@@ -65,6 +65,7 @@ if n_files is not None:
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'.format(data_dir)
 full_out_dir = '{}/{}'.format(root_dir, out_dir)
+print(root_dir, data_dir, out_dir)
 reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files, distribution='single')
 with h5py.File(reader.files[0], 'r') as f:
     fields = list(f['tasks'].keys())
@@ -231,7 +232,7 @@ for ell in range(11):
 
 
 
-freqs_for_dfdell = [1e-2, 5e-2, 8e-2]
+freqs_for_dfdell = [0.5, 1]
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
     freqs = rf['real_freqs'][()]
     ells = rf['ells'][()].flatten()
