@@ -49,7 +49,7 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 1, 64, 128
+Nphi, Ntheta, Nr = 4, 64, 128
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 1

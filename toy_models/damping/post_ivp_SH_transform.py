@@ -80,7 +80,7 @@ if not reader.idle:
 
 
     ntheta = 64
-    nphi = 32 
+    nphi = 4
     dtype = np.float64
     dealias = 1
     radius = 1
