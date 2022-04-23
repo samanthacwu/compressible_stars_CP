@@ -34,6 +34,7 @@ import sys
 import numpy as np
 import dedalus.public as d3
 import logging
+from mpi4py import MPI
 logger = logging.getLogger(__name__)
 
 
@@ -48,24 +49,24 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 32, 64, 128
+Nphi, Ntheta, Nr = 1, 64, 128
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 1
 S=100
-stop_sim_time = 200
 timestepper = d3.SBDF2
-max_timestep = 0.005
 dtype = np.float64
-mesh = [8,8]#2,32]
+mesh = (1, 32)
 
 r_transition=1
 radius=2
 
+resolution=(Nphi, Ntheta, Nr)
+
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
-basis = d3.BallBasis(coords, shape=(Nphi, Ntheta, Nr), radius=radius, dealias=dealias, dtype=dtype)
+basis = d3.BallBasis(coords, shape=resolution, radius=radius, dealias=dealias, dtype=dtype)
 S2_basis = basis.S2_basis()
 
 # Fields
@@ -89,7 +90,22 @@ lift = lambda A: d3.Lift(A, basis, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=radius), index=1))
 
-force_freqs = np.logspace(-2, 2, 100)[None,None,None,:,None]#phi,theta,r,f,ell
+N2 = (r_vec@grad_T0_source).evaluate()
+if N2['g'].size > 0:
+    f_bv_max = np.array((np.sqrt(N2['g'].max())/(2*np.pi),), dtype=np.float64)
+else:
+    f_bv_max = np.array((0,), dtype=np.float64)
+dist.comm_cart.Allreduce(MPI.IN_PLACE, f_bv_max, op=MPI.MAX)
+f_bv_max = float(f_bv_max[0])
+
+min_freq = 5e-2
+max_freq = 2*f_bv_max
+df = 0.5*min_freq
+max_timestep = 1/max_freq
+stop_sim_time = 2/min_freq + 200 * max_timestep
+force_freqs = np.arange(min_freq, max_freq, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
+logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop time = {}'.format(min_freq, max_freq, df, max_timestep, force_freqs.size, stop_sim_time))
+#force_freqs = np.logspace(-2, 2, 100)[None,None,None,:,None]#phi,theta,r,f,ell
 force_ells = np.arange(1, 10)[None,None,None,None,:]
 force_norm = force_freqs.size*force_ells.size
 powf = -4
@@ -116,7 +132,7 @@ F['g'][0] = F_func(0)
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) + u*damper*S - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
+problem.add_equation("dt(u) + u*damper*f_bv_max - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
 problem.add_equation("dt(T) + u@grad_T0_source - kappa*lap(T) + lift(tau_T) = 0")
 problem.add_equation("shear_stress = 0")  # Stress free
 problem.add_equation("radial(u(r=radius)) = 0")  # Impermeable
