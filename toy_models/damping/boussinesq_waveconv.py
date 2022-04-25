@@ -98,14 +98,16 @@ else:
 dist.comm_cart.Allreduce(MPI.IN_PLACE, f_bv_max, op=MPI.MAX)
 f_bv_max = float(f_bv_max[0])
 
-min_freq = 5e-2
-max_freq = 2*f_bv_max
-df = 0.5*min_freq
-max_timestep = 1/max_freq
-stop_sim_time = 2/min_freq + 200 * max_timestep
-force_freqs = np.arange(min_freq, max_freq, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
-logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop time = {}'.format(min_freq, max_freq, df, max_timestep, force_freqs.size, stop_sim_time))
-#force_freqs = np.logspace(-2, 2, 100)[None,None,None,:,None]#phi,theta,r,f,ell
+warmup_iter = 200
+sample_iter = 100
+stop_iter = sample_iter + warmup_iter
+
+sample_freq = 2*f_bv_max
+max_timestep = 1/sample_freq
+df = sample_freq/sample_iter
+min_freq = sample_freq - df*sample_iter #should be 0
+force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
+logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop iter = {}'.format(min_freq, sample_freq, df, max_timestep, force_freqs.size, stop_iter))
 force_ells = np.arange(1, 10)[None,None,None,None,:]
 force_norm = force_freqs.size*force_ells.size
 powf = -4
@@ -141,7 +143,7 @@ problem.add_equation("integ(p) = 0")  # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)
-solver.stop_sim_time = stop_sim_time
+solver.stop_iteration = stop_iter
 
 # Initial conditions
 if not restart:
@@ -163,22 +165,6 @@ slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
 slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
 slices.add_task(F(phi=0), scales=dealias, name='F')
 
-shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=100)
-shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
-shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
-shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
-shells.add_task(p(r=1.5), scales=dealias, name='p(r=1.5)')
-shells.add_task(p(r=1.6), scales=dealias, name='p(r=1.6)')
-shells.add_task(p(r=1.75), scales=dealias, name='p(r=1.75)')
-shells.add_task(p(r=radius), scales=dealias, name='p(r=radius)')
-shells.add_task(u(r=1), scales=dealias, name='u(r=1)')
-shells.add_task(u(r=1.25), scales=dealias, name='u(r=1.25)')
-shells.add_task(u(r=1.4), scales=dealias, name='u(r=1.4)')
-shells.add_task(u(r=1.5), scales=dealias, name='u(r=1.5)')
-shells.add_task(u(r=1.6), scales=dealias, name='u(r=1.6)')
-shells.add_task(u(r=1.75), scales=dealias, name='u(r=1.75)')
-shells.add_task(u(r=radius), scales=dealias, name='u(r=radius)')
-
 ## CFL
 #CFL = d3.CFL(solver, initial_timestep, cadence=10, safety=0.5, threshold=0.1, max_dt=max_timestep)
 #CFL.add_velocity(u)
@@ -189,6 +175,7 @@ flow.add_property(u@u, name='u2')
 flow.add_property(F@F, name='F2')
 
 timestep = max_timestep
+start_iter = solver.iteration
 # Main loop
 try:
     logger.info('Starting main loop')
@@ -200,10 +187,34 @@ try:
             max_f = np.sqrt(flow.max('F2'))
             logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e, max(f) = %e" %(solver.iteration, solver.sim_time, timestep, max_u, max_f))
         F['g'] = F_func(solver.sim_time)
+        
+        if solver.iteration - start_iter == warmup_iter - 1:
+            shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=sample_iter)
+            shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
+            shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
+            shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
+            shells.add_task(p(r=1.5), scales=dealias, name='p(r=1.5)')
+            shells.add_task(p(r=1.6), scales=dealias, name='p(r=1.6)')
+            shells.add_task(p(r=1.75), scales=dealias, name='p(r=1.75)')
+            shells.add_task(p(r=radius), scales=dealias, name='p(r=radius)')
+            shells.add_task(u(r=1), scales=dealias, name='u(r=1)')
+            shells.add_task(u(r=1.25), scales=dealias, name='u(r=1.25)')
+            shells.add_task(u(r=1.4), scales=dealias, name='u(r=1.4)')
+            shells.add_task(u(r=1.5), scales=dealias, name='u(r=1.5)')
+            shells.add_task(u(r=1.6), scales=dealias, name='u(r=1.6)')
+            shells.add_task(u(r=1.75), scales=dealias, name='u(r=1.75)')
+            shells.add_task(u(r=radius), scales=dealias, name='u(r=radius)')
+
+
 except Exception:
     logger.error('Exception raised, triggering end of main loop.')
     print(traceback.format_exc()) 
     sys.stdout.flush()
 finally:
     solver.log_stats()
+    if not shells.check_file_limits():
+        file = shells.get_file()
+        file.close()
+        if dist.comm_cart.rank == 0:
+            shells.process_virtual_file()
 
