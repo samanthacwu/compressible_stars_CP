@@ -75,12 +75,16 @@ reader = SR(root_dir, data_dir, out_dir, start_file=start_file, n_files=n_files,
 if args['--field'] is None:
     with h5py.File(reader.files[0], 'r') as f:
         fields = list(f['tasks'].keys())
+    for f in fields:
+        if 'u(' in f:
+            fields.remove(f)
+    print(fields)
 else:
     fields = [args['--field'],]
 
 
 
-temporal_chunks = 10
+temporal_chunks = 5
 
 
 if not args['--no_ft']:
@@ -118,7 +122,7 @@ if not args['--no_ft']:
             print('reading file {}...'.format(reader.current_file_number+1))
             dsets, ni = reader.get_dsets([f,])
             if first:
-                shape = list(dsets[f][()].shape)[:-1]
+                shape = list(dsets[f][()].shape)
                 shape[0] = times.shape[0]
                 shape[-1] = ms.shape[2]
                 shape[-2] = ells.shape[1]
@@ -126,7 +130,6 @@ if not args['--no_ft']:
                 first = False
             data_cube[writes,:] = dsets[f][ni,:].squeeze()
             writes += 1
-        print(data_cube.shape)
         data_cubes[f] = data_cube
 
     transform_arrs = dict()
@@ -140,6 +143,7 @@ if not args['--no_ft']:
         data_cube = data_cubes[f]
         for tchunk in time_chunks:
             d_cube = data_cube[(times >= tchunk.min())*(times <= tchunk.max()),:]
+            print(d_cube.shape)
             print('taking transform of time chunk starting {:.3e} / ending {:.3e}'.format(tchunk.min(), tchunk.max()))
             transform = np.zeros(d_cube.shape, dtype=np.complex128)
             for ell in range(d_cube.shape[1]):
@@ -205,23 +209,21 @@ for k, powspec_chunks in powers_per_ell.items():
     k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
     for i, tchunk in enumerate(time_chunks):
         powspec = powspec_chunks[i,:]
-        if len(powspec.shape) != 3:
-            powspec = np.expand_dims(powspec, axis=0)
-        full_powspec = np.copy(powspec)
+        if len(powspec.shape) == 3:
+            #algorithm is not vector-safe
+            powspec = powspec[0,:]
+        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
+        sum_power = np.sum(powspec, axis=good_axis).squeeze()
+        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
+            
         
         freqs = freqs_chunks[i,:]
         times = time_chunks[i,:]
         color = sm.to_rgba(np.median(times))
         good = freqs >= 0
 
-        v = 0
-        powspec = full_powspec[v,:]
-        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
-                
-        sum_power = np.sum(powspec, axis=good_axis).squeeze()
-        sum_power_ell2 = np.sum((powspec/ells[:,:,0,0]**2).reshape(powspec.shape)[:,ells[0,:,0,0] > 0], axis=good_axis).squeeze()
-            
-        ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
+
+        ymin = sum_power[(freqs > min_freq)*(freqs <= max_freq)][-1].min()/2
         ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
 
         if len(sum_power.shape) > 1:
@@ -249,16 +251,16 @@ for k, powspec_chunks in powers_per_ell.items():
         print('plotting ell = {}'.format(ell))
         for i, tchunk in enumerate(time_chunks):
             powspec = powspec_chunks[i,:]
-            if len(powspec.shape) != 3:
-                powspec = np.expand_dims(powspec, axis=0)
-            full_powspec = np.copy(powspec)
-            
+            if len(powspec.shape) == 3:
+                #algorithm is not vector-safe
+                powspec = powspec[0,:]
+
             freqs = freqs_chunks[i,:]
             times = time_chunks[i,:]
             color = sm.to_rgba(np.median(times))
             good = freqs >= 0
 
-            ax.loglog(freqs[good], powspec[0,good,ells.flatten()==ell], c=color)
+            ax.loglog(freqs[good], powspec[good,ells.flatten()==ell], c=color)
         ax.text(0.02, 0.95, 'ell={}'.format(ell), ha='left', transform=ax.transAxes)
         ax.set_xlim(min_freq, max_freq)
         ax.set_ylim(ymin, ymax)

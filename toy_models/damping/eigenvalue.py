@@ -1,34 +1,3 @@
-"""
-Dedalus script simulating internally-heated Boussinesq convection in the ball.
-This script demonstrates soving an initial value problem in the ball. It can be
-ran serially or in parallel, and uses the built-in analysis framework to save
-data snapshots to HDF5 files. The `plot_ball.py` script can be used to produce
-plots from the saved data. The simulation should take roughly 15 cpu-minutes to run.
-
-The strength of gravity is proportional to radius, as for a constant density ball.
-The problem is non-dimensionalized using the ball radius and freefall time, so
-the resulting thermal diffusivity and viscosity are related to the Prandtl
-and Rayleigh numbers as:
-
-    kappa = (Rayleigh * Prandtl)**(-1/2)
-    nu = (Rayleigh / Prandtl)**(-1/2)
-
-We use stress-free boundary conditions, and maintain a constant flux on the outer
-boundary. The convection is driven by the internal heating term with a conductive
-equilibrium of T(r) = 1 - r**2.
-
-For incompressible hydro in the ball, we need one tau term each for the velocity
-and temperature. Here we choose to lift them to the original (k=0) basis.
-
-The simulation will run to t=10, about the time for the first convective plumes
-to hit the top boundary. After running this initial simulation, you can restart
-the simulation with the command line option '--restart'.
-
-To run, restart, and plot using e.g. 4 processes:
-    $ mpiexec -n 4 python3 internally_heated_convection.py
-    $ mpiexec -n 4 python3 internally_heated_convection.py --restart
-    $ mpiexec -n 4 python3 plot_ball.py slices/*.h5
-"""
 import os, gc, time, sys
 import numpy as np
 import dedalus.public as d3
@@ -266,7 +235,7 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 128, 64, 96
+Nphi, Ntheta, Nr = 4, 64, 128
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 1
