@@ -102,7 +102,7 @@ min_freq = 5e-2
 max_freq = 2*f_bv_max
 df = 0.5*min_freq
 max_timestep = 1/max_freq
-stop_sim_time = 2/min_freq + 200 * max_timestep
+stop_sim_time = 1000*(2/min_freq) + 200 * max_timestep
 force_freqs = np.arange(min_freq, max_freq, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
 logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop time = {}'.format(min_freq, max_freq, df, max_timestep, force_freqs.size, stop_sim_time))
 #force_freqs = np.logspace(-2, 2, 100)[None,None,None,:,None]#phi,theta,r,f,ell
@@ -121,10 +121,6 @@ def F_func(time):
     return warmup*np.sum(np.sum(scaling*force_spatial*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1) / force_norm
 
 
-damper = dist.Field(bases=basis.radial_basis)
-damper.change_scales(basis.dealias)
-damper['g'] = zero_to_one(r, radius*0.925, width=radius*0.025)
-
 F = dist.VectorField(coords, bases=basis)
 F.change_scales(basis.dealias)
 F['g'][0] = F_func(0)
@@ -132,7 +128,7 @@ F['g'][0] = F_func(0)
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) + u*damper*f_bv_max - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
+problem.add_equation("dt(u) - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = F")
 problem.add_equation("dt(T) + u@grad_T0_source - kappa*lap(T) + lift(tau_T) = 0")
 problem.add_equation("shear_stress = 0")  # Stress free
 problem.add_equation("radial(u(r=radius)) = 0")  # Impermeable
@@ -145,8 +141,6 @@ solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
 if not restart:
-#    T.fill_random('g', seed=42, distribution='normal', scale=0.01) # Random noise
-#    T.low_pass_filter(scales=0.5)
     file_handler_mode = 'overwrite'
     initial_timestep = max_timestep
 else:
@@ -163,25 +157,13 @@ slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
 slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
 slices.add_task(F(phi=0), scales=dealias, name='F')
 
-shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=100)
-shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
-shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
-shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
-shells.add_task(p(r=1.5), scales=dealias, name='p(r=1.5)')
-shells.add_task(p(r=1.6), scales=dealias, name='p(r=1.6)')
-shells.add_task(p(r=1.75), scales=dealias, name='p(r=1.75)')
+shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=1000)
+shells.add_task(p(r=radius), scales=dealias, name='T(r=radius)')
 shells.add_task(p(r=radius), scales=dealias, name='p(r=radius)')
-shells.add_task(u(r=1), scales=dealias, name='u(r=1)')
-shells.add_task(u(r=1.25), scales=dealias, name='u(r=1.25)')
-shells.add_task(u(r=1.4), scales=dealias, name='u(r=1.4)')
-shells.add_task(u(r=1.5), scales=dealias, name='u(r=1.5)')
-shells.add_task(u(r=1.6), scales=dealias, name='u(r=1.6)')
-shells.add_task(u(r=1.75), scales=dealias, name='u(r=1.75)')
 shells.add_task(u(r=radius), scales=dealias, name='u(r=radius)')
 
-## CFL
-#CFL = d3.CFL(solver, initial_timestep, cadence=10, safety=0.5, threshold=0.1, max_dt=max_timestep)
-#CFL.add_velocity(u)
+checkpoints = solver.evaluator.add_file_handler('checkpoints', wall_dt=1*60*60, max_writes=1)
+checkpoints.add_tasks(solver.state)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
