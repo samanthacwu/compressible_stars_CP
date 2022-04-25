@@ -183,24 +183,38 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
         of['wave_luminosity'] = wf['wave_luminosity(r=1.5)'][()]
         of['real_freqs'] = wf['real_freqs'][()]
         of['ells'] = wf['ells'][()]
-        
+
+with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as wf:
+    wf_uphi = wf['u(r=1.25)_cft'][()][:,0]
+    wf_p = wf['p(r=1.25)_cft'][()]
+    wf_freqs = wf['freqs'][()]
+    wf_ells = wf['ells'][()]
+
+
+
+
+N2_max = 100 * 4 #S * r^2 max
+f_bv_max = np.sqrt(N2_max)/(2*np.pi)
+
+sample_iter = 400
+sample_freq = 2*f_bv_max
+max_timestep = 1/sample_freq
+df = sample_freq/sample_iter
+min_freq = sample_freq - df*sample_iter #should be 0
+force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
+force_ells = np.arange(1, 10)[None,None,None,None,:]
+force_norm = force_freqs.size*force_ells.size
+powf = -4
+powl = 4
+scaling = ((force_freqs/force_freqs.min())**(powf)*(force_ells/force_ells.max())**(powl))
+
+r = np.linspace(0, 2, 200)
+radial_dependence = 4*np.pi*np.trapz(r**2*np.exp(-(r - 1)**2/0.1**2))
+wave_lum_func = lambda f, ell: 0.5*radial_dependence*(1/force_freqs.min())**(powf) * (1/force_ells.max())**(powl) * f**powf * ell**powl / force_norm
+#0.5 from cos(ell*theta)
+print(wave_lum_func(1,1), force_norm)
 
 fig = plt.figure()
-for ell in range(11):
-    if ell == 0: continue
-    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-        freqs = rf['real_freqs'][()]
-        for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            if ell == 3 and i == 1:
-                this_ell = 3
-                shift_ind = np.argmax(wave_luminosity)
-                shift_freq = freqs[shift_ind]
-                shift = (wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-                wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-10)*(ell/this_ell)**4
-                wave_luminosity_str = r'{:.2e}'.format(shift/shift_freq**(-10) / this_ell**4) + r'$f^{-10}\ell^4$'
-                break
-
 for ell in range(11):
     if ell == 0: continue
     print('plotting ell = {}'.format(ell))
@@ -216,14 +230,17 @@ for ell in range(11):
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
             plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
-#                shift_ind = np.argmax(wave_luminosity*freqs)
-#                shift_freq = freqs[shift_ind]
-#                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
+
+
+            pomega_func = interp1d(wf_freqs.ravel(), np.sqrt(np.sum(wf_p[:,ell,:]*np.conj(wf_p[:,ell,:]), axis=1)))
+            uphi_func = interp1d(wf_freqs.ravel(), np.sqrt(np.sum(wf_uphi[:,ell,:]*np.conj(wf_uphi[:,ell,:]), axis=1)))
+            kh = np.sqrt(ell * (ell + 1) / (1.25))
+            plt.loglog(freqs, wave_lum_func(freqs, ell) * (2*np.pi*freqs/kh**3) * (pomega_func(freqs)), c='k')
 #    plt.loglog(freqs, wave_luminosity_power(freqs, ell), c='k', label=wave_luminosity_str)
     plt.legend(loc='best')
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
-    plt.ylabel(r'|wave luminosity|/r')
+    plt.ylabel(r'|wave luminosity|')
 #    plt.ylim(1e-33, 1e-17)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
@@ -232,7 +249,7 @@ for ell in range(11):
 
 
 
-freqs_for_dfdell = [0.5, 1]
+freqs_for_dfdell = [0.3, 0.5, 1]
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
     freqs = rf['real_freqs'][()]
     ells = rf['ells'][()].flatten()
@@ -245,13 +262,25 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
             else:
                 radius = float(radius_str)
             if radius < 1: continue
+            if radius != 1.25: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][f_ind, :])
             plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
+#            plt.loglog(ells, wave_lum_func(f, ells), c='k')
+
+            pomega = np.zeros_like(ells, dtype=np.float64)
+            for ell in ells:
+                ell = int(ell)
+                pomega_func = interp1d(wf_freqs.ravel(), np.sqrt(np.sum(wf_p[:,ell,:]*np.conj(wf_p[:,ell,:]), axis=1)))
+                uphi_func = interp1d(wf_freqs.ravel(), np.sqrt(np.sum(wf_uphi[:,ell,:]*np.conj(wf_uphi[:,ell,:]), axis=1)))
+                pomega[ell] = pomega_func(f).real
+            kh = np.sqrt(ells * (ells + 1) / (1.25))
+            plt.loglog(ells, (2*np.pi*f/kh**3) * pomega * wave_lum_func(f,ells), c='k')
+
 #        plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')
         plt.title('f = {} 1/day'.format(f))
         plt.xlabel(r'$\ell$')
-        plt.ylabel(r'|wave luminosity|/r')
+        plt.ylabel(r'|wave luminosity|')
 #        plt.ylim(1e-33, 1e-17)
         plt.xlim(1, ells.max())
         fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
