@@ -36,6 +36,7 @@ import dedalus.public as d3
 import logging
 from mpi4py import MPI
 logger = logging.getLogger(__name__)
+from scipy.special import sph_harm
 
 
 from scipy.special import erf
@@ -50,13 +51,13 @@ restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
 Nphi, Ntheta, Nr = 4, 64, 128
-Rayleigh = 1e6
+Rayleigh = 1e16
 Prandtl = 1
 dealias = 1
 S=100
 timestepper = d3.SBDF2
 dtype = np.float64
-mesh = (1, 32)
+mesh = (1, MPI.COMM_WORLD.size)
 
 r_transition=1
 radius=2
@@ -82,6 +83,10 @@ phi, theta, r = dist.local_grids(basis)
 r_vec = dist.VectorField(coords, bases=basis.radial_basis)
 r_vec['g'][2] = r
 
+er = dist.VectorField(coords, bases=basis)
+er['g'][2] = 1
+
+
 grad_T0_source = dist.VectorField(coords, bases=basis.radial_basis)
 grad_T0_source['g'][2] = S * r * zero_to_one(r, r_transition, width=0.1)
 kappa = (Rayleigh * Prandtl)**(-1/2)
@@ -99,37 +104,51 @@ dist.comm_cart.Allreduce(MPI.IN_PLACE, f_bv_max, op=MPI.MAX)
 f_bv_max = float(f_bv_max[0])
 
 warmup_iter = 200
-sample_iter = 100
+sample_iter = 1000
 stop_iter = sample_iter + warmup_iter
 
 sample_freq = 2*f_bv_max
 max_timestep = 1/sample_freq
 df = sample_freq/sample_iter
 min_freq = sample_freq - df*sample_iter #should be 0
-force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,:,None]#phi,theta,r,f,ell
+#force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,None,:]#phi,theta,r,ell, f
+force_freqs = 0.1 * np.ones((1,))[None,None,None,None,None,:]
 logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop iter = {}'.format(min_freq, sample_freq, df, max_timestep, force_freqs.size, stop_iter))
-force_ells = np.arange(1, 10)[None,None,None,None,:]
-force_norm = force_freqs.size*force_ells.size
-powf = -4
-powl = 4
-scaling = ((force_freqs/force_freqs.min())**(powf)*(force_ells/force_ells.max())**(powl))
+#force_ells = np.arange(1, 2,dtype=np.float64)[None,None,None,:]#phi,theta,r,ell
+#force_ells = np.arange(1, Ntheta-4,dtype=np.float64)[None,None,None,:]#phi,theta,r,ell
+force_ells = np.arange(4, 5,dtype=np.float64)[None,None,None,None,:]
+leading_normalization = 1e-2
+powf = 1
+powl = 1
+f_scaling = (force_freqs)**(powf) 
+ell_scaling = (force_ells)**(powl)
+
+scalar_F = dist.Field(bases=basis)
+F = dist.VectorField(coords, bases=basis)
+grad_F = d3.grad(scalar_F)
 
 de_phi, de_theta, de_r = dist.local_grids(basis, scales=basis.dealias)
-theta_force = de_theta[:,:,:,None,None]
-force_spatial = np.exp(-(de_r - r_transition)**2/0.1**2)[:,:,:,None,None] * np.cos(force_ells*theta_force)
+theta_force = de_theta[None,:,:,:]
+phi_force = de_phi[None,:,:,:]
+force_radial = np.exp(-(de_r - r_transition)**2/0.1**2)[None,:,:,:,None]
+force_angular = np.zeros((*tuple(F['g'].shape), force_ells.size))
+for i, ell in enumerate(force_ells.ravel()): 
+    scalar_F['g'] = sph_harm(0, ell, phi_force, theta_force).real
+    force_angular[:,:,:,:,i] = grad_F.evaluate()['g']
+
+force_spatial = force_angular * force_radial
 
 def F_func(time):
     warmup = zero_to_one(time, 100*max_timestep, width=10*max_timestep)
-    return warmup*np.sum(np.sum(scaling*force_spatial*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1) / force_norm
+    #sum over freqs, then ells
+    return leading_normalization * warmup * np.sum(ell_scaling*force_spatial*np.sum(f_scaling*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1)
 
 
 damper = dist.Field(bases=basis.radial_basis)
 damper.change_scales(basis.dealias)
 damper['g'] = zero_to_one(r, radius*0.925, width=radius*0.025)
 
-F = dist.VectorField(coords, bases=basis)
-F.change_scales(basis.dealias)
-F['g'][0] = F_func(0)
+F['g'] = F_func(0)
 
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
@@ -157,13 +176,19 @@ else:
     file_handler_mode = 'append'
 
 # Analysis
-slices = solver.evaluator.add_file_handler('slices', sim_dt=0.1, max_writes=10, mode=file_handler_mode)
-slices.add_task(T(phi=0), scales=dealias, name='T(phi=0)')
-slices.add_task(T(phi=np.pi), scales=dealias, name='T(phi=pi)')
-slices.add_task(T(phi=3/2*np.pi), scales=dealias, name='T(phi=3/2*pi)')
-slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
-slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
-slices.add_task(F(phi=0), scales=dealias, name='F')
+#slices = solver.evaluator.add_file_handler('slices', sim_dt=0.1, max_writes=10, mode=file_handler_mode)
+#slices.add_task(T(phi=0), scales=dealias, name='T(phi=0)')
+#slices.add_task(T(phi=np.pi), scales=dealias, name='T(phi=pi)')
+#slices.add_task(T(phi=3/2*np.pi), scales=dealias, name='T(phi=3/2*pi)')
+#slices.add_task(T(r=radius), scales=dealias, name='T(r=radius)')
+#slices.add_task(T(theta=0), scales=dealias, name='T(theta=0)')
+#slices.add_task(F(phi=0), scales=dealias, name='F')
+
+
+s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
+profiles = solver.evaluator.add_file_handler('profiles', iter=1, max_writes=100, mode=file_handler_mode)
+profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(u*p)), name='wave_flux')
+profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(nu*d3.cross(u,d3.curl(u)))), name='visc_flux')
 
 ## CFL
 #CFL = d3.CFL(solver, initial_timestep, cadence=10, safety=0.5, threshold=0.1, max_dt=max_timestep)
@@ -172,6 +197,7 @@ slices.add_task(F(phi=0), scales=dealias, name='F')
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(u@u, name='u2')
+flow.add_property((er@u)**2, name='ur2')
 flow.add_property(F@F, name='F2')
 
 timestep = max_timestep
@@ -184,12 +210,14 @@ try:
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             max_u = np.sqrt(flow.max('u2'))
+            max_ur = np.sqrt(flow.max('ur2'))
             max_f = np.sqrt(flow.max('F2'))
-            logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e, max(f) = %e" %(solver.iteration, solver.sim_time, timestep, max_u, max_f))
+            logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e / r: %e, max(f) = %e" %(solver.iteration, solver.sim_time, timestep, max_u, max_ur, max_f))
+
         F['g'] = F_func(solver.sim_time)
         
         if solver.iteration - start_iter == warmup_iter - 1:
-            shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=sample_iter)
+            shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=100)
             shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
             shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
             shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
@@ -207,9 +235,7 @@ try:
 
 
 except Exception:
-    logger.error('Exception raised, triggering end of main loop.')
-    print(traceback.format_exc()) 
-    sys.stdout.flush()
+    logger.error('Exception raised, triggering end of main loop. Error message: {}'.format(traceback.format_exc()))
 finally:
     solver.log_stats()
     if not shells.check_file_limits():
