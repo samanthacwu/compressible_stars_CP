@@ -235,7 +235,7 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 4, 64, 128
+Nphi, Ntheta, Nr = 4, 8, 128
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 1
@@ -283,12 +283,19 @@ for rn, res in enumerate(resolutions):
     ns['shear_stress'] = shear_stress = d3.angular(d3.radial(strain_rate(r=radius), index=1))
 
 
+    ns['damper'] = damper = dist.Field(bases=basis.radial_basis)
+    damper.change_scales(basis.dealias)
+    damper['g'] = zero_to_one(r, radius*0.925, width=radius*0.025)
+
+    N2 = (r_vec@grad_T0_source).evaluate()
+    ns['f_bv_max'] = f_bv_max = np.sqrt(N2['g'].max())/(2*np.pi)
+
     # Problem
     ns['omega'] = omega = dist.Field(name='omega')
     ns['dt'] = dt = lambda A: -1j * omega * A
     problem = d3.EVP([p, u, T, tau_p, tau_u, tau_T], namespace=ns, eigenvalue=omega)
     problem.add_equation("div(u) + tau_p = 0")
-    problem.add_equation("dt(u) - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = 0")
+    problem.add_equation("dt(u) + u*damper*f_bv_max - nu*lap(u) - r_vec*T + grad(p) + lift(tau_u) = 0")
     problem.add_equation("dt(T) + u@grad_T0_source - kappa*lap(T) + lift(tau_T) = 0")
     problem.add_equation("shear_stress = 0")  # Stress free
     problem.add_equation("radial(u(r=radius)) = 0")  # No penetration
