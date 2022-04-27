@@ -217,7 +217,7 @@ for k, powspec in powers_per_ell.items():
 
         plt.clf()
 
-        for ell in range(1, 21):
+        for ell in range(2, 4):
             print('plotting ell = {}'.format(ell))
             plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
             plt.xlim(min_freq, max_freq)

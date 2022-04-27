@@ -95,6 +95,12 @@ lift = lambda A: d3.Lift(A, basis, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=radius), index=1))
 
+
+## Forcing
+scalar_F = dist.Field(bases=basis)
+F = dist.VectorField(coords, bases=basis)
+grad_F = d3.grad(scalar_F)
+
 N2 = (r_vec@grad_T0_source).evaluate()
 if N2['g'].size > 0:
     f_bv_max = np.array((np.sqrt(N2['g'].max())/(2*np.pi),), dtype=np.float64)
@@ -107,25 +113,35 @@ warmup_iter = 200
 sample_iter = 1000
 stop_iter = sample_iter + warmup_iter
 
-sample_freq = 2*f_bv_max
+#Physically motivated
+#sample_freq = 2*f_bv_max
+#max_timestep = 1/sample_freq
+#df = sample_freq/sample_iter
+#min_freq = sample_freq - df*sample_iter #should be 0
+#force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,None,:]#phi,theta,r,ell, f
+#force_ells = np.arange(1, Ntheta-4,dtype=np.float64)[None,None,None,:]#phi,theta,r,ell
+#powf = 1
+#powl = 1
+#f_scaling = (force_freqs)**(powf) 
+#ell_scaling = (force_ells)**(powl)
+
+#Toy model
+leading_normalization = 1e-2
+forcing_freq = 0.1
+forcing_ell = 3
+sample_freq = 2
 max_timestep = 1/sample_freq
 df = sample_freq/sample_iter
-min_freq = sample_freq - df*sample_iter #should be 0
-#force_freqs = np.arange(min_freq+df, f_bv_max, step=df)[None,None,None,None,:]#phi,theta,r,ell, f
-force_freqs = 0.1 * np.ones((1,))[None,None,None,None,None,:]
-logger.info('forcing from {} to {} at df = {} / dt = {}; freq_steps = {}; stop iter = {}'.format(min_freq, sample_freq, df, max_timestep, force_freqs.size, stop_iter))
-#force_ells = np.arange(1, 2,dtype=np.float64)[None,None,None,:]#phi,theta,r,ell
-#force_ells = np.arange(1, Ntheta-4,dtype=np.float64)[None,None,None,:]#phi,theta,r,ell
-force_ells = np.arange(4, 5,dtype=np.float64)[None,None,None,None,:]
-leading_normalization = 1e-2
-powf = 1
-powl = 1
-f_scaling = (force_freqs)**(powf) 
-ell_scaling = (force_ells)**(powl)
+if not forcing_freq / df == forcing_freq // df:
+    raise ValueError("Not sampling at the forcing frequency")
 
-scalar_F = dist.Field(bases=basis)
-F = dist.VectorField(coords, bases=basis)
-grad_F = d3.grad(scalar_F)
+min_freq = sample_freq - df*sample_iter #should be 0
+force_freqs = forcing_freq * np.ones((1,))[None,None,None,None,None,:]
+force_ells = np.arange(forcing_ell, forcing_ell + 1,dtype=np.float64)[None,None,None,None,:]
+f_scaling   = 1
+ell_scaling = 1
+logger.info('forcing f = {} / ell = {}; A0 = {:.1e}, dt = {}; stop iter = {}'.format(forcing_freq, forcing_ell, leading_normalization, max_timestep, stop_iter))
+
 
 de_phi, de_theta, de_r = dist.local_grids(basis, scales=basis.dealias)
 theta_force = de_theta[None,:,:,:]
