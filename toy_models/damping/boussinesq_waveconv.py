@@ -129,9 +129,10 @@ stop_iter = sample_iter + warmup_iter
 leading_normalization = 1e-2
 forcing_freq = 0.1
 forcing_ell = 3
+forcing_m = 0
 sample_freq = 2
 max_timestep = 1/sample_freq
-df = sample_freq/sample_iter
+df = sample_freq/(sample_iter)
 if not forcing_freq / df == forcing_freq // df:
     raise ValueError("Not sampling at the forcing frequency")
 
@@ -149,7 +150,7 @@ phi_force = de_phi[None,:,:,:]
 force_radial = np.exp(-(de_r - r_transition)**2/0.1**2)[None,:,:,:,None]
 force_angular = np.zeros((*tuple(F['g'].shape), force_ells.size))
 for i, ell in enumerate(force_ells.ravel()): 
-    scalar_F['g'] = sph_harm(0, ell, phi_force, theta_force).real
+    scalar_F['g'] = sph_harm(forcing_m, ell, phi_force, theta_force).real
     force_angular[:,:,:,:,i] = grad_F.evaluate()['g']
 
 force_spatial = force_angular * force_radial
@@ -202,7 +203,7 @@ else:
 
 
 s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
-profiles = solver.evaluator.add_file_handler('profiles', iter=1, max_writes=100, mode=file_handler_mode)
+profiles = solver.evaluator.add_file_handler('profiles', iter=1, max_writes=40, mode=file_handler_mode)
 profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(u*p)), name='wave_flux')
 profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(nu*d3.cross(u,d3.curl(u)))), name='visc_flux')
 
@@ -232,8 +233,8 @@ try:
 
         F['g'] = F_func(solver.sim_time)
         
-        if solver.iteration - start_iter == warmup_iter - 1:
-            shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=100)
+        if solver.iteration - start_iter == warmup_iter:
+            shells = solver.evaluator.add_file_handler('shells', sim_dt=max_timestep, max_writes=int(sample_iter/20))
             shells.add_task(p(r=1), scales=dealias, name='p(r=1)')
             shells.add_task(p(r=1.25), scales=dealias, name='p(r=1.25)')
             shells.add_task(p(r=1.4), scales=dealias, name='p(r=1.4)')
