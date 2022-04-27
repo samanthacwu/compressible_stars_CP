@@ -236,7 +236,7 @@ restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
 Nphi, Ntheta, Nr = 4, 8, 128
-Rayleigh = 1e6
+Rayleigh = 1e16
 Prandtl = 1
 dealias = 1
 S=100

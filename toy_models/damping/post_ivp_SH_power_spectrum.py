@@ -17,8 +17,6 @@ Options:
     --col_inch=<in>                     Number of inches / column [default: 3]
     --row_inch=<in>                     Number of inches / row [default: 3]
 
-    --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
-
     --no_ft
     --field=<f>                         If specified, only transform this field
 """
@@ -48,7 +46,6 @@ logger = logging.getLogger(__name__)
 
 from dedalus.tools.config import config
 
-from d3_stars.simulations.parser import parse_std_config
 from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
 
 args = docopt(__doc__)
@@ -67,27 +64,6 @@ start_file  = int(args['--start_file'])
 n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
-
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-with h5py.File(star_file, 'r') as f:
-    rB = f['r_B'][()]
-    rS1 = f['r_S1'][()]
-    rS2 = f['r_S2'][()]
-    rhoB = np.exp(f['ln_rho_B'][()])
-    rhoS1 = np.exp(f['ln_rho_S1'][()])
-    rhoS2 = np.exp(f['ln_rho_S2'][()])
-    r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
-    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
-    rho_func = interp1d(r,rho)
-    tau = f['tau_nd'][()]/(60*60*24)
-    r_outer = f['r_outer'][()]
-    radius = r_outer * f['L_nd'][()]
-    #Entropy units are erg/K/g
-    s_c = f['s_nd'][()]
-    N2plateau = f['N2plateau'][()] * (60*60*24)**2
-
-    N2plateau_sim = f['N2plateau'][()] * tau**2
-    N2plateau = f['N2plateau'][()] * (60*60*24)**2
 
 # Create Plotter object, tell it which fields to plot
 if 'SH_transform' in data_dir:
@@ -125,36 +101,45 @@ if not args['--no_ft']:
     #TODO: only load in one ell and m at a time, that'll save memory.
     for i, f in enumerate(fields):
         print('reading field {}'.format(f))
+        if 'u(' in f:
+            data_cube = np.zeros((times.shape[0], 3, ells.shape[1], ms.shape[2]), dtype=np.complex128)
 
-        print('filling datacube...')
-        writes = 0
-        first = True
-        while reader.writes_remain():
-            print('reading file {}...'.format(reader.current_file_number+1))
-            dsets, ni = reader.get_dsets([f,])
-            if first:
-                shape = list(dsets[f][()].shape)[:-1]
-                shape[0] = times.shape[0]
-                shape[-1] = ms.shape[2]
-                shape[-2] = ells.shape[1]
-                data_cube = np.zeros(shape, dtype=np.complex128)
-                first = False
-            data_cube[writes,:] = dsets[f][ni,:].squeeze()
-            writes += 1
-        print(data_cube.shape)
+            print('filling datacube...')
+            writes = 0
+            while reader.writes_remain():
+                dsets, ni = reader.get_dsets([])
+                rf = reader.current_file_handle
+                data_cube[writes,:] = rf['tasks'][f][ni,:].squeeze()
+                writes += 1
 
-        print('taking transform')
-        transform = np.zeros(data_cube.shape, dtype=np.complex128)
-        for ell in range(data_cube.shape[1]):
-            print('taking transforms on {}: {}/{}'.format(f, ell+1, data_cube.shape[1]))
-            for m in range(data_cube.shape[2]):
-                if m > ell: continue
-                if len(data_cube.shape) == 4:
-                    for v in range(data_cube.shape[1]):
-                        freqs, transform[:,v,ell,m] = clean_cfft(times, data_cube[:,v,ell,m])
-                else:
+            print('taking transform')
+            transform = np.zeros(data_cube.shape, dtype=np.complex128)
+            for v in range(3):
+                for ell in range(data_cube.shape[2]):
+                    print('taking transforms {}/{} (vind: {})'.format(ell+1, data_cube.shape[2], v))
+                    for m in range(data_cube.shape[3]):
+                        if m > ell: continue
+                        freqs, transform[:,v,ell,m] = clean_cfft(times, data_cube[:,v, ell,m])
+
+        else:
+            data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
+
+            print('filling datacube...')
+            writes = 0
+            while reader.writes_remain():
+                dsets, ni = reader.get_dsets([])
+                rf = reader.current_file_handle
+                data_cube[writes,:] = rf['tasks'][f][ni,:].squeeze()
+                writes += 1
+
+            print('taking transform')
+            transform = np.zeros(data_cube.shape, dtype=np.complex128)
+            for ell in range(data_cube.shape[1]):
+                print('taking transforms {}/{}'.format(ell+1, data_cube.shape[1]))
+                for m in range(data_cube.shape[2]):
+                    if m > ell: continue
                     freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
-#        transform -= np.mean(transform, axis=0) #remove the temporal average; don't care about it.
+
         gc.collect()
         freqs0 = freqs
         if len(data_cube.shape) == 4:
@@ -174,12 +159,10 @@ if not args['--no_ft']:
                 wf['{}_ell1_data'.format(f)] = data_cube[:, 1, :]
             if i == 0:
                 wf['freqs'] = freqs 
-                wf['freqs_inv_day'] = freqs/tau
         with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
             wf['{}_cft'.format(f)] = transform
             if i == 0:
                 wf['freqs'] = freqs0
-                wf['freqs_inv_day'] = freqs0/tau
 
 
 powers_per_ell = OrderedDict()
@@ -190,25 +173,26 @@ with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
     freqs = out_f['freqs'][()]
 
 
+print(ells, ells.shape)
 
 
 good = freqs >= 0
 min_freq = 3e-3
 max_freq = freqs.max()
 for k, powspec in powers_per_ell.items():
+    print('plotting field {}'.format(k))
     if len(powspec.shape) != 3:
         powspec = np.expand_dims(powspec, axis=0)
     full_powspec = np.copy(powspec)
     for v in range(full_powspec.shape[0]):
         powspec = full_powspec[v,:]
         good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
-                
 
         print(powspec.shape, ells.shape)
         sum_power = np.sum(powspec, axis=good_axis).squeeze()
-        sum_power_ell2 = np.sum((powspec/ells[:,:,0,0]**2).reshape(powspec.shape)[:,ells[0,:,0,0] > 0], axis=good_axis).squeeze()
+        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
             
-        ymin = sum_power[(freqs > min_freq)*(freqs < max_freq)][-1].min()/2
+        ymin = sum_power[(freqs > min_freq)*(freqs <= max_freq)][-1].min()/2
         ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
 
         plt.figure()
@@ -223,7 +207,7 @@ for k, powspec in powers_per_ell.items():
         plt.xscale('log')
         plt.ylabel(r'Power ({})'.format(k))
         plt.xlabel(r'Frequency (sim units)')
-        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
+#        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
         plt.xlim(min_freq, max_freq)
         plt.ylim(ymin, ymax)
         plt.legend(loc='best')
@@ -234,6 +218,7 @@ for k, powspec in powers_per_ell.items():
         plt.clf()
 
         for ell in range(1, 21):
+            print('plotting ell = {}'.format(ell))
             plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
             plt.xlim(min_freq, max_freq)
             plt.ylim(ymin, ymax)
