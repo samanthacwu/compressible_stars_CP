@@ -1,42 +1,23 @@
 """
-Dedalus script simulating internally-heated Boussinesq convection in the ball.
-This script demonstrates soving an initial value problem in the ball. It can be
-ran serially or in parallel, and uses the built-in analysis framework to save
-data snapshots to HDF5 files. The `plot_ball.py` script can be used to produce
-plots from the saved data. The simulation should take roughly 15 cpu-minutes to run.
+Forcing of a single mode
 
-The strength of gravity is proportional to radius, as for a constant density ball.
-The problem is non-dimensionalized using the ball radius and freefall time, so
-the resulting thermal diffusivity and viscosity are related to the Prandtl
-and Rayleigh numbers as:
+Usage:
+    boussinesq_waveconv.py [options]
 
-    kappa = (Rayleigh * Prandtl)**(-1/2)
-    nu = (Rayleigh / Prandtl)**(-1/2)
-
-We use stress-free boundary conditions, and maintain a constant flux on the outer
-boundary. The convection is driven by the internal heating term with a conductive
-equilibrium of T(r) = 1 - r**2.
-
-For incompressible hydro in the ball, we need one tau term each for the velocity
-and temperature. Here we choose to lift them to the original (k=0) basis.
-
-The simulation will run to t=10, about the time for the first convective plumes
-to hit the top boundary. After running this initial simulation, you can restart
-the simulation with the command line option '--restart'.
-
-To run, restart, and plot using e.g. 4 processes:
-    $ mpiexec -n 4 python3 internally_heated_convection.py
-    $ mpiexec -n 4 python3 internally_heated_convection.py --restart
-    $ mpiexec -n 4 python3 plot_ball.py slices/*.h5
+Options:
+    --ell=<int>      Ell for forcing [default: 1]
+    --freq=<float>   Freq for forcing [default: 0.2]
 """
 import traceback
 import sys
 import numpy as np
 import dedalus.public as d3
+from docopt import docopt
 import logging
 from mpi4py import MPI
 logger = logging.getLogger(__name__)
 from scipy.special import sph_harm
+args = docopt(__doc__)
 
 
 from scipy.special import erf
@@ -50,7 +31,7 @@ def zero_to_one(*args, **kwargs):
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 4, 64, 128
+Nphi, Ntheta, Nr = 4, 32, 128
 Rayleigh = 1e16
 Prandtl = 1
 dealias = 1
@@ -110,7 +91,7 @@ dist.comm_cart.Allreduce(MPI.IN_PLACE, f_bv_max, op=MPI.MAX)
 f_bv_max = float(f_bv_max[0])
 
 warmup_iter = 200
-sample_iter = 1000
+sample_iter = 500
 stop_iter = sample_iter + warmup_iter
 
 #Physically motivated
@@ -127,9 +108,9 @@ stop_iter = sample_iter + warmup_iter
 
 #Toy model
 leading_normalization = 1e-2
-forcing_freq = 0.1
-forcing_ell = 3
-forcing_m = 0
+forcing_freq = float(args['--freq'])
+forcing_ell = float(args['--ell'])
+forcing_m = 1
 sample_freq = 2
 max_timestep = 1/sample_freq
 df = sample_freq/(sample_iter)
@@ -151,7 +132,7 @@ force_radial = np.exp(-(de_r - r_transition)**2/0.1**2)[None,:,:,:,None]
 force_angular = np.zeros((*tuple(F['g'].shape), force_ells.size))
 for i, ell in enumerate(force_ells.ravel()): 
     scalar_F['g'] = sph_harm(forcing_m, ell, phi_force, theta_force).real
-    force_angular[:,:,:,:,i] = grad_F.evaluate()['g']
+    force_angular[:,:,:,:,i] = grad_F.evaluate()['g'] / np.sqrt(ell * (ell + 1))
 
 force_spatial = force_angular * force_radial
 
@@ -159,7 +140,6 @@ def F_func(time):
     warmup = zero_to_one(time, 100*max_timestep, width=10*max_timestep)
     #sum over freqs, then ells
     return leading_normalization * warmup * np.sum(ell_scaling*force_spatial*np.sum(f_scaling*np.sin(2*np.pi*force_freqs*time),axis=-1),axis=-1)
-
 
 damper = dist.Field(bases=basis.radial_basis)
 damper.change_scales(basis.dealias)
@@ -203,7 +183,7 @@ else:
 
 
 s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
-profiles = solver.evaluator.add_file_handler('profiles', iter=1, max_writes=40, mode=file_handler_mode)
+profiles = solver.evaluator.add_file_handler('profiles', iter=1, max_writes=500, mode=file_handler_mode)
 profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(u*p)), name='wave_flux')
 profiles.add_task(s2_avg(4*np.pi*(er@r_vec)*er@(nu*d3.cross(u,d3.curl(u)))), name='visc_flux')
 

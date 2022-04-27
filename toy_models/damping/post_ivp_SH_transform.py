@@ -79,7 +79,7 @@ if not reader.idle:
         fields = [args['--field'],]
 
 
-    ntheta = 64
+    ntheta = 32
     nphi = 4
     dtype = np.float64
     dealias = 1

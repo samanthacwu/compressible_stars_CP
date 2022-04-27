@@ -165,66 +165,67 @@ if not args['--no_ft']:
                 wf['freqs'] = freqs0
 
 
-powers_per_ell = OrderedDict()
-with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
-    for f in fields:
-        powers_per_ell[f] = out_f['{}_power_per_ell'.format(f)][()]
-    ells = out_f['ells'][()]
-    freqs = out_f['freqs'][()]
+#powers_per_ell = OrderedDict()
+#with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as out_f:
+#    for f in fields:
+#        powers_per_ell[f] = out_f['{}_power_per_ell'.format(f)][()]
+#    ells = out_f['ells'][()]
+#    freqs = out_f['freqs'][()]
 
 
-print(ells, ells.shape)
-
-
-good = freqs >= 0
-min_freq = 3e-3
-max_freq = freqs.max()
-for k, powspec in powers_per_ell.items():
-    print('plotting field {}'.format(k))
-    if len(powspec.shape) != 3:
-        powspec = np.expand_dims(powspec, axis=0)
-    full_powspec = np.copy(powspec)
-    for v in range(full_powspec.shape[0]):
-        powspec = full_powspec[v,:]
-        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
-
-        print(powspec.shape, ells.shape)
-        sum_power = np.sum(powspec, axis=good_axis).squeeze()
-        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
-            
-        ymin = sum_power[(freqs > min_freq)*(freqs <= max_freq)][-1].min()/2
-        ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
-
-        plt.figure()
-        if len(sum_power.shape) > 1:
-            for i in range(sum_power.shape[1]):
-                plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
-                plt.plot(freqs[good], sum_power_ell2[good, i], c = 'orange', label=r'axis {}, sum over $\ell$ values with $\ell^{-2}$'.format(i))
-        else:
-            plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
-            plt.plot(freqs[good], sum_power_ell2[good], c = 'orange', label=r'sum over $\ell$ values with $\ell^{-2}$')
-        plt.yscale('log')
-        plt.xscale('log')
-        plt.ylabel(r'Power ({})'.format(k))
-        plt.xlabel(r'Frequency (sim units)')
-#        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
-        plt.xlim(min_freq, max_freq)
-        plt.ylim(ymin, ymax)
-        plt.legend(loc='best')
-        k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
-
-        plt.savefig('{}/{}_v{}_summed_power.png'.format(full_out_dir, k_out, v), dpi=600)
-
-        plt.clf()
-
-        for ell in range(2, 4):
-            print('plotting ell = {}'.format(ell))
-            plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
-            plt.xlim(min_freq, max_freq)
-            plt.ylim(ymin, ymax)
-            plt.title('ell={}'.format(ell))
-            plt.xlabel('frequency (sim units)')
-            plt.ylabel('Power')
-            plt.savefig('{}/{}_v{}_ell_{:03d}.png'.format(full_out_dir, k_out, v, ell), dpi=200, bbox_inches='tight')
-            plt.clf()
-
+#print(ells, ells.shape)
+#
+#
+#good = freqs >= 0
+#min_freq = 3e-3
+#max_freq = freqs.max()
+#for k, powspec in powers_per_ell.items():
+#    if 'p(' in k: continue
+#    print('plotting field {}'.format(k))
+#    if len(powspec.shape) != 3:
+#        powspec = np.expand_dims(powspec, axis=0)
+#    full_powspec = np.copy(powspec)
+#    for v in range(full_powspec.shape[0]):
+#        powspec = full_powspec[v,:]
+#        good_axis = np.arange(len(powspec.shape))[np.array(powspec.shape) == len(ells.flatten())][0]
+#
+#        print(powspec.shape, ells.shape)
+#        sum_power = np.sum(powspec, axis=good_axis).squeeze()
+#        sum_power_ell2 = np.sum((powspec/ells[:,:,0]**2).reshape(powspec.shape)[:,ells[0,:,0] > 0], axis=good_axis).squeeze()
+#            
+#        ymin = sum_power[(freqs > min_freq)*(freqs <= max_freq)][-1].min()/2
+#        ymax = sum_power[(freqs > min_freq)*(freqs <= max_freq)].max()*2
+#
+#        plt.figure()
+#        if len(sum_power.shape) > 1:
+#            for i in range(sum_power.shape[1]):
+#                plt.plot(freqs[good], sum_power[good, i], c = 'k', label=r'axis {}, sum over $\ell$ values'.format(i))
+#                plt.plot(freqs[good], sum_power_ell2[good, i], c = 'orange', label=r'axis {}, sum over $\ell$ values with $\ell^{-2}$'.format(i))
+#        else:
+#            plt.plot(freqs[good], sum_power[good], c = 'k', label=r'sum over $\ell$ values')
+#            plt.plot(freqs[good], sum_power_ell2[good], c = 'orange', label=r'sum over $\ell$ values with $\ell^{-2}$')
+#        plt.yscale('log')
+#        plt.xscale('log')
+#        plt.ylabel(r'Power ({})'.format(k))
+#        plt.xlabel(r'Frequency (sim units)')
+##        plt.axvline(np.sqrt(N2plateau_sim)/(2*np.pi), c='k')
+#        plt.xlim(min_freq, max_freq)
+#        plt.ylim(ymin, ymax)
+#        plt.legend(loc='best')
+#        k_out = k.replace('(', '_').replace(')', '').replace('=', '').replace(',','_')
+#
+#        plt.savefig('{}/{}_v{}_summed_power.png'.format(full_out_dir, k_out, v), dpi=600)
+#
+#        plt.clf()
+#
+#        for ell in range(2, 5):
+#            print('plotting ell = {}'.format(ell))
+#            plt.loglog(freqs[good], powspec[:,ells.flatten()==ell], c='k')
+#            plt.xlim(min_freq, max_freq)
+#            plt.ylim(ymin, ymax)
+#            plt.title('ell={}'.format(ell))
+#            plt.xlabel('frequency (sim units)')
+#            plt.ylabel('Power')
+#            plt.savefig('{}/{}_v{}_ell_{:03d}.png'.format(full_out_dir, k_out, v, ell), dpi=200, bbox_inches='tight')
+#            plt.clf()
+#

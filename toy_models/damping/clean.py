@@ -2,7 +2,8 @@
 import os
 import shutil
 
-dirs = ['star', 'eigenvalues', 'evp_matrices',]
+#dirs = ['star', 'eigenvalues', 'evp_matrices',]
+dirs = []
 ivp_dirs = ['profiles', 'scalars', 'slices', 'checkpoints', 'final_checkpoint', 'shells']
 post_dirs = ['SH_transform_shells', 'SH_wave_flux_spectra', 'SH_power_shells', 'snapshots_equatorial']
 
