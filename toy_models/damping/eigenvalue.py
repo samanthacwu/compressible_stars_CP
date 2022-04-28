@@ -212,7 +212,7 @@ def check_eigen(solver, solver_lo, cutoff=1e-2, r_cz=1):
 #            print(vector_diff)
             if vector_diff < np.sqrt(cutoff):
                 logger.info('good evalue w/ vdiff {} and czfrac {}'.format(vector_diff, cz_KE_frac.real))
-                if cz_KE_frac.real > 0.9:
+                if cz_KE_frac.real > 0.5:
                     logger.info('evalue is in the CZ, skipping')
                 elif cz_KE_frac.real < 1e-3:
                     logger.info('evalue is spurious, skipping')
@@ -236,7 +236,7 @@ restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
 Nphi, Ntheta, Nr = 4, 16, 128
-Rayleigh = 1e16
+Rayleigh = 1e8
 Prandtl = 1
 dealias = 1
 S=100

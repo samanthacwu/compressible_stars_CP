@@ -1,4 +1,4 @@
-for freq in 0.1 0.2 0.4 0.8
+for freq in 0.05 0.1 0.2 0.4 0.8
 do
     for ell in `seq 1 11`
     do
