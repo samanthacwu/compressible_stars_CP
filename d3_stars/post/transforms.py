@@ -19,8 +19,8 @@ class SHTransformer():
 
         self.scalar_field = dist.Field(bases=basis)
         self.vector_field = dist.VectorField(bases=basis, coordsys=c)
-        self.power_scalar_op = 4*d3.Average(self.scalar_field**2)
-        self.power_vector_op = 4*d3.Average(self.vector_field@self.vector_field)
+        self.power_scalar_op = d3.Average(self.scalar_field**2)
+        self.power_vector_op = d3.Average(self.vector_field@self.vector_field)
 
         self.ell_values = []
         self.m_values = []
@@ -66,7 +66,7 @@ class SHTransformer():
         else:
             raise ValueError("Scalar Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
-    def transform_vector_field(self, grid_data):
+    def transform_vector_field(self, grid_data, normalization=1/2):
         self.vector_field['g'] = grid_data
         power_grid = self.power_vector_op.evaluate()['g'].ravel()[0]
 
@@ -81,6 +81,7 @@ class SHTransformer():
                         sinmphi = (slice(v, v+1, 1), *sinmphi)
                         out_field[v,i,j] = self.vector_field['c'][cosmphi].ravel()[0] \
                                         + 1j*self.vector_field['c'][sinmphi].ravel()[0]
+                        out_field[v,i,j] *= normalization
                         if m == 0:
                             out_field[v,i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(vector_field**2)
         #check power
