@@ -29,13 +29,15 @@ nccs['grad_ln_T']['nr_max'] = (17, 33, 11)
 
 nccs['grad_s0']['nr_max'] = (10, 32, 10)
 nccs['grad_s0']['nr_post'] = (60, 32, 10)
-nccs['grad_s0']['transition_point'] = None
+nccs['grad_s0']['transition_point'] = 1.05
 nccs['grad_s0']['width'] = 0.05
 
 nccs['H']['grid_only'] = True
 nccs['H']['nr_max'] = (60, 2, 2)
 
 nccs['chi_rad']['nr_max'] = (1, 31, 10)
-nccs['grad_chi_rad']['nr_max'] = (1, 32, 11)
+nccs['grad_chi_rad']['nr_post'] = (1, 32, 11)
 
 nccs['nu_diff']['nr_max'] = (1, 1, 1)
+
+nccs['g_over_cp']['vector'] = True

@@ -2,9 +2,25 @@ import os, sys
 from collections import OrderedDict
 from pathlib import Path
 from configparser import ConfigParser
+import d3_stars.defaults.config as config
 
 import logging
 logger = logging.getLogger(__name__)
+
+def name_star(star_dir='star'):
+    star_file = '{:s}/star_'.format(star_dir)
+    star_file += (len(config.star['nr'])*"{}+").format(*tuple(config.star['nr']))[:-1]
+    star_file += '_bounds{}-{}'.format(config.star['r_bounds'][0], config.star['r_bounds'][-1])
+    star_file += '_Re{:.2e}_de{}_cutoff{:.1e}.h5'.format(config.numerics['reynolds_target'], config.numerics['N_dealias'], config.numerics['ncc_cutoff'])
+    logger.info('star file: {}'.format(star_file))
+    if not os.path.exists('{:s}'.format(star_dir)):
+        os.mkdir('{:s}'.format(star_dir))
+
+    return star_dir, star_file
+
+
+
+
 
 def parse_std_config(config_file, star_dir='star'):
     config = OrderedDict()

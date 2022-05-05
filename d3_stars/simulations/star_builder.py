@@ -1,7 +1,6 @@
 import os, sys
 from collections import OrderedDict
 from pathlib import Path
-from configparser import ConfigParser
 
 import numpy as np
 import h5py
@@ -16,7 +15,8 @@ from scipy.interpolate import interp1d
 
 import d3_stars
 from .anelastic_functions import make_bases
-from .parser import parse_std_config, parse_ncc_config
+from .parser import name_star
+import d3_stars.defaults.config as config
 
 import logging
 logger = logging.getLogger(__name__)
@@ -90,23 +90,23 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
     this_field.change_scales(basis.dealias)
     return this_field
 
-def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', plot_nccs=False):
+def build_nccs(plot_nccs=False):
     # Read in parameters and create output directory
-
-    config, raw_config, out_dir, out_file = parse_std_config(config_file)
-    ncc_dict = parse_ncc_config(ncc_config_file)
+    out_dir, out_file = name_star()
+    ncc_dict = config.nccs
+    print(ncc_dict)
 
     package_path = Path(d3_stars.__file__).resolve().parent
     stock_path = package_path.joinpath('stock_models')
     mesa_file_path = None
-    if os.path.exists(config['path']):
-        mesa_file_path = config['path']
+    if os.path.exists(config.star['path']):
+        mesa_file_path = config.star['path']
     else:
-        stock_file_path = stock_path.joinpath(config['path'])
+        stock_file_path = stock_path.joinpath(config.star['path'])
         if os.path.exists(stock_file_path):
             mesa_file_path = str(stock_file_path)
         else:
-            raise ValueError("Cannot find MESA profile file in {} or {}".format(config['path'], stock_file_path))
+            raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
 
     #TODO: figure out how to make MESA the file path w.r.t. stock model path w/o supplying full path here 
     logger.info("Reading MESA file {}".format(mesa_file_path))
@@ -139,7 +139,8 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
     gamma1          = dlogPdr/(-g/csound**2)
     dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
     dlogTdr         = dlogPdr*(nablaT)
-    grad_s          = cp*N2/g #entropy gradient, for NCC, includes composition terms
+    g_over_cp       = g/cp
+    grad_s          = N2/g_over_cp #entropy gradient, for NCC, includes composition terms
     L_conv          = conv_L_div_L*Luminosity
     dTdr            = (T)*dlogTdr
 
@@ -156,19 +157,20 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
     core_cz_radius = r[core_index]
 
     # Specify fraction of total star to simulate
-    r_bounds = config['r_bounds']
+    r_bounds = list(config.star['r_bounds'])
     r_bools = []
     for i, rb in enumerate(r_bounds):
-        if 'R' in rb:
-            r_bounds[i] = float(rb.replace('R', ''))*R_star
-        elif 'L' in rb:
-            r_bounds[i] = float(rb.replace('L', ''))*core_cz_radius
-        else:
-            try:
-                r_bounds[i] = float(r_bounds[i]) * u.cm
-            except:
-                raise ValueError("index {} ('{}') of r_bounds is poorly specified".format(i, rb))
-        r_bounds[i] = core_cz_radius*np.around(r_bounds[i]/core_cz_radius, decimals=2)
+        if type(rb) == str:
+            if 'R' in rb:
+                r_bounds[i] = float(rb.replace('R', ''))*R_star
+            elif 'L' in rb:
+                r_bounds[i] = float(rb.replace('L', ''))*core_cz_radius
+            else:
+                try:
+                    r_bounds[i] = float(r_bounds[i]) * u.cm
+                except:
+                    raise ValueError("index {} ('{}') of r_bounds is poorly specified".format(i, rb))
+            r_bounds[i] = core_cz_radius*np.around(r_bounds[i]/core_cz_radius, decimals=2)
     for i, rb in enumerate(r_bounds):
         if i < len(r_bounds) - 1:
             r_bools.append((r > r_bounds[i])*(r <= r_bounds[i+1]))
@@ -218,7 +220,7 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
         L_eps[i] = np.trapz((4*np.pi*r**2*rho*eps_nuc)[:i+1], r[:i+1])
     L_excess = L_conv_sim[-5] - Luminosity[-5]
     
-    if config['smooth_h']:
+    if config.star['smooth_h']:
         #smooth CZ-RZ transition
         L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.15*core_cz_radius)
         L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.05*core_cz_radius)
@@ -231,9 +233,9 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
    
     #construct simulation diffusivity profiles
     rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
-    rad_diff_cutoff = (1/(config['prandtl']*config['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
+    rad_diff_cutoff = (1/(config.numerics['prandtl']*config.numerics['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
     sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
-    sim_nu_diff = config['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
+    sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
     Re_shift = ((L_nd**2/tau_nd) / (L_CZ**2/tau_heat))
     
     #MESA radial values at simulation joints & across full star in simulation units
@@ -263,11 +265,11 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
     
    
     ### Make dedalus domain and bases
-    resolutions = [(8, 4, nr) for nr in config['nr']]
+    resolutions = [(8, 4, nr) for nr in config.star['nr']]
     stitch_radii = r_bound_nd[1:-1]
     dtype=np.float64
     mesh=None
-    dealias = config['n_dealias']
+    dealias = config.numerics['N_dealias']
     c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_bound_nd[-1], dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
     dedalus_r = OrderedDict()
     for bn in bases.keys():
@@ -295,6 +297,7 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
+    interpolations['g_over_cp'] = interp1d(r_nd, g_over_cp * (L_nd/T_nd))
  
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -309,27 +312,25 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
             Nmax = ncc_dict[ncc]['Nmax_{}'.format(bn)]
             vector = ncc_dict[ncc]['vector']
             grid_only = ncc_dict[ncc]['grid_only']
-            ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config['ncc_cutoff'])
+            ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
     
         #Evaluate for grad chi rad
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
     
     #Further post-process work to make grad_S nice in the ball
     nr_post = ncc_dict['grad_s0']['nr_post']
-    nr_post = [int(n) for n in nr_post.split(',')]
 
     for i, bn in enumerate(bases.keys()):
         ncc_dict['grad_s0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
         ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config['ncc_cutoff']] = 0
+        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
     #Post-processing for grad chi rad - doesn't work great...
     nr_post = ncc_dict['grad_chi_rad']['nr_post']
-    nr_post = [int(n) for n in nr_post.split(',')]
     for i, bn in enumerate(bases.keys()):
         if bn == 'B': continue
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config['ncc_cutoff']] = 0
+        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
@@ -370,7 +371,7 @@ def build_nccs(config_file='controls.cfg', ncc_config_file = 'ncc_specs.cfg', pl
     
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
-                        r_int=stitch_radii, axhline=axhline, ncc_cutoff=config['ncc_cutoff'])
+                        r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
     
     
     with h5py.File('{:s}'.format(out_file), 'w') as f:
