@@ -94,7 +94,6 @@ def build_nccs(plot_nccs=False):
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
-    print(ncc_dict)
 
     package_path = Path(d3_stars.__file__).resolve().parent
     stock_path = package_path.joinpath('stock_models')
@@ -139,8 +138,8 @@ def build_nccs(plot_nccs=False):
     gamma1          = dlogPdr/(-g/csound**2)
     dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
     dlogTdr         = dlogPdr*(nablaT)
-    g_over_cp       = g/cp
-    grad_s          = N2/g_over_cp #entropy gradient, for NCC, includes composition terms
+    g_over_cp       = -g/cp
+    grad_s_over_cp  = N2/g #entropy gradient, for NCC, includes composition terms
     L_conv          = conv_L_div_L*Luminosity
     dTdr            = (T)*dlogTdr
 
@@ -203,6 +202,12 @@ def build_nccs(plot_nccs=False):
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
     logger.info('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
+    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
+    grad_ln_g_phi   = g / g_phi
+    s_over_cp       = np.cumsum(grad_s_over_cp*np.gradient(r))
+    pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
+
+
     
     # Calculate internal heating function
     # Goal: H_eff= np.gradient(L_conv,r, edge_order=1)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
@@ -245,13 +250,13 @@ def build_nccs(plot_nccs=False):
     ### entropy gradient
     ### More core convection zone logic here
     #Build a nice function for our basis in the ball
-    if 'transition_point' in ncc_dict['grad_s0'].keys():
-        grad_s_transition_point = float(ncc_dict['grad_s0']['transition_point'])
+    if 'transition_point' in ncc_dict['grad_S0'].keys():
+        grad_s_transition_point = float(ncc_dict['grad_S0']['transition_point'])
     else:
         grad_s_transition_point = 1.05
         logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
-    if 'width' in ncc_dict['grad_s0'].keys():
-        grad_s_width = float(ncc_dict['grad_s0']['width'])
+    if 'width' in ncc_dict['grad_S0'].keys():
+        grad_s_width = float(ncc_dict['grad_S0']['width'])
     else:
         grad_s_width = 0.05
         logger.info('using default grad s width = {}'.format(grad_s_width))
@@ -259,9 +264,9 @@ def build_nccs(plot_nccs=False):
     grad_s_width *= (L_CZ/L_nd).value
     grad_s_center *= (L_CZ/L_nd).value
     
-    grad_s_smooth = np.copy(grad_s)
-    flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s)
-    grad_s_smooth[r/L_nd < grad_s_transition_point] = flat_value
+    grad_S_smooth = np.copy(grad_s_over_cp)
+    flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s_over_cp)
+    grad_S_smooth[r/L_nd < grad_s_transition_point] = flat_value
     
    
     ### Make dedalus domain and bases
@@ -292,12 +297,15 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd)
     interpolations['T'] = interp1d(r_nd, T/T_nd)
     interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
-    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho*T) ) * (rho_nd*T_nd/H_nd))
-    interpolations['grad_s0'] = interp1d(r_nd, (L_nd/s_nd) * grad_s_smooth)
+    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho*g_phi) ) * (rho_nd*(L_nd**2/tau_nd**2)/H_nd))
+    interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
-    interpolations['g_over_cp'] = interp1d(r_nd, g_over_cp * (L_nd/T_nd))
+    interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd))
+    interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2))
+    interpolations['grad_ln_g_phi'] = interp1d(r_nd, grad_ln_g_phi * L_nd)
+    interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2))
  
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -318,12 +326,12 @@ def build_nccs(plot_nccs=False):
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
     
     #Further post-process work to make grad_S nice in the ball
-    nr_post = ncc_dict['grad_s0']['nr_post']
+    nr_post = ncc_dict['grad_S0']['nr_post']
 
     for i, bn in enumerate(bases.keys()):
-        ncc_dict['grad_s0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
-        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
+        ncc_dict['grad_S0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
+        ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
+        ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_S0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
     #Post-processing for grad chi rad - doesn't work great...
     nr_post = ncc_dict['grad_chi_rad']['nr_post']
@@ -348,18 +356,18 @@ def build_nccs(plot_nccs=False):
                 else:
                     dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:]))
     
-            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0']:
+            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_S0']:
                 log = True
-            if ncc == 'grad_s0': 
-                axhline = s_motions / s_nd
+            if ncc == 'grad_S0': 
+                axhline = (s_motions / cp[0])
             elif ncc in ['chi_rad', 'grad_chi_rad']:
                 axhline = rad_diff_cutoff
     
             interp_func = ncc_dict[ncc]['interp_func']
             if ncc == 'H':
-                interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*H_eff/(rho*T) ) * (rho_nd*T_nd/H_nd) )
-            elif ncc == 'grad_s0':
-                interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s)
+                interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*H_eff/(rho*g_phi) ) * (rho_nd*(L_nd**2/tau_nd**2)/H_nd) )
+            elif ncc == 'grad_S0':
+                interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp)
     
             if ncc == 'grad_T':
                 interp_func = lambda r: -ncc_dict[ncc]['interp_func'](r)

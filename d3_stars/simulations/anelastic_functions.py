@@ -7,6 +7,8 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
+import d3_stars.defaults.config as config
+
 def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64, mesh=None):
     bases = OrderedDict()
     coords  = d3.SphericalCoordinates('phi', 'theta', 'r')
@@ -119,6 +121,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
         grad_ln_T = variables['grad_ln_T_{}'.format(bn)]
+        grad_ln_g_phi = variables['grad_ln_g_phi_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
@@ -154,7 +157,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
-        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(d3.div(grad_s) + d3.dot(grad_s, (grad_ln_rho + grad_ln_T))) + d3.dot(grad_s, grad_chi_rad)
+        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(d3.div(grad_s) + d3.dot(grad_s, (grad_ln_rho + grad_ln_g_phi))) + d3.dot(grad_s, grad_chi_rad)
 
         # Rotation and damping terms
         if do_rotation:
@@ -189,7 +192,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
         local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
         if ncc_file is not None:
             logger.info('reading NCCs from {}'.format(ncc_file))
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_T']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_g_phi', 'g_phi']:
                 variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
                 for k in vec_nccs:
@@ -208,7 +211,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho_{}'.format(bn)]['g']         = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
                 variables['T_{}'.format(bn)]['g']         = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
-                variables['inv_T_{}'.format(bn)]['g']     = 1/variables['T_{}'.format(bn)]['g']
+                variables['inv_g_phi_{}'.format(bn)]['g']     = 1/variables['g_phi_{}'.format(bn)]['g']
 
                 if max_dt is None:
                     max_dt = f['max_dt'][()]
@@ -228,7 +231,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 if sponge:
                     f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_T']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_g_phi']:
                 variables['{}_{}'.format(k, bn)].change_scales((1,1,1))
 
         else:
@@ -254,7 +257,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
             variables['T_{}'.format(bn)]['g'] = T_func(r1)
             variables['rho_{}'.format(bn)]['g'] = rho_func(r1)
             variables['H_{}'.format(bn)]['g'] = H_func(r)
-            variables['inv_T_{}'.format(bn)]['g'] = 1/T_func(r)
+            variables['inv_g_phi_{}'.format(bn)]['g'] = 1/g_phi_func(r)
             
             grad_ln_rho_full = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
             grad_T_full = d3.grad(variables['T_{}'.format(bn)]).evaluate()
@@ -271,13 +274,14 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
             variables['ln_T_{}'.format(bn)]['g']   = np.log(T_func(r1))
             variables['ln_rho_{}'.format(bn)]['g']   = np.log(rho_func(r1))
             variables['chi_rad_{}'.format(bn)]['g'] = 1/Pe
+            variables['g_over_cp_{}'.format(bn)]['g'] = -1
 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
 
 
     # Grid-lock some operators / define grad's
-    for field in ['H', 'inv_T']:
+    for field in ['H', 'inv_g_phi']:
         variables['{}_{}'.format(field, bn)] = d3.Grid(variables['{}_{}'.format(field, bn)]).evaluate()
 
     return variables, (max_dt, t_buoy, t_rot)
@@ -307,9 +311,14 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         basis = bases[bn]
 
         #Standard Equations
-        equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
-        equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + grad_T_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
-        equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + nu_diff_{0}*inv_T_{0}*VH_{0}".format(bn)
+        if config.numerics['equations'] == 'AN_HD':
+            equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_S0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + nu_diff_{0}*inv_g_phi_{0}*VH_{0}".format(bn)
+        elif config.numerics['equations'] == 'AN_HD_LinForce':
+            equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_S0_{0}) - div_rad_flux_{0} + taus_s_{0} = 0".format(bn)
 
         #Boundary conditions
         if type(basis) == d3.BallBasis:
