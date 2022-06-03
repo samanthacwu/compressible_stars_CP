@@ -208,9 +208,10 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     logger.info('reading {}_{}'.format(k, bn))
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
-                variables['rho_{}'.format(bn)]['g']         = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-#                variables['T_{}'.format(bn)]['g']         = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
-                variables['inv_g_phi_{}'.format(bn)]['g']     = 1/variables['g_phi_{}'.format(bn)]['g']
+                variables['rho_{}'.format(bn)]['g']       = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
+#                variables['T_{}'.format(bn)]['g']        = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
+                variables['g_phi_{}'.format(bn)]['g']     = f['g_phi_{}'.format(bn)][:,:,grid_slices[-1]]
+                variables['inv_g_phi_{}'.format(bn)]['g'] = 1/variables['g_phi_{}'.format(bn)]['g']
 
                 if max_dt is None:
                     max_dt = f['max_dt'][()]
