@@ -54,7 +54,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     namespace['az_avg'] = solver.problem.namespace['az_avg']
     namespace['s2_avg'] = solver.problem.namespace['s2_avg']
 
-    out_dir, out_file = name_star()
+    star_dir, out_file = name_star()
     with h5py.File(out_file, 'r') as f:
         r_outer = f['r_outer'][()]
 

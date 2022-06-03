@@ -272,7 +272,7 @@ if __name__ == '__main__':
                     Re0 = None
                 Re0 = dist.comm_cart.bcast(Re0, root=0)
                 KE0 = dist.comm_cart.bcast(KE0, root=0)
-                this_str = "iteration = {:08d}, t = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time, timestep, Re0)
+                this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
                 this_str += ", KE = {:.4e}".format(KE0)
                 logger.info(this_str)
 

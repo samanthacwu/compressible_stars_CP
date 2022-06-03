@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.1L', '2.0L')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (64,32)
+star['nr'] = (128,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 4
+dynamics['ntheta'] = 128
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 
