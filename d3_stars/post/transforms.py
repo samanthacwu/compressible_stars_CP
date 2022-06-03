@@ -45,7 +45,7 @@ class SHTransformer():
         self.ell_values = np.sort(self.ell_values)[:,None]
         self.m_values = np.sort(self.m_values)[None,:]
 
-    def transform_scalar_field(self, grid_data):
+    def transform_scalar_field(self, grid_data, normalization=1/2):
         self.scalar_field['g'] = grid_data
         power_grid = self.power_scalar_op.evaluate()['g'].ravel()[0]
 
@@ -57,6 +57,7 @@ class SHTransformer():
                     cosmphi, sinmphi = self.slices[sl_key]
                     out_field[i,j] = self.scalar_field['c'][cosmphi].ravel()[0] \
                                     + 1j*self.scalar_field['c'][sinmphi].ravel()[0]
+                    out_field[i,j] *= normalization
                     if m == 0:
                         out_field[i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(scalar_field**2)
         #check power
