@@ -63,7 +63,7 @@ handlers['profiles']['dt_factor'] = 0.5
 
 prof_tasks = OrderedDict()
 prof_tasks['type'] = 's2_avg'
-prof_tasks['fields'] = ['s1', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r', 'KE_lum_r', 'wave_lum_r']
+prof_tasks['fields'] = ['s1', 'KE_lum_r', 'TE_lum_r', 'wave_lum_r', 'visc_lum_r', 'cond_lum']
 handlers['profiles']['tasks'].append(prof_tasks)
 
 ## Checkpoints

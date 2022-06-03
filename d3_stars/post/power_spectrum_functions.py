@@ -96,6 +96,9 @@ def clean_cfft(times, data):
 #    window_fraction = window_normalize_fraction(times, window, data)
     window_fraction = hann_power_normalizer
     ft *= np.sqrt(window_fraction)
+
+    #Can check normalization -- but this is it.
+#    print(np.sum(np.conj(ft)*ft), np.trapz(data**2, x=times)/np.trapz(np.ones_like(times), x=times))
     return freqs, ft
 
 def normalize_cfft_power(freqs, ft):
@@ -118,14 +121,17 @@ def normalize_cfft_power(freqs, ft):
 
     """
     power = (ft*np.conj(ft)).real
-    for f in freqs:
-        if f < 0:
-            power[freqs == -f] += power[freqs == f]
-    if len(power.shape) == 1:
-        p_power = power[freqs >= 0]
-    else:
-        p_power = power[freqs >= 0,:]
-    p_freqs = freqs[freqs >= 0]
+    p_freqs = np.unique(np.abs(freqs))
+    p_power = np.zeros((p_freqs.size,*tuple(power.shape[1:])))
+    print('frequencies', freqs, p_freqs)
+    for i, f in enumerate(p_freqs):
+        good = np.logical_or(freqs == f, freqs == -f)
+        p_power[i] = np.sum(power[good], axis=0)
+#    if len(power.shape) == 1:
+#        p_power = power[freqs >= 0]
+#    else:
+#        p_power = power[freqs >= 0,:]
+#    p_freqs = freqs[freqs >= 0]
     return p_freqs, p_power
 
 if __name__ == "__main__":

@@ -9,7 +9,8 @@ import h5py
 from pathlib import Path
 from configparser import ConfigParser
 
-from .parser import parse_std_config, parse_ncc_config
+from .parser import name_star
+from d3_stars.defaults import config
 
 output_tasks = {}
 output_tasks['u'] = 'u_{0}'
@@ -35,7 +36,7 @@ output_tasks['wave_lum']    = '(4*np.pi*r_vals_{0}**2)*(u_{0}*rho_{0}*(' + outpu
 output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-2*rho_{0}*nu_diff_{0}*(dot(u_{0}, sigma_RHS_{0})))'
 output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*g_phi_{0}*chi_rad_{0}*grad(s1_{0}))'
 
-for lum in ['visc_lum', 'wave_lum', 'enth_lum', 'cond_lum', 'KE_lum']:
+for lum in ['KE_lum', 'TE_lum', 'wave_lum', 'visc_lum', 'cond_lum']:
     output_tasks['{}_r'.format(lum)] = 'dot(er_{0}, ' + output_tasks[lum] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
@@ -53,16 +54,13 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     namespace['az_avg'] = solver.problem.namespace['az_avg']
     namespace['s2_avg'] = solver.problem.namespace['s2_avg']
 
-    config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-    with h5py.File(star_file, 'r') as f:
+    out_dir, out_file = name_star()
+    with h5py.File(out_file, 'r') as f:
         r_outer = f['r_outer'][()]
 
     analysis_tasks = OrderedDict()
     even_analysis_tasks = OrderedDict()
     even_analysis_tasks['output_dts'] = []
-    config_file = Path('outputs.cfg')
-    config = ConfigParser()
-    config.read(str(config_file))
 
     def vol_avg(A, volume):
         return d3.Integrate(A/volume, coords)
@@ -83,64 +81,50 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         namespace['vol_avg_{}'.format(bn)] = solver.problem.namespace['vol_avg_{}'.format(bn)]
     
 
-    for k in config.keys():
-        if 'handler-' in k or k == 'checkpoint':
-            h_name = config[k]['name']
-            max_writes = int(config[k]['max_writes'])
-            time_unit = config[k]['time_unit']
-            if time_unit == 'heating':
-                t_unit = t_heat
-            elif time_unit == 'kepler':
-                t_unit = t_kepler
+    for h_name in config.handlers.keys():
+        this_dict = config.handlers[h_name]
+        max_writes = int(this_dict['max_writes'])
+        time_unit = this_dict['time_unit']
+        if time_unit == 'heating':
+            t_unit = t_heat
+        elif time_unit == 'kepler':
+            t_unit = t_kepler
+        else:
+            logger.info('t unit not found; using t_unit = 1')
+            t_unit = 1
+        sim_dt = float(this_dict['dt_factor'])*t_unit
+        if h_name == 'checkpoint':
+            analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
+            analysis_tasks[h_name].add_tasks(solver.state, layout='g')
+        else:
+            if this_dict['even_outputs']:
+                even_analysis_tasks['output_dts'].append(sim_dt)
+                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, max_writes=max_writes)
             else:
-                logger.info('t unit not found; using t_unit = 1')
-                t_unit = 1
-            sim_dt = float(config[k]['dt_factor'])*t_unit
-            if k == 'checkpoint':
-                analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
-                analysis_tasks[h_name].add_tasks(solver.state, layout='g')
-            else:
-                if config.getboolean(k, 'even_outputs'):
-                    even_analysis_tasks['output_dts'].append(sim_dt)
-                    even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, max_writes=max_writes)
-                else:
-                    analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
-    for k in config.keys():
-        if 'tasks-' in k:
-            if config[k]['handler'] in even_analysis_tasks.keys():
-                handler = even_analysis_tasks[config[k]['handler']]
-            else:
-                handler = analysis_tasks[config[k]['handler']]
+                this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
 
+        tasks = this_dict['tasks']
+        for this_task in tasks:
+            handler = this_dict['handler']
             for bn, basis in bases.items():
-
-                if config[k]['type'] == 'equator':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-                    for item in items:
-                        fieldname = config[k][item]
+                if this_task['type'] == 'equator':
+                    for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
                         task = eval('({})(theta=np.pi/2)'.format(fieldstr), dict(solver.problem.namespace))
                         handler.add_task(task, name='equator({}_{})'.format(fieldname, bn))
-                elif config[k]['type'] == 'meridian':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-                    interps = [item for item in config[k].keys() if 'interp' in item ]
-                    for item in items:
-                        fieldname = config[k][item]
+                elif this_task['type'] == 'meridian':
+                    interps = this_task['interps']
+                    for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
-                        for interp in interps:
-                            base_interp = config[k][interp]
-                            interp = base_interp.replace('pi', 'np.pi')
-                            task = eval('({})(phi={})'.format(fieldstr, interp), dict(solver.problem.namespace))
+                        for base_interp in interps:
+                            task = eval('({})(phi={})'.format(fieldstr, base_interp), dict(solver.problem.namespace))
                             handler.add_task(task, name='meridian({}_{},phi={})'.format(fieldname, bn, base_interp))
-                elif config[k]['type'] == 'shell':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-                    interps = [item for item in config[k].keys() if 'interp' in item ]
-                    for item in items:
-                        fieldname = config[k][item]
+                elif this_task['type'] == 'shell':
+                    interps = this_task['interps']
+                    for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
-                        for interp in interps:
-                            base_interp = config[k][interp]
-                            if 'R' in base_interp:
+                        for base_interp in interps:
+                            if isinstance(base_interp, str) and 'R' in base_interp:
                                 if base_interp == 'R':
                                     interp = '1'
                                 else:
@@ -155,19 +139,13 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                                     continue
                             task = eval('({})(r={})'.format(fieldstr, interp), dict(solver.problem.namespace))
                             handler.add_task(task, name='shell({}_{},r={})'.format(fieldname, bn, base_interp))
-                elif config[k]['type'] == 'vol_avg':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-
-                    for item in items:
-                        fieldname = config[k][item]
+                elif this_task['type'] == 'vol_avg':
+                    for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
                         task = eval('vol_avg_{}({})'.format(bn, fieldstr), dict(solver.problem.namespace))
                         handler.add_task(task, name='vol_avg({}_{})'.format(fieldname, bn))
-                elif config[k]['type'] == 's2_avg':
-                    items = [item for item in config[k].keys() if 'field' in item ]
-
-                    for item in items:
-                        fieldname = config[k][item]
+                elif this_task['type'] == 's2_avg':
+                    for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
                         task_str = 's2_avg({})'.format(fieldstr)
                         task = eval(task_str, dict(solver.problem.namespace))

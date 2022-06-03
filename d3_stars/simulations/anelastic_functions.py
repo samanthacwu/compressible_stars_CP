@@ -120,7 +120,6 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         s1 = variables['s1_{}'.format(bn)]
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
-        grad_ln_T = variables['grad_ln_T_{}'.format(bn)]
         grad_ln_g_phi = variables['grad_ln_g_phi_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
@@ -192,7 +191,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
         local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
         if ncc_file is not None:
             logger.info('reading NCCs from {}'.format(ncc_file))
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_g_phi', 'g_phi']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'inv_g_phi', 'g_phi']:#,'T']:
                 variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
                 for k in vec_nccs:
@@ -210,7 +209,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho_{}'.format(bn)]['g']         = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-                variables['T_{}'.format(bn)]['g']         = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
+#                variables['T_{}'.format(bn)]['g']         = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
                 variables['inv_g_phi_{}'.format(bn)]['g']     = 1/variables['g_phi_{}'.format(bn)]['g']
 
                 if max_dt is None:
@@ -231,7 +230,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 if sponge:
                     f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T', 'inv_g_phi']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'inv_g_phi']:#,'T']:
                 variables['{}_{}'.format(k, bn)].change_scales((1,1,1))
 
         else:

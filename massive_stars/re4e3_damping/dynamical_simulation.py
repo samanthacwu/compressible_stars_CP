@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 from d3_stars.simulations.anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
-from d3_stars.simulations.parser import parse_std_config
 from d3_stars.simulations.outputs import initialize_outputs, output_tasks
+from d3_stars.defaults import config
+from d3_stars.simulations.parser import name_star
 
 # Define smooth Heaviside functions
 from scipy.special import erf
@@ -32,23 +33,24 @@ def zero_to_one(*args, **kwargs):
 
 if __name__ == '__main__':
     # Read options
-    config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
+    out_dir, out_file = name_star()
     out_dir = './'
-    ntheta = config['ntheta']
+    
+    ntheta = config.dynamics['ntheta']
     nphi = 2*ntheta
-    L_dealias = config['l_dealias']
-    N_dealias = config['n_dealias']
-    ncc_cutoff = config['ncc_cutoff']
+    L_dealias = config.numerics['L_dealias']
+    N_dealias = config.numerics['N_dealias']
+    ncc_cutoff = config.numerics['ncc_cutoff']
     dtype = np.float64
 
     # Parameters
     resolutions = []
-    for nr in config['nr']:
+    for nr in config.star['nr']:
         resolutions.append((nphi, ntheta, nr))
-    Re  = config['reynolds_target'] 
-    Pr  = config['prandtl']
+    Re  = config.numerics['reynolds_target'] 
+    Pr  = config.numerics['prandtl']
     Pe  = Pr*Re
-    ncc_file  = star_file
+    ncc_file  = out_file
 
     if ncc_file is not None:
         with h5py.File(ncc_file, 'r') as f:
@@ -78,33 +80,33 @@ if __name__ == '__main__':
 
 
 
-    wall_hours = config['wall_hours']
-    buoy_end_time = config['buoy_end_time']
-    sponge = config['sponge']
-    tau_factor = config['tau_factor']
+    wall_hours = config.dynamics['wall_hours']
+    buoy_end_time = config.dynamics['buoy_end_time']
+    sponge = config.dynamics['sponge']
+    tau_factor = config.dynamics['tau_factor']
 
     # rotation
     do_rotation = False
-    if 'rotation_time' in config.keys():
+    if 'rotation_time' in config.dynamics.keys():
         do_rotation = True
-        rotation_time = config['rotation_time']
+        rotation_time = config.dynamics['rotation_time']
         dimensional_Omega = 2*np.pi / rotation_time  #radians / day [in MESA units]
 
     # Initial conditions
-    if 'restart' in config.keys():
-        restart = config['restart']
+    if 'restart' in config.dynamics.keys():
+        restart = config.dynamics['restart']
     else:
         restart = None
-    A0 = config['a0']
+    A0 = config.dynamics['A0']
 
     # Timestepper
     ts = None
-    if 'timestepper' in config.keys():
-        if config['timestepper'] == 'SBDF4':
+    if 'timestepper' in config.dynamics.keys():
+        if config.dynamics['timestepper'] == 'SBDF4':
             logger.info('using timestepper SBDF4')
             ts = d3.SBDF4
             timestepper_history = [0, 1, 2, 3]
-        elif config['timestepper'] == 'RK222':
+        elif config.dynamics['timestepper'] == 'RK222':
             logger.info('using timestepper RK222')
             ts = d3.RK222
             timestepper_history = [0, ]
@@ -113,17 +115,17 @@ if __name__ == '__main__':
         ts = d3.SBDF2
         timestepper_history = [0, 1,]
     hermitian_cadence = 100
-    safety = config['safety']
-    if 'CFL_max_r' in config.keys():
-        CFL_max_r = config['CFL_max_r']
+    safety = config.dynamics['safety']
+    if 'CFL_max_r' in config.dynamics.keys():
+        CFL_max_r = config.dynamics['CFL_max_r']
     else:
         CFL_max_r = np.inf
 
     # Processor mesh
     ncpu = MPI.COMM_WORLD.size
     mesh = None
-    if 'mesh' in config.keys():
-        mesh = config['mesh']
+    if 'mesh' in config.dynamics.keys():
+        mesh = config.dynamics['mesh']
     else:
         log2 = np.log2(ncpu)
         if log2 == int(log2):
@@ -139,11 +141,12 @@ if __name__ == '__main__':
     coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
     vec_fields = ['u',]
-    scalar_fields = ['p', 's1', 'inv_T', 'H', 'rho', 'T']
+    scalar_fields = ['p', 's1', 'inv_g_phi', 'g_phi', 'H', 'rho', 'pomega_tilde']
     vec_taus = ['tau_u']
     scalar_taus = ['tau_s']
-    vec_nccs = ['grad_ln_rho', 'grad_ln_T', 'grad_s0', 'grad_T', 'grad_chi_rad']
+    vec_nccs = ['grad_ln_rho', 'grad_ln_g_phi', 'g', 'grad_S0', 'grad_T', 'grad_chi_rad']
     scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge', 'nu_diff']
+
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 
                             vec_taus=vec_taus, scalar_taus=scalar_taus, 
@@ -172,7 +175,7 @@ if __name__ == '__main__':
 
     logger.info("Problem built")
     # Solver
-    solver = problem.build_solver(ts, ncc_cutoff=config['ncc_cutoff'])
+    solver = problem.build_solver(ts, ncc_cutoff=config.numerics['ncc_cutoff'])
     solver.stop_sim_time = buoy_end_time*t_heat
     solver.stop_wall_time = wall_hours * 60 * 60
     logger.info("solver built")
@@ -297,7 +300,7 @@ if __name__ == '__main__':
         solver.step(timestep)
 
         logger.info('Stitching open virtual files...')
-        for handler in analysis_tasks:
+        for k, handler in analysis_tasks.items():
             if not handler.check_file_limits():
                 file = handler.get_file()
                 file.close()

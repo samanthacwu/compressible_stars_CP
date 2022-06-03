@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 64 
+dynamics['ntheta'] = 4
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 
