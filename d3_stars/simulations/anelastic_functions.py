@@ -121,6 +121,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
         grad_ln_g_phi = variables['grad_ln_g_phi_{}'.format(bn)]
+        g_phi = variables['g_phi_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
@@ -156,7 +157,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
-        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(d3.div(grad_s) + d3.dot(grad_s, (grad_ln_rho + grad_ln_g_phi))) + d3.dot(grad_s, grad_chi_rad)
+        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(g_phi*(d3.div(grad_s) + d3.dot(grad_s, grad_ln_rho)) + d3.dot(grad_s, d3.grad(g_phi))) + g_phi*d3.dot(grad_s, grad_chi_rad)
 
         # Rotation and damping terms
         if do_rotation:
@@ -314,11 +315,11 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'AN_HD':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_S0_{0}) - div_rad_flux_{0} + taus_s_{0} = - dot(u_{0}, grad_s1_{0}) + H_{0} + nu_diff_{0}*inv_g_phi_{0}*VH_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "g_phi*(dt(s1_{0}) + dot(u_{0}, grad_S0_{0})) - div_rad_flux_{0} + taus_s_{0} = - g_phi*dot(u_{0}, grad_s1_{0}) + H_{0} + nu_diff_{0}*VH_{0}".format(bn)
         elif config.numerics['equations'] == 'AN_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_S0_{0}) - div_rad_flux_{0} + taus_s_{0} = 0".format(bn)
+            equations['energy_{}'.format(bn)] = "g_phi*(dt(s1_{0}) + dot(u_{0}, grad_S0_{0})) - div_rad_flux_{0} + taus_s_{0} = 0".format(bn)
 
         #Boundary conditions
         if type(basis) == d3.BallBasis:

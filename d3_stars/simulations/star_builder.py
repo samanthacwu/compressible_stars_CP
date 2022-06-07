@@ -202,7 +202,9 @@ def build_nccs(plot_nccs=False):
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
     logger.info('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
-    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
+#    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
+    g_phi           = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
+    g_phi -= g_phi[-1] + u_nd**2 #set g_phi = 1 at r = R_star
     grad_ln_g_phi   = g / g_phi
     s_over_cp       = np.cumsum(grad_s_over_cp*np.gradient(r))
     pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
@@ -298,7 +300,7 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd)
     interpolations['T'] = interp1d(r_nd, T/T_nd)
     interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
-    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho*g_phi) ) * (rho_nd*(L_nd**2/tau_nd**2)/H_nd))
+    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
     interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff)
@@ -366,7 +368,7 @@ def build_nccs(plot_nccs=False):
     
             interp_func = ncc_dict[ncc]['interp_func']
             if ncc == 'H':
-                interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*H_eff/(rho*g_phi) ) * (rho_nd*(L_nd**2/tau_nd**2)/H_nd) )
+                interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*H_eff/(rho) ) * (rho_nd/H_nd) )
             elif ncc == 'grad_S0':
                 interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp)
     

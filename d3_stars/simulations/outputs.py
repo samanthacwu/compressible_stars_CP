@@ -23,7 +23,6 @@ output_tasks['p'] = 'p_{0}'
 output_tasks['s1'] = 's1_{0}'
 output_tasks['grad_s1'] = 'grad_s1_{0}'
 output_tasks['pomega_hat'] = 'p_{0} - 0.5*dot(u_{0}, u_{0}) + pomega_tilde_{0}'
-output_tasks['enthalpy'] = output_tasks['pomega_hat'] + ' + T_{0}*s1_{0}'
 output_tasks['L'] = 'cross(r_vec_{0}, rho_{0}*u_{0})' #angular momentum
 output_tasks['Lx'] = 'dot(ex_{0},' + output_tasks['L'] + ')'
 output_tasks['Ly'] = 'dot(ey_{0},' + output_tasks['L'] + ')'
@@ -32,8 +31,8 @@ output_tasks['L_squared'] = 'dot(' + output_tasks['L'] + ',' + output_tasks['L']
 
 output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(' + output_tasks['KE'] + '))'
 output_tasks['TE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(' + output_tasks['TE'] + '))'
-output_tasks['wave_lum']    = '(4*np.pi*r_vals_{0}**2)*(u_{0}*rho_{0}*(' + output_tasks['pomega_hat'] + '))'
-output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-2*rho_{0}*nu_diff_{0}*(dot(u_{0}, sigma_RHS_{0})))'
+output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(u_{0}*rho_{0}*(' + output_tasks['pomega_hat'] + '))'
+output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*nu_diff_{0}*(dot(u_{0}, sigma_RHS_{0})))'
 output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*g_phi_{0}*chi_rad_{0}*grad(s1_{0}))'
 
 for lum in ['KE_lum', 'TE_lum', 'wave_lum', 'visc_lum', 'cond_lum']:
