@@ -75,7 +75,10 @@ def plot_ncc_figure(rvals, mesa_func, dedalus_vals, Ns, ylabel="", fig_name="", 
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
 def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=False, ncc_cutoff=1e-6):
-    scales = (1, 1, Nmax/basis.radial_basis.radial_size)
+    if grid_only:
+        scales = basis.dealias
+    else:
+        scales = (1, 1, Nmax/basis.radial_basis.radial_size)
     rvals = basis.global_grid_radius(scales[2])
     if vector:
         this_field = dist.VectorField(coords, bases=basis)
@@ -87,7 +90,7 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field['g'] = interp_func(rvals)
     if not grid_only:
         this_field['c'][np.abs(this_field['c']) < ncc_cutoff] = 0
-    this_field.change_scales(basis.dealias)
+        this_field.change_scales(basis.dealias)
     return this_field
 
 def build_nccs(plot_nccs=False):
@@ -204,41 +207,12 @@ def build_nccs(plot_nccs=False):
 
 #    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
     g_phi           = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
-    g_phi -= g_phi[-1] + u_nd**2 #set g_phi = 1 at r = R_star
+    g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = R_star
     grad_ln_g_phi   = g / g_phi
     s_over_cp       = np.cumsum(grad_s_over_cp*np.gradient(r))
     pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 # integrate by parts:    pomega_tilde    = s_over_cp * g_phi - np.cumsum(grad_s_over_cp * g_phi * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 
-
-    
-    # Calculate internal heating function
-    # Goal: H_eff= np.gradient(L_conv,r, edge_order=1)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
-    # (1/4pir^2) dL_conv/dr = rho * eps + (1/r^2)d/dr (r^2 k_rad dT/dr) -> chain rule
-    eo=2
-    H_eff = (1/(4*np.pi*r**2))*np.gradient(Luminosity, r, edge_order=eo) + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
-    H_eff_secondary = rho*eps_nuc + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
-    H_eff[:2] = H_eff_secondary[:2]
-    
-    sim_H_eff = np.copy(H_eff)
-    L_conv_sim = np.zeros_like(L_conv)
-    L_eps = np.zeros_like(Luminosity)
-    for i in range(L_conv_sim.shape[0]):
-        L_conv_sim[i] = np.trapz((4*np.pi*r**2*sim_H_eff)[:1+i], r[:1+i])
-        L_eps[i] = np.trapz((4*np.pi*r**2*rho*eps_nuc)[:i+1], r[:i+1])
-    L_excess = L_conv_sim[-5] - Luminosity[-5]
-    
-    if config.star['smooth_h']:
-        #smooth CZ-RZ transition
-        L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.15*core_cz_radius)
-        L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.05*core_cz_radius)
-    
-        transition_region = (r > 0.5*core_cz_radius)
-        sim_H_eff[transition_region] = ((1/(4*np.pi*r**2))*np.gradient(L_conv_sim, r, edge_order=eo))[transition_region]
-    else:
-        sim_H_eff = H_eff
-    
-   
     #construct simulation diffusivity profiles
     rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
     rad_diff_cutoff = (1/(config.numerics['prandtl']*config.numerics['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
@@ -284,6 +258,56 @@ def build_nccs(plot_nccs=False):
         phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
 
+
+
+
+    
+    # Calculate internal heating function
+    # Goal: H_eff= np.gradient(L_conv,r, edge_order=1)/(4*np.pi*r**2) # Heating, for ncc, H = rho*eps - portion carried by radiation
+    # (1/4pir^2) dL_conv/dr = rho * eps + (1/r^2)d/dr (r^2 k_rad dT/dr) -> chain rule
+#    eo=2
+#    H_eff = (1/(4*np.pi*r**2))*np.gradient(Luminosity, r, edge_order=eo) + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
+#    H_eff_secondary = rho*eps_nuc + 2*k_rad*dTdr/r + dTdr*np.gradient(k_rad, r, edge_order=eo) + k_rad*np.gradient(dTdr, r, edge_order=eo)
+#    H_eff[:2] = H_eff_secondary[:2]
+#    
+#    sim_H_eff = np.copy(H_eff)
+#    L_conv_sim = np.zeros_like(L_conv)
+#    L_eps = np.zeros_like(Luminosity)
+#    for i in range(L_conv_sim.shape[0]):
+#        L_conv_sim[i] = np.trapz((4*np.pi*r**2*sim_H_eff)[:1+i], r[:1+i])
+#        L_eps[i] = np.trapz((4*np.pi*r**2*rho*eps_nuc)[:i+1], r[:i+1])
+#    L_excess = L_conv_sim[-5] - Luminosity[-5]
+    
+    if config.star['smooth_h']:
+        #smooth CZ-RZ transition
+        L_conv_sim = np.copy(L_conv)
+        L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.15*core_cz_radius)
+        L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.05*core_cz_radius)
+
+        r_vals = []
+        sim_H_eff = []
+        sim_lum = []
+        for bn in bases.keys():
+            field = d.Field(bases=bases[bn])
+            field.change_scales((1,1,0.5))
+            phi, theta, rv = bases[bn].global_grids((1, 1, 0.5))
+            field['g'] = interp1d(r/L_nd, L_conv_sim)(rv)
+            field.change_scales(bases[bn].dealias)
+            sim_lum.append(field['g'][0,0,:]/(H_nd*L_nd**3))
+            r_vals.append(dedalus_r[bn].ravel())
+            sim_H_eff.append((1/L_nd)**3*(1/(4*np.pi*dedalus_r[bn].ravel()**2)) * d3.grad(field).evaluate()['g'][2,0,0,:])
+        sim_H_eff = np.concatenate(sim_H_eff)
+        r_vals = np.concatenate(r_vals)
+        sim_lum = np.concatenate(sim_lum)
+
+#        #TODO: do a dedalus numerical derivative here.    
+#        transition_region = (r > 0.5*core_cz_radius)
+#        sim_H_eff[transition_region] = ((1/(4*np.pi*r**2))*np.gradient(L_conv_sim, r, edge_order=eo))[transition_region]
+    else:
+        raise NotImplementedError("must use smooth_h")
+#        sim_H_eff = H_eff
+    
+   
     # Get some timestepping & wave frequency info
     f_nyq = 2*tau_nd*np.sqrt(N2max_sim)/(2*np.pi)
     nyq_dt   = (1/f_nyq) 
@@ -300,14 +324,17 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd)
     interpolations['T'] = interp1d(r_nd, T/T_nd)
     interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
-    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
+    if config.star['smooth_h']:
+        interpolations['H'] = interp1d(r_vals, ( sim_H_eff/np.exp(interpolations['ln_rho'](r_vals)))  * (1/H_nd))
+    else:
+        interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
+#    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
     interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd))
     interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2))
-    interpolations['grad_ln_g_phi'] = interp1d(r_nd, grad_ln_g_phi * L_nd)
     interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2))
  
     for ncc in ncc_dict.keys():
@@ -368,7 +395,7 @@ def build_nccs(plot_nccs=False):
     
             interp_func = ncc_dict[ncc]['interp_func']
             if ncc == 'H':
-                interp_func = interp1d(r_nd, ( one_to_zero(r_nd, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*H_eff/(rho) ) * (rho_nd/H_nd) )
+                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff/(np.exp(interpolations['ln_rho'](r_vals))) ) * (1/H_nd) )
             elif ncc == 'grad_S0':
                 interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp)
     
@@ -434,13 +461,15 @@ def build_nccs(plot_nccs=False):
         f['g_mesa'].attrs['units'] = str(g.unit)
         f['cp_mesa'] = cp
         f['cp_mesa'].attrs['units'] = str(cp.unit)
-    
+
+        f['lum_r_vals'] = r_vals
+        f['sim_lum'] = sim_lum
         f['r_stitch']   = stitch_radii
         f['Re_shift'] = Re_shift
         f['r_outer']   = r_bound_nd[-1] 
         f['max_dt'] = max_dt
         f['Ma2_r0'] = Ma2_r0
-        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift']:
+        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum']:
             f[k].attrs['units'] = 'dimensionless'
     logger.info('finished saving NCCs to {}'.format(out_file))
     logger.info('We recommend looking at the plots in {}/ to make sure the non-constant coefficients look reasonable'.format(out_dir))

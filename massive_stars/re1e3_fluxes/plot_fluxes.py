@@ -55,22 +55,8 @@ for i, resolution in enumerate(config.star['nr']):
 
 star_dir, star_file = name_star()
 with h5py.File(star_file, 'r') as f:
-    rs = []
-    ln_rhos = []
-    Hs = []
-    g_phis = []
-    for bn in bases_keys:
-        rs.append(f['r_{}'.format(bn)][()])
-        ln_rhos.append(f['ln_rho_{}'.format(bn)][()])
-        Hs.append(f['H_{}'.format(bn)][()])
-        g_phis.append(f['g_phi_{}'.format(bn)][()])
-    r = np.concatenate(rs, axis=-1)
-    ln_rho = np.concatenate(ln_rhos, axis=-1)
-    H = np.concatenate(Hs, axis=-1)
-    g_phi = np.concatenate(g_phis, axis=-1)
-    dLum = 4*np.pi*r**2*(g_phi*np.exp(ln_rho)*H)*np.gradient(r, axis=-1)
-    Lum = np.cumsum(dLum, axis=-1).ravel()
-    r_glob = r.ravel()
+    sim_lum_r = f['lum_r_vals'][()]
+    sim_lum   = f['sim_lum'][()]
 
 op = config.handlers[data_dir]['tasks'][0]['type']
 base_tasks = config.handlers[data_dir]['tasks'][0]['fields']
@@ -95,7 +81,7 @@ def luminosities(ax, dictionary, index):
         viscs.append(dictionary['s2_avg(visc_lum_r_{})'.format(bn)][index].ravel())
         conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index].ravel())
     legend = False
-    ax.plot(r_glob, Lum, c='k')
+    ax.plot(sim_lum_r, sim_lum, c='k')
     for r, KE, TE, wave, visc, cond in zip(rs, KEs, TEs, waves, viscs, conds):
         ax.plot(r, KE, label='KE', c=Dark2_7[0])
         ax.plot(r, TE, label='TE', c=Dark2_7[1])

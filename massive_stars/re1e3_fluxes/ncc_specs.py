@@ -14,7 +14,7 @@ for k in ['nr_post', 'transition_point', 'width']:
 nccs = OrderedDict()
 for field in ['ln_rho', 'grad_ln_rho', 'ln_T', 'grad_ln_T', 'T', 'grad_T',\
               'grad_S0', 'H', 'chi_rad', 'grad_chi_rad', 'nu_diff', 
-              'g', 'g_phi', 'grad_ln_g_phi', 'pomega_tilde']:
+              'g', 'g_phi', 'pomega_tilde']:
     nccs[field] = OrderedDict()
     for k, val in defaults.items():
         nccs[field][k] = val
@@ -42,4 +42,3 @@ nccs['grad_chi_rad']['nr_post'] = (1, 32, 11)
 nccs['nu_diff']['nr_max'] = (1, 1, 1)
 
 nccs['g']['vector'] = True
-nccs['grad_ln_g_phi']['vector'] = True

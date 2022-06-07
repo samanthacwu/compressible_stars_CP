@@ -53,7 +53,7 @@ prof_tasks['type'] = 's2_avg'
 prof_tasks['fields'] = ['s1', 'KE_lum_r', 'TE_lum_r', 'wave_lum_r', 'visc_lum_r', 'cond_lum_r']
 handlers['profiles']['tasks'].append(prof_tasks)
 
-## Checkpoints
+### Checkpoints
 handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10
    
