@@ -67,7 +67,7 @@ def plot_ncc_figure(rvals, mesa_func, dedalus_vals, Ns, ylabel="", fig_name="", 
     ax2.set_yscale('log')
 
     ax2.set_ylim(1e-4, 1)
-    fig.suptitle('coeff bandwidth = {}, {}; cutoff = {:e}'.format(Ns[0], Ns[1], ncc_cutoff))
+    fig.suptitle('coeff bandwidth = {}; cutoff = {:e}'.format(Ns, ncc_cutoff))
     if r_int is not None:
         for ax in [ax1, ax2]:
             for rval in r_int:
@@ -206,6 +206,7 @@ def build_nccs(plot_nccs=False):
     grad_ln_g_phi   = g / g_phi
     s_over_cp       = np.cumsum(grad_s_over_cp*np.gradient(r))
     pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
+# integrate by parts:    pomega_tilde    = s_over_cp * g_phi - np.cumsum(grad_s_over_cp * g_phi * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 
 
     
