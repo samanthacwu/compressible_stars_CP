@@ -120,8 +120,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         s1 = variables['s1_{}'.format(bn)]
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
-        grad_ln_g_phi = variables['grad_ln_g_phi_{}'.format(bn)]
         g_phi = variables['g_phi_{}'.format(bn)]
+        g = variables['g_{}'.format(bn)]
+        grad_g_phi = -g
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
@@ -157,7 +158,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
-        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(g_phi*(d3.div(grad_s) + d3.dot(grad_s, grad_ln_rho)) + d3.dot(grad_s, d3.grad(g_phi))) + g_phi*d3.dot(grad_s, grad_chi_rad)
+        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(g_phi*(d3.div(grad_s) + d3.dot(grad_s, grad_ln_rho)) + d3.dot(grad_s, grad_g_phi)) + g_phi*d3.dot(grad_s, grad_chi_rad)
 
         # Rotation and damping terms
         if do_rotation:
