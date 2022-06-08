@@ -191,7 +191,7 @@ if __name__ == '__main__':
         for bk in bases_keys:
             variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
             variables['s1_{}'.format(bk)].low_pass_filter(scales=0.25)
-            variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
+            variables['s1_{}'.format(bk)]['g'] *= np.cos(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
