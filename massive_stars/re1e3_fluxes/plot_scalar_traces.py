@@ -41,7 +41,8 @@ figs = []
 # Nu vs time
 fig1 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='energy')
 fig1.add_field(0, 'vol_avg(KE_B)')
-fig1.add_field(1, 'vol_avg(TE_B)')
+fig1.add_field(0, 'vol_avg(TE_B)')
+fig1.add_field(1, 'vol_avg(TotE_B)')
 figs.append(fig1)
 
 

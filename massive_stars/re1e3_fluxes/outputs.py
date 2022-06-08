@@ -41,7 +41,7 @@ handlers['scalars']['max_writes'] = 400
 
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'Lx', 'Ly', 'Lz', 'L_squared']
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
 handlers['scalars']['tasks'].append(scalar_tasks)
 
 ## Profiles
