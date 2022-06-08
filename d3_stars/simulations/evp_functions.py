@@ -398,11 +398,11 @@ class StellarEVP():
 
 
         vec_fields = ['u', 'F']
-        scalar_fields = ['p', 's1', 'inv_g_phi', 'g_phi', 'H', 'rho', 'T', 'pomega_tilde']
+        scalar_fields = ['p', 's1', 'g_phi', 'H', 'rho', 'pomega_tilde']
         vec_taus = ['tau_u']
         scalar_taus = ['tau_s']
-        vec_nccs = ['grad_ln_rho', 'grad_ln_T', 'grad_S0', 'grad_T', 'grad_chi_rad', 'g', 'grad_ln_g_phi']
-        scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge', 'nu_diff']
+        vec_nccs = ['grad_ln_rho', 'grad_S0', 'grad_chi_rad', 'g']
+        scalar_nccs = ['ln_rho', 'chi_rad', 'sponge', 'nu_diff']
 
         self.namespace = make_fields(bases, self.coords, self.dist, 
                                 vec_fields=vec_fields, scalar_fields=scalar_fields, 

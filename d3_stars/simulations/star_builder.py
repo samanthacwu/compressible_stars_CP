@@ -320,7 +320,7 @@ def build_nccs(plot_nccs=False):
     interpolations = OrderedDict()
     interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd))
     interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd))
-    interpolations['grad_ln_rho'] = interp1d(r_nd, dlogTdr*L_nd)
+    interpolations['grad_ln_rho'] = interp1d(r_nd, dlogrhodr*L_nd)
     interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd)
     interpolations['T'] = interp1d(r_nd, T/T_nd)
     interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
@@ -341,16 +341,33 @@ def build_nccs(plot_nccs=False):
         for i, bn in enumerate(bases.keys()):
             ncc_dict[ncc]['Nmax_{}'.format(bn)] = ncc_dict[ncc]['nr_max'][i]
             ncc_dict[ncc]['field_{}'.format(bn)] = None
-        ncc_dict[ncc]['interp_func'] = interpolations[ncc]
+        if ncc in interpolations.keys():
+            ncc_dict[ncc]['interp_func'] = interpolations[ncc]
+        else:
+            ncc_dict[ncc]['interp_func'] = None
+
     
     for bn, basis in bases.items():
         rvals = dedalus_r[bn]
         for ncc in ncc_dict.keys():
             interp_func = ncc_dict[ncc]['interp_func']
-            Nmax = ncc_dict[ncc]['Nmax_{}'.format(bn)]
-            vector = ncc_dict[ncc]['vector']
-            grid_only = ncc_dict[ncc]['grid_only']
-            ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
+            if interp_func is not None and not ncc_dict[ncc]['from_grad']:
+                Nmax = ncc_dict[ncc]['Nmax_{}'.format(bn)]
+                vector = ncc_dict[ncc]['vector']
+                grid_only = ncc_dict[ncc]['grid_only']
+                ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
+                if ncc_dict[ncc]['get_grad']:
+                    name = ncc_dict[ncc]['grad_name']
+                    ncc_dict[name]['field_{}'.format(bn)] = d3.grad(ncc_dict[ncc]['field_{}'.format(bn)]).evaluate()
+
+        if 'neg_g' in ncc_dict.keys():
+            if 'g' not in ncc_dict.keys():
+                ncc_dict['g'] = OrderedDict()
+            ncc_dict['g']['field_{}'.format(bn)] = (-ncc_dict['neg_g']['field_{}'.format(bn)]).evaluate()
+            ncc_dict['g']['vector'] = True
+            ncc_dict['g']['interp_func'] = interpolations['g']
+            ncc_dict['g']['Nmax_{}'.format(bn)] = None
+        
     
         #Evaluate for grad chi rad
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
@@ -372,6 +389,8 @@ def build_nccs(plot_nccs=False):
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
+            if ncc_dict[ncc]['interp_func'] is None:
+                continue
             axhline = None
             log = False
             ylim = None

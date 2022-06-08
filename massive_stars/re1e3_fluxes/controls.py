@@ -25,7 +25,7 @@ numerics['equations'] = 'AN_HD' #anelastic hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
-numerics['reynolds_target'] = 1e0
+numerics['reynolds_target'] = 1e3
 
 numerics['prandtl'] = 1
 
@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 16
+dynamics['ntheta'] = 64
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 
@@ -53,7 +53,7 @@ dynamics['CFL_max_r'] = 1.05
 
 #Stop conditions
 dynamics['wall_hours'] = 23.5
-dynamics['buoy_end_time'] = 50
+dynamics['buoy_end_time'] = 5
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor
 dynamics['sponge'] = True

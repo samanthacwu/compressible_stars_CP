@@ -193,7 +193,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
         local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
         if ncc_file is not None:
             logger.info('reading NCCs from {}'.format(ncc_file))
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'inv_g_phi', 'g_phi']:#,'T']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'g_phi']:
                 variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
                 for k in vec_nccs:
@@ -211,9 +211,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho_{}'.format(bn)]['g']       = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-#                variables['T_{}'.format(bn)]['g']        = f['T_{}'.format(bn)][:,:,grid_slices[-1]][None,None,:]
                 variables['g_phi_{}'.format(bn)]['g']     = f['g_phi_{}'.format(bn)][:,:,grid_slices[-1]]
-                variables['inv_g_phi_{}'.format(bn)]['g'] = 1/variables['g_phi_{}'.format(bn)]['g']
 
                 #TODO: do this in star_builder
                 grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
@@ -238,57 +236,18 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 if sponge:
                     f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'inv_g_phi']:#,'T']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho']:
                 variables['{}_{}'.format(k, bn)].change_scales((1,1,1))
 
         else:
-            logger.info("Using polytropic initial conditions")
-            from scipy.interpolate import interp1d
-            with h5py.File('benchmark/poly_nOuter1.6.h5', 'r') as f:
-                T_func = interp1d(f['r'][()], f['T'][()])
-                rho_func = interp1d(f['r'][()], f['rho'][()])
-                grad_s0_func = interp1d(f['r'][()], f['grad_s0'][()])
-                H_func   = interp1d(f['r'][()], f['H'][()])
-            max_grad_s0 = grad_s0_func(radius)
-            if max_dt is None:
-                max_dt = 2/np.sqrt(max_grad_s0)
-            if t_buoy is None:
-                t_buoy      = 1
-            if t_rot is None:
-                if do_rotation:
-                    Omega = dimensional_Omega 
-                    t_rot = 1/(2*Omega)
-                else:
-                    t_rot = np.inf
-
-            variables['T_{}'.format(bn)]['g'] = T_func(r1)
-            variables['rho_{}'.format(bn)]['g'] = rho_func(r1)
-            variables['H_{}'.format(bn)]['g'] = H_func(r)
-            variables['inv_g_phi_{}'.format(bn)]['g'] = 1/g_phi_func(r)
-            
-            grad_ln_rho_full = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
-            grad_T_full = d3.grad(variables['T_{}'.format(bn)]).evaluate()
-            grad_ln_T_full = (grad_T_full/variables['T_{}'.format(bn)]).evaluate()
-            if local_vncc_size > 0:
-                variables['grad_s0_{}'.format(bn)].change_scales(1)
-                print(variables['grad_s0_{}'.format(bn)]['g'].shape, 'grad_s0_{}'.format(bn))
-                variables['grad_s0_{}'.format(bn)]['g'][2]  = grad_s0_func(r1)
-                for f in ['grad_ln_rho', 'grad_ln_T', 'grad_T']: variables['{}_{}'.format(f, bn)].change_scales(ncc_scales)
-                variables['grad_ln_rho_{}'.format(bn)]['g']   = grad_ln_rho_full['g'][:,0,0,None,None,:]
-                variables['grad_ln_T_{}'.format(bn)]['g']   = grad_ln_T_full['g'][:,0,0,None,None,:]
-                variables['grad_T_{}'.format(bn)]['g']      = grad_T_full['g'][:,0,0,None,None,:]
-                variables['grad_chi_rad_{}'.format(bn)]['g'] = 0
-            variables['ln_T_{}'.format(bn)]['g']   = np.log(T_func(r1))
-            variables['ln_rho_{}'.format(bn)]['g']   = np.log(rho_func(r1))
-            variables['chi_rad_{}'.format(bn)]['g'] = 1/Pe
-            variables['g_over_cp_{}'.format(bn)]['g'] = -1
+            raise NotImplementedError("Must supply star file")
 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
 
 
     # Grid-lock some operators / define grad's
-    for field in ['H', 'inv_g_phi']:
+    for field in ['H']:
         variables['{}_{}'.format(field, bn)] = d3.Grid(variables['{}_{}'.format(field, bn)]).evaluate()
 
     return variables, (max_dt, t_buoy, t_rot)
