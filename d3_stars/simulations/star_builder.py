@@ -21,6 +21,8 @@ import d3_stars.defaults.config as config
 import logging
 logger = logging.getLogger(__name__)
 
+interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
+
 
 ### Function definitions
 from scipy.special import erf
@@ -291,7 +293,7 @@ def build_nccs(plot_nccs=False):
             field = d.Field(bases=bases[bn])
             field.change_scales((1,1,0.5))
             phi, theta, rv = bases[bn].global_grids((1, 1, 0.5))
-            field['g'] = interp1d(r/L_nd, L_conv_sim)(rv)
+            field['g'] = interp1d(r/L_nd, L_conv_sim, **interp_kwargs)(rv)
             field.change_scales(bases[bn].dealias)
             sim_lum.append(field['g'][0,0,:]/(H_nd*L_nd**3))
             r_vals.append(dedalus_r[bn].ravel())
@@ -318,24 +320,24 @@ def build_nccs(plot_nccs=False):
  
     #Create interpolations of the various fields that may be used in the problem
     interpolations = OrderedDict()
-    interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd))
-    interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd))
-    interpolations['grad_ln_rho'] = interp1d(r_nd, dlogrhodr*L_nd)
-    interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd)
-    interpolations['T'] = interp1d(r_nd, T/T_nd)
-    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr)
+    interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
+    interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
+    interpolations['grad_ln_rho'] = interp1d(r_nd, dlogrhodr*L_nd, **interp_kwargs)
+    interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
+    interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
+    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr, **interp_kwargs)
     if config.star['smooth_h']:
-        interpolations['H'] = interp1d(r_vals, ( sim_H_eff/np.exp(interpolations['ln_rho'](r_vals)))  * (1/H_nd))
+        interpolations['H'] = interp1d(r_vals, ( sim_H_eff/np.exp(interpolations['ln_rho'](r_vals)))  * (1/H_nd), **interp_kwargs)
     else:
-        interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
+        interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd), **interp_kwargs)
 #    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
-    interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth)
-    interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff)
-    interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff)
-    interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd))
-    interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd))
-    interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2))
-    interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2))
+    interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth, **interp_kwargs)
+    interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
+    interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
+    interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
+    interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
+    interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2), **interp_kwargs)
+    interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
  
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -358,12 +360,18 @@ def build_nccs(plot_nccs=False):
                 ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
                 if ncc_dict[ncc]['get_grad']:
                     name = ncc_dict[ncc]['grad_name']
-                    ncc_dict[name]['field_{}'.format(bn)] = d3.grad(ncc_dict[ncc]['field_{}'.format(bn)]).evaluate()
+                    grad_field = d3.grad(ncc_dict[ncc]['field_{}'.format(bn)]).evaluate()
+                    grad_field.change_scales((1,1,(Nmax+1)/resolutions[bases_keys == bn][2]))
+                    grad_field.change_scales(basis.dealias)
+                    ncc_dict[name]['field_{}'.format(bn)] = grad_field
+                    print(name, np.sum(np.abs(ncc_dict[name]['field_{}'.format(bn)]['c']) > 1e-10))
 
         if 'neg_g' in ncc_dict.keys():
             if 'g' not in ncc_dict.keys():
                 ncc_dict['g'] = OrderedDict()
+            name = 'g'
             ncc_dict['g']['field_{}'.format(bn)] = (-ncc_dict['neg_g']['field_{}'.format(bn)]).evaluate()
+            print(name, np.sum(np.abs(ncc_dict[name]['field_{}'.format(bn)]['c']) > 1e-10))
             ncc_dict['g']['vector'] = True
             ncc_dict['g']['interp_func'] = interpolations['g']
             ncc_dict['g']['Nmax_{}'.format(bn)] = None
@@ -414,9 +422,9 @@ def build_nccs(plot_nccs=False):
     
             interp_func = ncc_dict[ncc]['interp_func']
             if ncc == 'H':
-                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff/(np.exp(interpolations['ln_rho'](r_vals))) ) * (1/H_nd) )
+                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff/(np.exp(interpolations['ln_rho'](r_vals))) ) * (1/H_nd), **interp_kwargs )
             elif ncc == 'grad_S0':
-                interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp)
+                interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp, **interp_kwargs)
     
             if ncc == 'grad_T':
                 interp_func = lambda r: -ncc_dict[ncc]['interp_func'](r)
@@ -429,7 +437,16 @@ def build_nccs(plot_nccs=False):
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
+
     
+    C = d3.integ(np.exp(ncc_dict['ln_rho']['field_B'])*ncc_dict['H']['field_B']).evaluate()['g']
+    int_rho = d3.integ(np.exp(ncc_dict['ln_rho']['field_B'])).evaluate()['g']
+    adj = C/int_rho
+    logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
+    ncc_dict['H']['field_B']['g'] -= adj
+
+    dLdt = d3.integ(4*np.pi*np.exp(ncc_dict['ln_rho']['field_B'])*ncc_dict['H']['field_B']).evaluate()['g']
+    print(dLdt)
     
     with h5py.File('{:s}'.format(out_file), 'w') as f:
         # Save output fields.
@@ -439,6 +456,7 @@ def build_nccs(plot_nccs=False):
             for ncc in ncc_dict.keys():
                 this_field = ncc_dict[ncc]['field_{}'.format(bn)]
                 if ncc_dict[ncc]['vector']:
+                    print(this_field['g'][2,:1, :1, :])
                     f['{}_{}'.format(ncc, bn)] = this_field['g'][:, :1,:1,:]
                 else:
                     f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]

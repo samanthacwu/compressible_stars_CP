@@ -197,13 +197,17 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
                 for k in vec_nccs:
+                    dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
                         logger.info('skipping {}_{}, not in file'.format(k, bn))
                         continue
                     if local_vncc_size > 0:
                         logger.info('reading {}_{}'.format(k, bn))
-                        variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,0,0,grid_slices[-1]][:,None,None,:]
+                        variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:1,:1,grid_slices[-1]]
+                        if k == 'g':
+                            print(k, grid_slices[-1], f['{}_{}'.format(k, bn)][:,:1,:1,grid_slices[-1]])
                 for k in scalar_nccs:
+                    dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
                         logger.info('skipping {}_{}, not in file'.format(k, bn))
                         continue
