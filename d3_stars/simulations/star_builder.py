@@ -99,6 +99,7 @@ def build_nccs(plot_nccs=False):
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
+    print(ncc_dict.keys())
 
     package_path = Path(d3_stars.__file__).resolve().parent
     stock_path = package_path.joinpath('stock_models')
@@ -364,6 +365,7 @@ def build_nccs(plot_nccs=False):
                     grad_field.change_scales((1,1,(Nmax+1)/resolutions[bases_keys == bn][2]))
                     grad_field.change_scales(basis.dealias)
                     ncc_dict[name]['field_{}'.format(bn)] = grad_field
+                    ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax+1
                     print(name, np.sum(np.abs(ncc_dict[name]['field_{}'.format(bn)]['c']) > 1e-10))
 
         if 'neg_g' in ncc_dict.keys():
@@ -371,10 +373,10 @@ def build_nccs(plot_nccs=False):
                 ncc_dict['g'] = OrderedDict()
             name = 'g'
             ncc_dict['g']['field_{}'.format(bn)] = (-ncc_dict['neg_g']['field_{}'.format(bn)]).evaluate()
-            print(name, np.sum(np.abs(ncc_dict[name]['field_{}'.format(bn)]['c']) > 1e-10))
             ncc_dict['g']['vector'] = True
             ncc_dict['g']['interp_func'] = interpolations['g']
-            ncc_dict['g']['Nmax_{}'.format(bn)] = None
+            ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
+            ncc_dict['g']['from_grad'] = True 
         
     
         #Evaluate for grad chi rad
@@ -388,12 +390,12 @@ def build_nccs(plot_nccs=False):
         ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
         ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_S0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
-    #Post-processing for grad chi rad - doesn't work great...
-    nr_post = ncc_dict['grad_chi_rad']['nr_post']
-    for i, bn in enumerate(bases.keys()):
-        if bn == 'B': continue
-        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
+#    #Post-processing for grad chi rad - doesn't work great...
+#    nr_post = ncc_dict['grad_chi_rad']['nr_post']
+#    for i, bn in enumerate(bases.keys()):
+#        if bn == 'B': continue
+#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
+#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
@@ -456,10 +458,11 @@ def build_nccs(plot_nccs=False):
             for ncc in ncc_dict.keys():
                 this_field = ncc_dict[ncc]['field_{}'.format(bn)]
                 if ncc_dict[ncc]['vector']:
-                    print(this_field['g'][2,:1, :1, :])
                     f['{}_{}'.format(ncc, bn)] = this_field['g'][:, :1,:1,:]
+                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
                 else:
                     f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]
+                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
     
         #Save properties of the star, with units.
         f['L_nd']   = L_nd
