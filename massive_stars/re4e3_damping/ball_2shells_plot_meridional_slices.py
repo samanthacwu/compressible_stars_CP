@@ -62,10 +62,10 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
 plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
 kwargs = {'colatitude_basis' : 'theta', 'radial_basis' : 'r', 'r_stitches' : r_stitches, 'r_outer' : r_outer}
-s1_left = ('s1_B(phi=0)', 's1_S1(phi=0)', 's1_S2(phi=0)')
-s1_right = ('s1_B(phi=1.5707963267948966)', 's1_S1(phi=1.5707963267948966)', 's1_S2(phi=1.5707963267948966)')
-u_left =  ('u_B(phi=0)',  'u_S1(phi=0)',  'u_S2(phi=0)')
-u_right = ('u_B(phi=1.5707963267948966)', 'u_S1(phi=1.5707963267948966)', 'u_S2(phi=1.5707963267948966)')
+s1_left = ('meridian(s1_B,phi=0)', 'meridian(s1_S1,phi=0)', 'meridian(s1_S2,phi=0)')
+s1_right = ('meridian(s1_B,phi=1.5707963267948966)', 'meridian(s1_S1,phi=1.5707963267948966)', 'meridian(s1_S2,phi=1.5707963267948966)')
+u_left =  ('meridian(u_B,phi=0)',  'meridian(u_S1,phi=0)',  'meridian(u_S2,phi=0)')
+u_right = ('meridian(u_B,phi=1.5707963267948966)', 'meridian(u_S1,phi=1.5707963267948966)', 'meridian(u_S2,phi=1.5707963267948966)')
 plotter.add_ball_2shells_meridional_colormesh(left_fields=s1_left, right_fields=s1_right, remove_x_mean=True, divide_x_mean=True, **kwargs)
 plotter.add_ball_2shells_meridional_colormesh(left_fields=u_left, right_fields=u_right, vector_ind=0, cmap='PuOr_r', **kwargs)
 plotter.add_ball_2shells_meridional_colormesh(left_fields=u_left, right_fields=u_right, vector_ind=1, cmap='PuOr_r', **kwargs)
