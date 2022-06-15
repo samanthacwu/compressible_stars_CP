@@ -117,6 +117,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             variables['{}_{}'.format(k, bn)] = d3.Grid(variables['{}_{}'.format(k, bn)]).evaluate()
 
         u = variables['u_{}'.format(bn)]
+        p = variables['p_{}'.format(bn)]
         s1 = variables['s1_{}'.format(bn)]
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
@@ -126,30 +127,30 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
+        variables['grad_u_RHS_{}'.format(bn)] = grad_u_RHS = d3.grad(u)
+        variables['div_u_RHS_{}'.format(bn)] = div_u_RHS = d3.div(u)
         if type(basis) == d3.BallBasis:
             lift_basis = basis.clone_with(k=0)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A: d3.Lift(A, lift_basis, -1)
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u_{}'.format(bn)])
             variables['taus_s_{}'.format(bn)] = lift_fn(variables['tau_s_{}'.format(bn)])
-            variables['grad_u_{}'.format(bn)] = grad_u = d3.grad(u)
+            variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_s1_{}'.format(bn)] = grad_s = d3.grad(s1)
-            variables['div_u_RHS_{}'.format(bn)] = div_u_RHS = d3.div(u)
             variables['div_u_{}'.format(bn)] = div_u = div_u_RHS
         else:
             lift_basis = basis.clone_with(k=2)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
             variables['taus_s_{}'.format(bn)] = lift_fn(variables['tau_s1_{}'.format(bn)], -1) + lift_fn(variables['tau_s2_{}'.format(bn)], -2)
-            variables['grad_u_{}'.format(bn)] = grad_u = d3.grad(u) 
+            variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_s1_{}'.format(bn)] = grad_s = d3.grad(s1)
-            variables['div_u_RHS_{}'.format(bn)] = div_u_RHS = d3.div(u)
             variables['div_u_{}'.format(bn)] = div_u = div_u_RHS
 
         #Stress matrices & viscous terms (assumes uniform kinematic viscosity; so dynamic viscosity mu = const * rho)
         variables['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
-        variables['E_RHS_{}'.format(bn)] = E_RHS = 0.5*(d3.grad(u) + d3.trans(d3.grad(u)))
+        variables['E_RHS_{}'.format(bn)] = E_RHS = 0.5*(grad_u_RHS + d3.trans(grad_u_RHS))
         variables['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*I_mat)
-        variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*d3.div(u)*I_mat)
+        variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*div_u_RHS*I_mat)
         variables['visc_div_stress_{}'.format(bn)] = d3.div(sigma) + d3.dot(sigma, grad_ln_rho)
         variables['VH_{}'.format(bn)] = 2*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
 
@@ -171,6 +172,24 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             variables['sponge_term_{}'.format(bn)] = u*variables['sponge_{}'.format(bn)]
         else:
             variables['sponge_term_{}'.format(bn)] = 0
+
+        #output tasks
+        variables['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
+        variables['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
+        r_vals['g'] = variables['r1_{}'.format(bn)]
+        r_vec['g'][2] = variables['r1_{}'.format(bn)]
+
+        er = variables['er_{}'.format(bn)]
+        rho = variables['rho_{}'.format(bn)]
+        variables['ur_{}'.format(bn)] = d3.dot(er, u)
+        variables['momentum_{}'.format(bn)] = rho * u
+        variables['u_squared_{}'.format(bn)] = d3.dot(u,u)
+        variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
+        variables['TE_{}'.format(bn)] = - rho * g_phi * s1
+        variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
+        variables['Re_{}'.format(bn)] = np.sqrt(variables['u_squared_{}'.format(bn)]) / variables['nu_diff_{}'.format(bn)]
+        variables['pomega_hat_{}'.format(bn)] = p - 0.5*variables['u_squared_{}'.format(bn)] + variables['pomega_tilde_{}'.format(bn)]
+        variables['L_{}'.format(bn)] = d3.cross(r_vec, variables['momentum_{}'.format(bn)])
     return variables
 
 def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, scales=None):
@@ -204,8 +223,6 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     if local_vncc_size > 0:
                         logger.info('reading {}_{}'.format(k, bn))
                         variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:1,:1,grid_slices[-1]]
-                        if k == 'g':
-                            print(k, grid_slices[-1], f['{}_{}'.format(k, bn)][:,:1,:1,grid_slices[-1]])
                 for k in scalar_nccs:
                     dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
@@ -217,10 +234,10 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['rho_{}'.format(bn)]['g']       = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
                 variables['g_phi_{}'.format(bn)]['g']     = f['g_phi_{}'.format(bn)][:,:,grid_slices[-1]]
 
-                #TODO: do this in star_builder
-                grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
-                if local_vncc_size > 0:
-                    variables['grad_ln_rho_{}'.format(bn)]['g'] = grad_ln_rho['g'][:,:1,:1,:]
+#                #TODO: do this in star_builder
+#                grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
+#                if local_vncc_size > 0:
+#                    variables['grad_ln_rho_{}'.format(bn)]['g'] = grad_ln_rho['g'][:,:1,:1,:]
 
                 if max_dt is None:
                     max_dt = f['max_dt'][()]

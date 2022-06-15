@@ -13,27 +13,35 @@ from .parser import name_star
 from d3_stars.defaults import config
 
 output_tasks = {}
-output_tasks['u'] = 'u_{0}'
-output_tasks['ur'] = 'dot(er_{0}, u_{0})'
-output_tasks['u_squared'] = 'dot(u_{0}, u_{0})'
-output_tasks['KE'] = '0.5*rho_{0}*' + output_tasks['u_squared']
-output_tasks['TE'] = 'rho_{0}*(-g_phi_{0})*s1_{0}'
-output_tasks['TotE'] = '(' + output_tasks['KE'] + ' + ' + output_tasks['TE'] + ')'
-output_tasks['Re'] = '('+output_tasks['u_squared']+')**(1/2) / nu_diff_{0}'
-output_tasks['p'] = 'p_{0}'
-output_tasks['s1'] = 's1_{0}'
-output_tasks['grad_s1'] = 'grad_s1_{0}'
-output_tasks['pomega_hat'] = 'p_{0} - 0.5*dot(u_{0}, u_{0}) + pomega_tilde_{0}'
-output_tasks['L'] = 'cross(r_vec_{0}, rho_{0}*u_{0})' #angular momentum
-output_tasks['Lx'] = 'dot(ex_{0},' + output_tasks['L'] + ')'
-output_tasks['Ly'] = 'dot(ey_{0},' + output_tasks['L'] + ')'
-output_tasks['Lz'] = 'dot(ez_{0},' + output_tasks['L'] + ')'
-output_tasks['L_squared'] = 'dot(' + output_tasks['L'] + ',' + output_tasks['L'] + ')'
+defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'TE', 'TotE', 'Re', 'p',\
+            's1', 'grad_s1', 'pomega_hat', 'L']
+for k in defaults:
+    output_tasks[k] = '{}'.format(k) + '_{0}'
 
-output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(' + output_tasks['KE'] + '))'
-output_tasks['TE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(' + output_tasks['TE'] + '))'
-output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(u_{0}*rho_{0}*(' + output_tasks['pomega_hat'] + '))'
-output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*nu_diff_{0}*(dot(u_{0}, sigma_RHS_{0})))'
+#angular momentum components
+output_tasks['Lx'] = 'dot(ex_{0},L_{0})'
+output_tasks['Ly'] = 'dot(ey_{0},L_{0})'
+output_tasks['Lz'] = 'dot(ez_{0},L_{0})'
+output_tasks['L_squared'] = 'dot(L_{0}, L_{0})'
+
+output_tasks['Eprod_u_gradp'] = '-dot(momentum_{0}, grad(p_{0}))'
+output_tasks['Eprod_u_grav']  = '-dot(momentum_{0}, g_{0}*s1_{0})'
+output_tasks['Eprod_u_visc']  = 'dot(momentum_{0}, nu_diff_{0}*visc_div_stress_{0})'
+output_tasks['Eprod_u_sponge']  = '-dot(momentum_{0}, sponge_term_{0})'
+output_tasks['Eprod_u_inertial']  = 'dot(momentum_{0}, cross(u_{0}, curl(u_{0})))'
+output_tasks['Eprod_u_rotation']  = 'dot(momentum_{0}, rotation_term_{0})'
+
+output_tasks['Eprod_s_inertial0'] = '(g_phi_{0}*dot(momentum_{0}, grad_S0_{0}))'
+output_tasks['Eprod_s_inertial1'] = '(g_phi_{0}*dot(momentum_{0}, grad_s1_{0}))'
+output_tasks['Eprod_s_radiative'] = 'rho_{0}*(div_rad_flux_{0})'
+output_tasks['Eprod_s_heating'] = 'rho_{0}*(H_{0})'
+output_tasks['Eprod_s_vischeat'] = 'rho_{0}*(nu_diff_{0}*VH_{0})'
+
+
+output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(KE_{0}))'
+output_tasks['TE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(TE_{0}))'
+output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*(pomega_hat_{0}))'
+output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-nu_diff_{0}*(dot(momentum_{0}, sigma_RHS_{0})))'
 output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*(-g_phi_{0})*chi_rad_{0}*grad_s1_{0})'
 
 for lum in ['KE_lum', 'TE_lum', 'wave_lum', 'visc_lum', 'cond_lum']:
@@ -66,10 +74,10 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         return d3.Integrate(A/volume, coords)
 
     for bn, basis in bases.items():
-        solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
-        solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
-        r_vals['g'] = namespace['r1_{}'.format(bn)]
-        r_vec['g'][2] = namespace['r1_{}'.format(bn)]
+#        solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
+#        solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
+#        r_vals['g'] = namespace['r1_{}'.format(bn)]
+#        r_vec['g'][2] = namespace['r1_{}'.format(bn)]
 
         if type(basis) == d3.BallBasis:
             vol = namespace['volume_{}'.format(bn)]  = (4/3)*np.pi*basis.radius**3
