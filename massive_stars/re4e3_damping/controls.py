@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.1L', '0.80R', '0.95R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (128,64, 32)
+star['nr'] = (128,128, 32)
 
 #options for building the star
 star['smooth_h'] = True

@@ -141,11 +141,11 @@ if __name__ == '__main__':
     coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
     vec_fields = ['u',]
-    scalar_fields = ['p', 's1', 'inv_g_phi', 'g_phi', 'H', 'rho', 'pomega_tilde']
+    scalar_fields = ['p', 's1', 'inv_g_phi', 'H', 'rho', 'pomega_tilde']
     vec_taus = ['tau_u']
     scalar_taus = ['tau_s']
     vec_nccs = ['grad_ln_rho', 'grad_ln_g_phi', 'g', 'grad_S0', 'grad_T', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho', 'ln_T', 'chi_rad', 'sponge', 'nu_diff']
+    scalar_nccs = ['ln_rho', 'ln_T', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
 
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 

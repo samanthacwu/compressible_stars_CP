@@ -49,23 +49,23 @@ wave_shell_tasks['fields'] = ['ur', 'pomega_hat']
 wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
 handlers['shells']['tasks'].append(wave_shell_tasks)
 
-## Scalars
-handlers['scalars']['max_writes'] = 400
-
-scalar_tasks = OrderedDict()
-scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
-handlers['scalars']['tasks'].append(scalar_tasks)
-
-## Profiles
-handlers['profiles']['max_writes'] = 100
-handlers['profiles']['dt_factor'] = 0.1
-
-prof_tasks = OrderedDict()
-prof_tasks['type'] = 's2_avg'
-prof_tasks['fields'] = ['s1', 'KE_lum_r', 'TE_lum_r', 'wave_lum_r', 'visc_lum_r', 'cond_lum_r']
-handlers['profiles']['tasks'].append(prof_tasks)
-
+### Scalars
+#handlers['scalars']['max_writes'] = 400
+#
+#scalar_tasks = OrderedDict()
+#scalar_tasks['type'] = 'vol_avg'
+#scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
+#handlers['scalars']['tasks'].append(scalar_tasks)
+#
+### Profiles
+#handlers['profiles']['max_writes'] = 100
+#handlers['profiles']['dt_factor'] = 0.1
+#
+#prof_tasks = OrderedDict()
+#prof_tasks['type'] = 's2_avg'
+#prof_tasks['fields'] = ['s1', 'KE_lum_r', 'TE_lum_r', 'wave_lum_r', 'visc_lum_r', 'cond_lum_r']
+#handlers['profiles']['tasks'].append(prof_tasks)
+#
 ### Checkpoints
 handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10

@@ -210,7 +210,7 @@ for ell in range(11):
 
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
+            plt.loglog(freqs, radius**4*wave_luminosity, label='r={}'.format(radius_str))
 #                shift_ind = np.argmax(wave_luminosity*freqs)
 #                shift_freq = freqs[shift_ind]
 #                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
@@ -241,7 +241,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
                 radius = float(radius_str)
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][f_ind, :])
-            plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
+            plt.loglog(ells, radius**4*wave_luminosity, label='r={}'.format(radius_str))
         plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')
         plt.title('f = {} 1/day'.format(f))
