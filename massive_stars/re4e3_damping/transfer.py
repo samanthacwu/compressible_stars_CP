@@ -10,26 +10,35 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 from configparser import ConfigParser
 
+import dedalus.public as d3
+
 
 from d3_stars.simulations.anelastic_functions import make_bases
-from d3_stars.simulations.parser import parse_std_config
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-Lmax = config['lmax']
+from d3_stars.simulations.parser import name_star
+from d3_stars.defaults import config
+
+star_dir, star_file = name_star()
+
+Lmax = config.eigenvalue['Lmax']
 
 with h5py.File(star_file, 'r') as f:
     stitch_radii = f['r_stitch'][()]
     radius = f['r_outer'][()]
 
+ntheta = config.eigenvalue['Lmax'] + 1
+nphi = 4
 resolutions = []
-for nr in config['nr']:
-    resolutions.append((1, 1, nr))
+for nr in config.star['nr']:
+    resolutions.append((nphi, ntheta, nr))
 dealias = 1
 coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=dealias, dtype=np.complex128, mesh=None)
 
+s_surf = dist.Field(bases=bases[bases_keys[-1]].S2_basis())
+s_surf_pow_op = d3.Average(np.conj(s_surf)*s_surf, coords.S2coordsys)
+
 with h5py.File(star_file, 'r') as f:
     tau_s = f['tau_nd'][()]
-    print(tau_s)
     tau = tau_s/(60*60*24)
     rs = []
     rhos = []
@@ -42,25 +51,30 @@ rho = interpolate.interp1d(r.flatten(), rho.flatten())
 
 def transfer_function(om, values, u_dual, u_outer, r_range, ell):
     #The none's expand dims
-    #dimensionality is [omega', rf, omega]
+    #dimensionality is [eigenvalue, rf, omega_force, phi, theta, r]
     dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
     om                   = om[None, None, :] 
     values           = values[:, None, None]
     u_dual           = u_dual[:, :,    None]
-    u_outer         = u_outer[:, None, None]
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-    Forcing = (np.pi/2) * (om / k_h**2)  #technically times ur at r_rcb
-    Amp = 2 * np.pi * r_range**2 * rho(r_range) * u_dual * Forcing /(om - values)
-    T = Amp * u_outer
-    return np.sum(np.abs(np.sum(T*dr, axis=0)), axis=0)/np.sum(dr)
+    Forcing = (np.pi/2) * (om / k_h**2) #technically times ur at r_rcb
+    Amp = np.sum(dr * (2 * np.pi * r_range**2 * rho(r_range) * u_dual * Forcing /(om - values) ), axis=1)/np.sum(dr)
+
+    u_outer         = u_outer[:, None,:]
+    T = Amp[:,:,None,None,None] * u_outer
+    return np.sum(T, axis=0)
 
 def refine_peaks(om, T, *args):
+    print(om.shape, T.shape)
     i_peaks = []
     for i in range(1,len(om)-1):
-        if (T[i]>T[i-1]) and (T[i]>T[i+1]):
-            delta_m = np.abs(T[i]-T[i-1])/T[i]
-            delta_p = np.abs(T[i]-T[i+1])/T[i]
+        Ti = np.sum(np.abs(T[i]))
+        Timinus = np.sum(np.abs(T[i-1]))
+        Tiplus = np.sum(np.abs(T[i+1]))
+        if (Ti > Timinus) and (Ti > Tiplus):
+            delta_m = np.abs(Ti-Timinus)/Ti
+            delta_p = np.abs(Ti-Tiplus)/Ti
             if delta_m > 0.01 or delta_p > 0.01:
                 i_peaks.append(i)
 
@@ -71,6 +85,7 @@ def refine_peaks(om, T, *args):
         om_low = om[i-1]
         om_high = om[i+1]
         om_new = np.concatenate([om_new,np.linspace(om_low,om_high,10)])
+
 
     T_new = transfer_function(om_new, values, *args)
 
@@ -84,7 +99,6 @@ def refine_peaks(om, T, *args):
 
 
 ell_list = np.arange(1, Lmax+1)
-print(ell_list)
 
 dir = 'eigenvalues'
 
@@ -97,7 +111,7 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 1, 0.1, 0.05, 0.01]
+    depth_list = [1,]
     for j, d_filter in enumerate(depth_list):
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
@@ -127,21 +141,20 @@ for ell in ell_list:
         velocity_duals = velocity_duals[good]
         print('good values: {}'.format(values))
 
-        om0 = values.real[-1]
-        om1 = values.real[0]*1.1
+        om0 = np.abs(values.real[-1])
+        om1 = np.abs(values.real[0]*1.1)
         if om0 < xmin: xmin = om0
         if om1 > xmax: xmax = om1
         if j == 0:
             om0/= 10**(1)
-            print(values.real[-1], om0)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
-        r0 = 1.02
-        r1 = r0 + 0.05*(r.max())
+        r0 = 0.5
+        r1 = 1.1
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
 #        r_range = np.linspace(r.min(), r.max(), num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
-        print(s1_amplitudes)
+
 
         T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range, ell)
 
@@ -149,39 +162,48 @@ for ell in ell_list:
         while peaks > 0:
             om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range, ell)
 
-#        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
+        print(om.shape, T.shape)
+
+        power = np.zeros_like(om)
+        for i, this_om in enumerate(om):
+            s_surf['g'] = T[i,:]
+            power[i] = s_surf_pow_op.evaluate()['g'].ravel()[0].real
+
+
+#        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*power*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
         oms.append(om)
-        transfers.append(T)
+        transfers.append(power)
 
     good_om = np.sort(np.concatenate(oms))
-    good_T = np.zeros_like(good_om)
+    good_pow = np.zeros_like(good_om)
 
     from scipy.interpolate import interp1d
     interps = []
-    for om, T in zip(oms, transfers):
-        interps.append(interp1d(om, T, bounds_error=False, fill_value=np.inf))
+    for om, power in zip(oms, transfers):
+        interps.append(interp1d(om, power, bounds_error=False, fill_value=np.inf))
 
     for i, omega in enumerate(good_om):
+        if omega.real < 0:
+            continue
         vals = []
         for f in interps:
             vals.append(f(omega))
-        good_T[i] = np.min(vals)
+        good_pow[i] = np.min(vals)
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = good_om
         f['om_inv_day'] = good_om / tau
-        f['transfer'] = good_T
-#    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
+        f['transfer'] = good_pow
 #    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
-#    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
+    plt.loglog(good_om/(2*np.pi), good_pow*good_om**(-13/2), lw=1, label='combined')
 
-    maxval = (np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2)).max()
+#    maxval = (np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2)).max()
 #    plt.ylim(maxval/1e15, maxval*2)
-#    plt.xlabel('frequency (sim units)')
-#    plt.legend()
-#    plt.title("ell = %i" % ell)
-#    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-#    plt.show()
+    plt.xlabel('frequency (sim units)')
+    plt.legend()
+    plt.title("ell = %i" % ell)
+    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
+    plt.show()
 
 #plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 #plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))

@@ -39,10 +39,10 @@ import matplotlib.pyplot as plt
 import logging
 logger = logging.getLogger(__name__)
 
-from dedalus.tools.config import config
 
-from d3_stars.simulations.parser import parse_std_config
+from d3_stars.defaults import config
 from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
+from d3_stars.simulations.parser import name_star
 
 args = docopt(__doc__)
 res = re.compile('(.*),r=(.*)')
@@ -62,7 +62,7 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
+star_dir, star_file = name_star()
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]

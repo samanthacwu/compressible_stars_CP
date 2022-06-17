@@ -42,13 +42,13 @@ for file in files:
         os.makedirs(out_dir)
 
     with h5py.File(file, 'r') as f:
-        r = f['r'][()].ravel()
+        r = f['r'][()].ravel().real
         evalues = f['good_evalues'][()]
         efs_s = f['entropy_eigenfunctions'][()]
         efs_p = f['pressure_eigenfunctions'][()]
         efs_u = f['velocity_eigenfunctions'][()]
-        rho = f['rho_full'][()]
-        bruntN2 = f['bruntN2'][()]
+        rho = f['rho_full'][()].real
+        bruntN2 = f['bruntN2'][()].real
         N2_scale = np.copy(bruntN2)
         N2_scale[N2_scale < 1] = 1
 
@@ -69,18 +69,21 @@ for file in files:
         ax5.plot(r, rho**(1/2)*r**(1/2)*N2_scale**(-(3/4))*efs_s[i,:].real, label='real')
         ax5.plot(r, rho**(1/2)*r**(1/2)*N2_scale**(-(3/4))*efs_s[i,:].imag, label='imag')
 
-        ax6.axhline(ev.real**2, c='k', label='$\omega^2$')
-        ax6.plot(r, bruntN2, lw=2)
+#        ax6.axhline(ev.real**2, c='k', label='$\omega^2$')
+#        ax6.plot(r, bruntN2, lw=2)
 #        ax6.plot(r, S*r**(2+brunt_pow_adj), c='orange', ls='--', label=r'${{{}}} r^{{{}}}$'.format(S, 2+brunt_pow_adj))
-        ax6.legend()
+#        ax6.legend()
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].real, label='real')
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].imag, label='imag')
 
         ax1.legend()
         ax1.set_ylabel(r'$r^{1/2}(N^2)^{-1/4} \,\rho^{{1/2}}\, p$')
-        ax2.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_h$')
+        ax2.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_\phi$')
         ax3.set_ylabel(r'$r^{3/2}(N^2)^{-1/4}\,\rho^{{1/2}}\,u_r$')
         ax4.set_ylabel(r'Lum = $4\pi r^2 \rho u_r^* p$')
         ax5.set_ylabel(r'$r^{1/2}(N^2)^{-3/4}\rho^{{1/2}}\,s$')
-        ax6.set_ylabel(r'$N^2$')
+        ax6.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_\theta$')
+#        ax6.set_ylabel(r'$N^2$')
         plt.suptitle('ev = {:.3e}'.format(ev))
 
 

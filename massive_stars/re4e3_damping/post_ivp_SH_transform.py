@@ -43,8 +43,7 @@ from mpi4py import MPI
 import matplotlib.pyplot as plt
 from dedalus.tools.config import config
 
-
-from d3_stars.simulations.parser import parse_std_config
+from d3_stars.defaults import config
 
 from plotpal.file_reader import SingleTypeReader as SR
 
@@ -70,7 +69,6 @@ if n_files is not None:
     n_files = int(n_files)
 
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_transform_{}'.format(data_dir)
@@ -84,7 +82,7 @@ if not reader.idle:
     else:
         fields = [args['--field'],]
 
-    ntheta = config['ntheta']
+    ntheta = config.dynamics['ntheta']
     nphi = 2*ntheta
 
     resolution = (nphi, ntheta, 1)
@@ -150,12 +148,12 @@ if not reader.idle:
         output_file_name = '{}/{}/{}_s{}.h5'.format(root_dir, out_dir, out_dir, file_num)
 
         with h5py.File(output_file_name, file_mode) as of:
-            sim_times = dsets[fields[0]].dims[0]['sim_time']
+            sim_times = reader.current_file_handle['scales/sim_time']
             if ni == 0:
                 of['ells'] = ell_values[None,:,:,None]
                 of['ms']   = m_values[None,:,:,None]
                 of['time'] = sim_times[()]
-                for attr in ['writes', 'set_number', 'handler_name']:
+                for attr in ['writes']:
                     of.attrs[attr] = reader.current_file_handle.attrs[attr]
 
             outputs = OrderedDict()
