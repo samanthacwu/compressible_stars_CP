@@ -3,7 +3,7 @@ from collections import OrderedDict
 from copy import deepcopy
 
 handler_defaults = OrderedDict()
-handler_defaults['max_writes'] = 40
+handler_defaults['max_writes'] = 10
 handler_defaults['time_unit'] = 'heating' #also avail: kepler
 handler_defaults['dt_factor'] = 0.05
 handler_defaults['even_outputs'] = False
@@ -38,7 +38,7 @@ handlers['slices']['tasks'].append(shell_tasks)
 
 ## Wave shells
 
-handlers['shells']['max_writes'] = 100
+handlers['shells']['max_writes'] = 20
 handlers['shells']['time_unit'] = 'kepler'
 handlers['shells']['dt_factor'] = 1
 handlers['shells']['even_outputs'] = True

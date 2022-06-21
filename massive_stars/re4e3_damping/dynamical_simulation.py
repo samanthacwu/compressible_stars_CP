@@ -195,6 +195,7 @@ if __name__ == '__main__':
             variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
+    logger.info('outputs initialized')
 
     ## Logger output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
@@ -219,6 +220,8 @@ if __name__ == '__main__':
         timestep = initial_max_dt
     my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
     my_cfl.add_velocity(heaviside_cfl*u_B)
+
+    logger.info('cfl constructed') 
 
     # Main loop
     start_time = time.time()
@@ -259,7 +262,9 @@ if __name__ == '__main__':
                 for f in solver.state:
                     f.require_grid_space()
 
+            logger.info('about to timestep')
             solver.step(timestep)
+            logger.info('took a timestep')
 
             if solver.iteration % 10 == 0 or solver.iteration <= 10:
                 Re_avg = logger_handler.fields['Re_avg_B']
@@ -289,7 +294,9 @@ if __name__ == '__main__':
                 break
 
     except:
+        import traceback
         logger.info('something went wrong in main loop.')
+        print(traceback.format_exc())
         raise
     finally:
         solver.log_stats()
