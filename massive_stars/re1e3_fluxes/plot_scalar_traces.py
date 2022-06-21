@@ -36,6 +36,9 @@ roll_writes = args['--roll_writes']
 if roll_writes is not None:
     roll_writes = int(roll_writes)
 
+energy_prod_u = ['Eprod_u_{}'.format(s) for s in ['gradp', 'grav', 'visc', 'sponge', 'inertial']]
+energy_prod_s = ['Eprod_s_{}'.format(s) for s in ['inertial0', 'inertial1', 'radiative', 'heating', 'vischeat']]
+
 figs = []
 
 # Nu vs time
@@ -44,6 +47,14 @@ fig1.add_field(0, 'vol_avg(KE_B)')
 fig1.add_field(0, 'vol_avg(TE_B)')
 fig1.add_field(1, 'vol_avg(TotE_B)')
 figs.append(fig1)
+
+
+fig2 = ScalarFigure(num_rows=5, num_cols=2, col_inch=4, fig_name='energy_prod')
+for i, fd in enumerate(energy_prod_u):
+    fig2.add_field(2*i, 'vol_avg({}_B)'.format(fd))
+for i, fd in enumerate(energy_prod_s):
+    fig2.add_field(2*i+1, 'vol_avg({}_B)'.format(fd))
+figs.append(fig2)
 
 
 # Load in figures and make plots
