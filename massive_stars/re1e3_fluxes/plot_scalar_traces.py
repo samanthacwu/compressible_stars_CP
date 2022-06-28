@@ -2,9 +2,10 @@
 Script for plotting traces of evaluated scalar quantities vs. time.
 
 Usage:
-    plot_scalar_traces.py <root_dir> [options]
+    plot_scalar_traces.py [options]
 
 Options:
+    --root_dir=<str>                    Root data directory [default: .]
     --data_dir=<dir>                    Name of data handler directory [default: scalars]
     --out_name=<out_name>               Output directory for figures [default: traces]
     --start_file=<start_file>           Dedalus output file to start at [default: 1]
@@ -18,7 +19,7 @@ args = docopt(__doc__)
 from plotpal.scalars import ScalarFigure, ScalarPlotter
 
 # Read in master output directory
-root_dir    = args['<root_dir>']
+root_dir    = args['--root_dir']
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
