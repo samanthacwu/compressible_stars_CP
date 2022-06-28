@@ -452,10 +452,6 @@ def build_nccs(plot_nccs=False):
 #        sim_H_eff = H_eff
 
 
-    #Calculate simulation gravity.
-    g_sim = s_nd * nondim_cp * g_over_cp
-    
-   
     # Get some timestepping & wave frequency info
     f_nyq = 2*tau_nd*np.sqrt(N2max_sim)/(2*np.pi)
     nyq_dt   = (1/f_nyq) 
@@ -473,9 +469,9 @@ def build_nccs(plot_nccs=False):
     interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
 #    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr, **interp_kwargs)
     if config.star['smooth_h']:
-        interpolations['H'] = interp1d(r_vals, ( sim_H_eff )  * (1/H_nd), **interp_kwargs)
+        interpolations['H'] = interp1d(r_vals, ( sim_H_eff / H_nd), **interp_kwargs)
     else:
-        interpolations['H'] = interp1d(r_nd, ( sim_H_eff ) * (1/H_nd), **interp_kwargs)
+        interpolations['H'] = interp1d(r_nd, ( sim_H_eff / H_nd), **interp_kwargs)
 #    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
 #    interpolations['grad_s0'] = interp1d(r_nd, L_nd * grad_s_smooth / s_nd, **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
