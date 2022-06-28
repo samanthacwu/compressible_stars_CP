@@ -155,15 +155,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*div_u_RHS*I_mat)
         variables['visc_div_stress_{}'.format(bn)] = d3.div(sigma) + d3.dot(sigma, grad_ln_rho)
         variables['VH_{}'.format(bn)] = 2*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
-
-        variables['inv_rhoT_{}'.format(bn)] = d3.Grid(1/(rho * T)).evaluate()
-
+        variables['inv_rhoT_{}'.format(bn)] = 1/(rho*T)
 
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
-        variables['div_rad_flux_{}'.format(bn)] = -(chi_rad*d3.div(grad_s) + chi_rad*d3.dot(grad_s, grad_ln_rho) + chi_rad*d3.dot(grad_s, grad_ln_T) + d3.dot(grad_s, grad_chi_rad))
+        variables['div_rad_flux_{}'.format(bn)] = chi_rad*(d3.div(grad_s) + d3.dot(grad_s, grad_ln_rho) + d3.dot(grad_s, grad_ln_T)) + d3.dot(grad_s, grad_chi_rad)
 
         # Rotation and damping terms
         if do_rotation:
@@ -192,11 +190,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['ur_{}'.format(bn)] = d3.dot(er, u)
         variables['momentum_{}'.format(bn)] = rho * u
         variables['u_squared_{}'.format(bn)] = d3.dot(u,u)
-        variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
-        variables['TE_{}'.format(bn)] = rho * T * s1
-        variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
         variables['P_evol_{}'.format(bn)] = P = rho*(p - 0.5*variables['u_squared_{}'.format(bn)])
         variables['T_evol_{}'.format(bn)] = T*(((gamma-1)/gamma)*P/P0 + s1/Cp)
+        variables['T_tot_{}'.format(bn)] = T_tot = T + variables['T_evol_{}'.format(bn)]
+        variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
+        variables['TE_{}'.format(bn)] = rho * T_tot * s1
+        variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
         variables['Re_{}'.format(bn)] = np.sqrt(variables['u_squared_{}'.format(bn)]) / variables['nu_diff_{}'.format(bn)]
         variables['pomega_hat_{}'.format(bn)] = p - 0.5*variables['u_squared_{}'.format(bn)] + variables['pomega_tilde_{}'.format(bn)]
         variables['L_{}'.format(bn)] = d3.cross(r_vec, variables['momentum_{}'.format(bn)])
