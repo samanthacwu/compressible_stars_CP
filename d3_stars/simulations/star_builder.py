@@ -24,19 +24,16 @@ logger = logging.getLogger(__name__)
 interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
 
 
-def HSE_solve(Nr, N2_func, g_func, radius=1, dtype=np.float64, \
+def HSE_solve(coords, dist, bases, N2_func, g_func, radius=1, dtype=np.float64, \
               R=1, gamma=5/3, Cp=2.5, G=1, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, T_func=None, ln_rho_func=None):
+
     Cv = Cp/gamma
 
     # Parameters
-    dealias = 10
-    mesh = None
-    res = (1, 1, Nr)
+    scales = 10
+    basis = bases['B']
 
-    # Bases
-    coords = d3.SphericalCoordinates('phi', 'theta', 'r')
-    dist = d3.Distributor(coords, dtype=dtype, mesh=mesh, comm=comm)
-    basis = d3.BallBasis(coords, shape=res, radius=radius, dealias=dealias, dtype=dtype)
+    # Functions
     S2_basis = basis.S2_basis()
     phi, theta, r = dist.local_grids(basis)
     lift = lambda A: d3.Lift(A, basis, -1)
@@ -59,7 +56,7 @@ def HSE_solve(Nr, N2_func, g_func, radius=1, dtype=np.float64, \
     g_ncc   = dist.VectorField(coords, name='g', bases=basis.radial_basis)
 
     # Fields
-    T = dist.Field(name='T', bases=basis)
+    ln_T = dist.Field(name='ln_T', bases=basis)
     ln_rho = dist.Field(name='ln_rho', bases=basis)
     g   = dist.VectorField(coords, name='g', bases=basis)
     tau_T = dist.Field(name='tau_T', bases=S2_basis)
@@ -69,23 +66,23 @@ def HSE_solve(Nr, N2_func, g_func, radius=1, dtype=np.float64, \
     g['g'][2] = g_func(r)
     g_ncc['g'][2] = g_func(r)
 
-    ln_T = np.log(T)
+    T = np.exp(ln_T)
     rho = np.exp(ln_rho)
 
     dS_dr = Cp * ((1/gamma) * d3.grad(ln_T) - ((gamma-1)/gamma)*d3.grad(ln_rho))
     pi = np.pi
 
-    problem = d3.NLBVP([T,ln_rho, tau_T, tau_rho], namespace=locals())
+    problem = d3.NLBVP([ln_T,ln_rho, tau_T, tau_rho], namespace=locals())
 
-    problem.add_equation("- R*grad(T) + r_vec*lift(tau_T) = R*T*grad(ln_rho) - g")
+    problem.add_equation("- R*(grad(ln_T) + grad(ln_rho)) + r_vec*lift(tau_T) = - g/T")
     problem.add_equation("((gamma-1)/gamma)*g_ncc@grad(ln_rho) - lift(tau_rho) = (1/gamma)*g@grad(ln_T) + N2")
-    problem.add_equation("T(r=nondim_radius) = 1")
+    problem.add_equation("ln_T(r=nondim_radius) = 0")
     problem.add_equation("ln_rho(r=nondim_radius) = 0")
 
     if T_func is None:
-        T['g']   = -(r**2 - radius**2) + 1
+        ln_T['g']   = np.log(-(r**2 - radius**2) + 1)
     else:
-        T['g'] = T_func(r)
+        ln_T['g'] = np.log(T_func(r))
     if ln_rho_func is None:
         ln_rho['g'] = np.log(-(r**2 - radius**2) + 1)
     else:
@@ -106,42 +103,51 @@ def HSE_solve(Nr, N2_func, g_func, radius=1, dtype=np.float64, \
         logger.info(f'Perturbation norm: {pert_norm:.3e}')
 
 
-    phi, theta, r = dist.local_grids(basis, scales=(1,1,dealias))
+    phi, theta, r = dist.local_grids(basis, scales=basis.dealias)
 
 
     grad_T = d3.grad(T).evaluate()
     grad_ln_T = d3.grad(ln_T).evaluate()
     grad_ln_rho = d3.grad(ln_rho).evaluate()
     N2 = (-(1/Cp) * (g) @ dS_dr).evaluate()
+    HSE = (-R*(d3.grad(ln_T) + d3.grad(ln_rho)) + g/T).evaluate()
 
     fig = plt.figure()
     ax1 = fig.add_subplot(4,1,1)
     ax2 = fig.add_subplot(4,1,2)
     ax3 = fig.add_subplot(4,1,3)
     ax4 = fig.add_subplot(4,1,4)
-    ax1.plot(r.ravel(), T['g'].ravel(), label='T')
-    ax1.plot(r.ravel(), rho.evaluate()['g'].ravel(), label='rho')
+    ax1.plot(r.ravel(), ln_T['g'].ravel(), label='ln_T')
+    ax1.plot(r.ravel(), ln_rho['g'].ravel(), label='ln_rho')
     ax1.legend()
-    ax2.plot(r.ravel(), grad_ln_T['g'][2,:].ravel(), label=r'$\nabla\ln T$')
-    ax2.plot(r.ravel(), grad_ln_rho['g'][2,:].ravel(), label=r'$\nabla\ln rho$')
+    ax2.plot(r.ravel(), HSE['g'][2,:].ravel(), label='HSE')
     ax2.legend()
     ax3.plot(r.ravel(), g['g'][2,:].ravel(), label=r'$g$')
     ax3.legend()
     ax4.plot(r.ravel(), N2['g'].ravel(), label=r'$N^2$')
-    ax4.plot(r.ravel(), (N2_func(r)).ravel(), label=r'$N^2$ goal')
+    ax4.plot(r.ravel(), (N2_func(r)).ravel(), label=r'$N^2$ goal', ls='--')
     ax4.legend()
     fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
 #    plt.show()
 
+    phi, theta, r = dist.local_grids(basis, scales=(1,1,scales))
+    dS_dr = dS_dr.evaluate()
+    dS_dr.change_scales((1,1,scales))
+    ln_T.change_scales((1,1,scales))
+    grad_ln_T.change_scales((1,1,scales))
+    ln_rho.change_scales((1,1,scales))
+    grad_ln_rho.change_scales((1,1,scales))
+    N2.change_scales((1,1,scales))
+
+
     atmosphere = dict()
     atmosphere['r'] = r
-    atmosphere['T'] = np.copy(T['g'])
+    atmosphere['ln_T'] = np.copy(ln_T['g'])
     atmosphere['N2'] = np.copy(N2['g'])
-    atmosphere['grad_T'] = np.copy(grad_T['g'])
+    atmosphere['grad_ln_T'] = np.copy(grad_T['g'])
     atmosphere['ln_rho'] = np.copy(ln_rho['g'])
     atmosphere['grad_ln_rho'] = np.copy(grad_ln_rho['g'])
-    atmosphere['dS_dr'] = np.copy(dS_dr.evaluate()['g'])
-    print(atmosphere['dS_dr'])
+    atmosphere['dS_dr'] = np.copy(dS_dr['g'])
     return atmosphere
 
 
@@ -381,7 +387,7 @@ def build_nccs(plot_nccs=False):
     
    
     ### Make dedalus domain and bases
-    resolutions = [(8, 4, nr) for nr in config.star['nr']]
+    resolutions = [(1, 1, nr) for nr in config.star['nr']]
     stitch_radii = r_bound_nd[1:-1]
     dtype=np.float64
     mesh=None
@@ -483,7 +489,7 @@ def build_nccs(plot_nccs=False):
     N2_func = interp1d(r_nd, g_over_cp * grad_s_smooth * tau_nd**2, **interp_kwargs)
     g_func = interpolations['g']
     ln_rho_func = interpolations['ln_rho']
-    atmo = HSE_solve(resolutions[0][-1], N2_func, g_func,
+    atmo = HSE_solve(c, d, bases, N2_func, g_func,
               radius=r_bound_nd[-1], dtype=np.float64, \
               R=nondim_R_gas, gamma=nondim_gamma1, Cp=nondim_cp, comm=MPI.COMM_SELF, \
               nondim_radius=1, g_nondim=interpolations['g'](1), G=nondim_G,
@@ -491,7 +497,7 @@ def build_nccs(plot_nccs=False):
 
 
     interpolations['grad_s0'] = interp1d(atmo['r'].ravel(), atmo['dS_dr'][2,:].ravel(), **interp_kwargs)
-    interpolations['T'] = interp1d(atmo['r'].ravel(), atmo['T'].ravel(), **interp_kwargs)
+    interpolations['ln_T'] = interp1d(atmo['r'].ravel(), atmo['ln_T'].ravel(), **interp_kwargs)
     interpolations['ln_rho'] = interp1d(atmo['r'].ravel(), atmo['ln_rho'].ravel(), **interp_kwargs)
 
 #    plt.figure()
@@ -578,7 +584,7 @@ def build_nccs(plot_nccs=False):
 
     
     interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
-    interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
+    interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
@@ -611,7 +617,7 @@ def build_nccs(plot_nccs=False):
             elif ncc == 'grad_s0':
                 interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s, **interp_kwargs)
                 print(rvals, dedalus_yvals)
-            elif ncc in ['T', 'ln_rho']:
+            elif ncc in ['ln_T', 'ln_rho']:
                 interp_func = interpolations[ncc]
     
             if ncc == 'grad_T':
@@ -626,7 +632,19 @@ def build_nccs(plot_nccs=False):
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
 
-    
+    plt.figure()
+    print(ncc_dict['grad_s0']['field_B'], ncc_dict['g']['field_B'], nondim_cp)
+    N2_B = (-1*d3.dot(ncc_dict['grad_s0']['field_B'], ncc_dict['g']['field_B'])/nondim_cp).evaluate()
+    plt.plot(r_nd, N2_func(r_nd))
+    plt.plot(dedalus_r['B'].ravel(), N2_B['g'].ravel())
+    plt.ylabel(r'$N^2$')
+    plt.xlabel('r')
+    plt.yscale('log')
+    plt.savefig('N2_goodness.png')
+    plt.show()
+
+        
+
     C = d3.integ(ncc_dict['H']['field_B']).evaluate()['g']
     adj = C
     logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
@@ -649,6 +667,10 @@ def build_nccs(plot_nccs=False):
                     f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]
                     f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
     
+        f['Cp'] = nondim_cp
+        f['R_gas'] = nondim_R_gas
+        f['gamma1'] = nondim_gamma1
+
         #Save properties of the star, with units.
         f['L_nd']   = L_nd
         f['L_nd'].attrs['units'] = str(L_nd.unit)
@@ -694,7 +716,8 @@ def build_nccs(plot_nccs=False):
         f['r_outer']   = r_bound_nd[-1] 
         f['max_dt'] = max_dt
         f['Ma2_r0'] = Ma2_r0
-        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum']:
+        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
+                    'Cp', 'R_gas', 'gamma1']:
             f[k].attrs['units'] = 'dimensionless'
     logger.info('finished saving NCCs to {}'.format(out_file))
     logger.info('We recommend looking at the plots in {}/ to make sure the non-constant coefficients look reasonable'.format(out_dir))
