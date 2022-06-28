@@ -69,26 +69,23 @@ Dark2_7 = Dark2_7.mpl_colors
 def luminosities(ax, dictionary, index):
     rs = []
     KEs = []
-    TEs = []
-    waves = []
+    enths = []
     viscs = []
     conds = []
     for bn in bases_keys:
         rs.append(match_basis(dictionary['s2_avg(KE_lum_r_{})'.format(bn)], 'r'))
         KEs.append(dictionary['s2_avg(KE_lum_r_{})'.format(bn)][index].ravel())
-        TEs.append(dictionary['s2_avg(TE_lum_r_{})'.format(bn)][index].ravel())
-        waves.append(dictionary['s2_avg(wave_lum_r_{})'.format(bn)][index].ravel())
+        enths.append(dictionary['s2_avg(enth_lum_r_{})'.format(bn)][index].ravel())
         viscs.append(dictionary['s2_avg(visc_lum_r_{})'.format(bn)][index].ravel())
         conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index].ravel())
     legend = False
     ax.plot(sim_lum_r, sim_lum, c='k')
-    for r, KE, TE, wave, visc, cond in zip(rs, KEs, TEs, waves, viscs, conds):
+    for r, KE, enth, visc, cond in zip(rs, KEs, enths, viscs, conds):
         ax.plot(r, KE, label='KE', c=Dark2_7[0])
-        ax.plot(r, TE, label='TE', c=Dark2_7[1])
-        ax.plot(r, wave, label='wave', c=Dark2_7[2])
+        ax.plot(r, enth, label='enth', c=Dark2_7[1])
         ax.plot(r, visc, label='visc', c=Dark2_7[3])
         ax.plot(r, cond, label='cond', c=Dark2_7[4])
-        sum = KE + TE + wave + visc + cond
+        sum = KE +enth + visc + cond
         ax.plot(r, sum, label='sum', c=Dark2_7[5])
         if not legend:
             ax.legend()

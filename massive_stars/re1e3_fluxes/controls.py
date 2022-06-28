@@ -25,7 +25,7 @@ numerics['equations'] = 'AN_HD' #anelastic hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
-numerics['reynolds_target'] = 1e-3
+numerics['reynolds_target'] = 1e0
 
 numerics['prandtl'] = 1
 
@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 2
+dynamics['ntheta'] = 4
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 

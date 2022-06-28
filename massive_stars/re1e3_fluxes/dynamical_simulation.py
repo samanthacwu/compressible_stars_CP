@@ -157,7 +157,7 @@ if __name__ == '__main__':
     variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe,
                                             vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                             sponge=sponge, do_rotation=do_rotation)
-
+    
     for i, bn in enumerate(bases.keys()):
         variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     t_kep, t_heat, t_rot = timescales
