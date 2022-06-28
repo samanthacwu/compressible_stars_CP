@@ -121,9 +121,11 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         s1 = variables['s1_{}'.format(bn)]
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
-        g_phi = variables['g_phi_{}'.format(bn)]
+        grad_ln_T = variables['grad_ln_T_{}'.format(bn)]
+        rho = variables['rho_{}'.format(bn)]
+        T = variables['T_{}'.format(bn)]
+
         g = variables['g_{}'.format(bn)]
-        grad_g_phi = -g
         er_LHS = variables['er_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
@@ -154,12 +156,14 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['visc_div_stress_{}'.format(bn)] = d3.div(sigma) + d3.dot(sigma, grad_ln_rho)
         variables['VH_{}'.format(bn)] = 2*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
 
+        variables['inv_rhoT_{}'.format(bn)] = d3.Grid(1/(rho * T)).evaluate()
+
 
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
-        variables['div_rad_flux_{}'.format(bn)] = -(chi_rad*g_phi*d3.div(grad_s) + chi_rad*g_phi*d3.dot(grad_s, grad_ln_rho) + chi_rad*d3.dot(grad_s, grad_g_phi) + g_phi*d3.dot(grad_s, grad_chi_rad))
+        variables['div_rad_flux_{}'.format(bn)] = -(chi_rad*d3.div(grad_s) + chi_rad*d3.dot(grad_s, grad_ln_rho) + chi_rad*d3.dot(grad_s, grad_ln_T) + d3.dot(grad_s, grad_chi_rad))
 
         # Rotation and damping terms
         if do_rotation:
@@ -181,12 +185,18 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
 
         er = variables['er_{}'.format(bn)]
         rho = variables['rho_{}'.format(bn)]
+        variables['gamma1'] = gamma = dist.Field(name='gamma1')
+        variables['R_gas'] = R_gas = dist.Field(name='R_gas')
+        variables['Cp'] = Cp = dist.Field(name='Cp')
+        variables['P0_{}'.format(bn)] = P0 = R_gas*rho*T
         variables['ur_{}'.format(bn)] = d3.dot(er, u)
         variables['momentum_{}'.format(bn)] = rho * u
         variables['u_squared_{}'.format(bn)] = d3.dot(u,u)
         variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
-        variables['TE_{}'.format(bn)] = - rho * g_phi * s1
+        variables['TE_{}'.format(bn)] = rho * T * s1
         variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
+        variables['P_evol_{}'.format(bn)] = P = rho*(p - 0.5*variables['u_squared_{}'.format(bn)])
+        variables['T_evol_{}'.format(bn)] = T*(((gamma-1)/gamma)*P/P0 + s1/Cp)
         variables['Re_{}'.format(bn)] = np.sqrt(variables['u_squared_{}'.format(bn)]) / variables['nu_diff_{}'.format(bn)]
         variables['pomega_hat_{}'.format(bn)] = p - 0.5*variables['u_squared_{}'.format(bn)] + variables['pomega_tilde_{}'.format(bn)]
         variables['L_{}'.format(bn)] = d3.cross(r_vec, variables['momentum_{}'.format(bn)])
@@ -212,9 +222,12 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
         local_vncc_size = variables['{}_{}'.format(vec_nccs[0], bn)]['g'].size
         if ncc_file is not None:
             logger.info('reading NCCs from {}'.format(ncc_file))
-            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'g_phi']:
+            for k in vec_nccs + scalar_nccs + ['H', 'rho', 'T']:
                 variables['{}_{}'.format(k, bn)].change_scales(ncc_scales)
             with h5py.File(ncc_file, 'r') as f:
+                variables['Cp']['g'] = f['Cp'][()]
+                variables['R_gas']['g'] = f['R_gas'][()]
+                variables['gamma1']['g'] = f['gamma1'][()]
                 for k in vec_nccs:
                     dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
@@ -232,7 +245,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho_{}'.format(bn)]['g']       = np.exp(f['ln_rho_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-                variables['g_phi_{}'.format(bn)]['g']     = f['g_phi_{}'.format(bn)][:,:,grid_slices[-1]]
+                variables['T_{}'.format(bn)]['g']         = np.exp(f['ln_T_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
 
 #                #TODO: do this in star_builder
 #                grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
@@ -300,12 +313,12 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         #Standard Equations
         if config.numerics['equations'] == 'AN_HD':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
-            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "-g_phi_{0}*(dt(s1_{0}) + dot(u_{0}, grad_S0_{0})) - div_rad_flux_{0} + taus_s_{0} = g_phi_{0}*(dot(u_{0}, grad_s1_{0})) + H_{0} + nu_diff_{0}*VH_{0}".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0}/Cp - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = dot(u_{0}, grad_s1_{0}) + inv_rhoT_{0}*(H_{0} + nu_diff_{0}*VH_{0})".format(bn)
         elif config.numerics['equations'] == 'AN_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
-            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0} - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "-g_phi_{0}*(dt(s1_{0}) + dot(u_{0}, grad_S0_{0})) - div_rad_flux_{0} + taus_s_{0} = 0".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0}/Cp - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_S0_{0}) - div_rad_flux_{0} + taus_s_{0} = 0".format(bn)
 
         #Boundary conditions
         if type(basis) == d3.BallBasis:

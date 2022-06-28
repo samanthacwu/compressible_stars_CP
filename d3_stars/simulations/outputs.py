@@ -39,12 +39,12 @@ output_tasks['Eprod_s_vischeat'] = 'rho_{0}*(nu_diff_{0}*VH_{0})'
 
 
 output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(KE_{0}))'
-output_tasks['TE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(TE_{0}))'
-output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*(pomega_hat_{0}))'
+output_tasks['enth_lum']   = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*T_evol_{0})'
+#output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*(pomega_hat_{0}))'
 output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-nu_diff_{0}*(dot(momentum_{0}, sigma_RHS_{0})))'
-output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*(-g_phi_{0})*chi_rad_{0}*grad_s1_{0})'
+output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*T_{0}*chi_rad_{0}*grad_s1_{0})'
 
-for lum in ['KE_lum', 'TE_lum', 'wave_lum', 'visc_lum', 'cond_lum']:
+for lum in ['KE_lum', 'enth_lum', 'visc_lum', 'cond_lum']:
     output_tasks['{}_r'.format(lum)] = 'dot(er_{0}, ' + output_tasks[lum] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):

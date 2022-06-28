@@ -635,13 +635,13 @@ def build_nccs(plot_nccs=False):
     plt.figure()
     print(ncc_dict['grad_s0']['field_B'], ncc_dict['g']['field_B'], nondim_cp)
     N2_B = (-1*d3.dot(ncc_dict['grad_s0']['field_B'], ncc_dict['g']['field_B'])/nondim_cp).evaluate()
-    plt.plot(r_nd, N2_func(r_nd))
+    plt.plot(r_nd, tau_nd**2*g*grad_s_over_cp)
     plt.plot(dedalus_r['B'].ravel(), N2_B['g'].ravel())
     plt.ylabel(r'$N^2$')
     plt.xlabel('r')
     plt.yscale('log')
     plt.savefig('N2_goodness.png')
-    plt.show()
+#    plt.show()
 
         
 
