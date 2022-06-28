@@ -646,9 +646,10 @@ def build_nccs(plot_nccs=False):
         
 
     C = d3.integ(ncc_dict['H']['field_B']).evaluate()['g']
-    adj = C
+    vol = (4/3)*np.pi * bases['B'].radius**3
+    adj = C / vol
     logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
-    ncc_dict['H']['field_B']['g'] -= adj
+    ncc_dict['H']['field_B']['g'] -= adj 
 
     dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
     print(dLdt)
