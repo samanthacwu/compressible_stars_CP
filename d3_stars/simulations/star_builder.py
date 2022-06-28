@@ -24,6 +24,127 @@ logger = logging.getLogger(__name__)
 interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
 
 
+def HSE_solve(Nr, N2_func, g_func, radius=1, dtype=np.float64, \
+              R=1, gamma=5/3, Cp=2.5, G=1, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, T_func=None, ln_rho_func=None):
+    Cv = Cp/gamma
+
+    # Parameters
+    dealias = 10
+    mesh = None
+    res = (1, 1, Nr)
+
+    # Bases
+    coords = d3.SphericalCoordinates('phi', 'theta', 'r')
+    dist = d3.Distributor(coords, dtype=dtype, mesh=mesh, comm=comm)
+    basis = d3.BallBasis(coords, shape=res, radius=radius, dealias=dealias, dtype=dtype)
+    S2_basis = basis.S2_basis()
+    phi, theta, r = dist.local_grids(basis)
+    lift = lambda A: d3.Lift(A, basis, -1)
+
+    N2 = dist.Field(bases=basis, name='N2')
+    N2['g'] = N2_func(r)
+
+    er = dist.VectorField(coords, name='er')
+    er['g'][2] = 1
+    ephi = dist.VectorField(coords, name='ephi')
+    ephi['g'][0] = 1
+    etheta = dist.VectorField(coords, name='etheta')
+    etheta['g'][1] = 1
+
+    r_vec = dist.VectorField(coords, bases=basis)
+    r_vec['g'][2] = r
+    r_val = dist.Field(bases=basis)
+    r_val['g'] = r
+
+    g_ncc   = dist.VectorField(coords, name='g', bases=basis.radial_basis)
+
+    # Fields
+    T = dist.Field(name='T', bases=basis)
+    ln_rho = dist.Field(name='ln_rho', bases=basis)
+    g   = dist.VectorField(coords, name='g', bases=basis)
+    tau_T = dist.Field(name='tau_T', bases=S2_basis)
+    tau_rho = dist.Field(name='tau_T', bases=S2_basis)
+    tau_g   = dist.Field(name='tau_g', bases=S2_basis)
+
+    g['g'][2] = g_func(r)
+    g_ncc['g'][2] = g_func(r)
+
+    ln_T = np.log(T)
+    rho = np.exp(ln_rho)
+
+    dS_dr = Cp * ((1/gamma) * d3.grad(ln_T) - ((gamma-1)/gamma)*d3.grad(ln_rho))
+    pi = np.pi
+
+    problem = d3.NLBVP([T,ln_rho, tau_T, tau_rho], namespace=locals())
+
+    problem.add_equation("- R*grad(T) + r_vec*lift(tau_T) = R*T*grad(ln_rho) - g")
+    problem.add_equation("((gamma-1)/gamma)*g_ncc@grad(ln_rho) - lift(tau_rho) = (1/gamma)*g@grad(ln_T) + N2")
+    problem.add_equation("T(r=nondim_radius) = 1")
+    problem.add_equation("ln_rho(r=nondim_radius) = 0")
+
+    if T_func is None:
+        T['g']   = -(r**2 - radius**2) + 1
+    else:
+        T['g'] = T_func(r)
+    if ln_rho_func is None:
+        ln_rho['g'] = np.log(-(r**2 - radius**2) + 1)
+    else:
+        ln_rho['g'] = ln_rho_func(r)
+#    if g_func is None:
+#        g['g'][2] = g_nondim*r
+#    else:
+#        g['g'][2] = g_func(r)
+
+
+    ncc_cutoff=1e-8
+    tolerance=1e-8
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
+    pert_norm = np.inf
+    while pert_norm > tolerance:
+        solver.newton_iteration(damping=1)
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+        logger.info(f'Perturbation norm: {pert_norm:.3e}')
+
+
+    phi, theta, r = dist.local_grids(basis, scales=(1,1,dealias))
+
+
+    grad_T = d3.grad(T).evaluate()
+    grad_ln_T = d3.grad(ln_T).evaluate()
+    grad_ln_rho = d3.grad(ln_rho).evaluate()
+    N2 = (-(1/Cp) * (g) @ dS_dr).evaluate()
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(4,1,1)
+    ax2 = fig.add_subplot(4,1,2)
+    ax3 = fig.add_subplot(4,1,3)
+    ax4 = fig.add_subplot(4,1,4)
+    ax1.plot(r.ravel(), T['g'].ravel(), label='T')
+    ax1.plot(r.ravel(), rho.evaluate()['g'].ravel(), label='rho')
+    ax1.legend()
+    ax2.plot(r.ravel(), grad_ln_T['g'][2,:].ravel(), label=r'$\nabla\ln T$')
+    ax2.plot(r.ravel(), grad_ln_rho['g'][2,:].ravel(), label=r'$\nabla\ln rho$')
+    ax2.legend()
+    ax3.plot(r.ravel(), g['g'][2,:].ravel(), label=r'$g$')
+    ax3.legend()
+    ax4.plot(r.ravel(), N2['g'].ravel(), label=r'$N^2$')
+    ax4.plot(r.ravel(), (N2_func(r)).ravel(), label=r'$N^2$ goal')
+    ax4.legend()
+    fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
+#    plt.show()
+
+    atmosphere = dict()
+    atmosphere['r'] = r
+    atmosphere['T'] = np.copy(T['g'])
+    atmosphere['N2'] = np.copy(N2['g'])
+    atmosphere['grad_T'] = np.copy(grad_T['g'])
+    atmosphere['ln_rho'] = np.copy(ln_rho['g'])
+    atmosphere['grad_ln_rho'] = np.copy(grad_ln_rho['g'])
+    atmosphere['dS_dr'] = np.copy(dS_dr.evaluate()['g'])
+    print(atmosphere['dS_dr'])
+    return atmosphere
+
+
 ### Function definitions
 from scipy.special import erf
 def one_to_zero(x, x0, width=0.1):
@@ -121,6 +242,7 @@ def build_nccs(plot_nccs=False):
     rho            = 10**p.logRho[::-1] * u.g / u.cm**3
     P              = p.pressure[::-1] * u.g / u.cm / u.s**2
     T              = p.temperature[::-1] * u.K
+    R_gas          = P / (rho * T)
     nablaT         = p.gradT[::-1] #dlnT/dlnP
     nablaT_ad      = p.grada[::-1]
     chiRho         = p.chiRho[::-1]
@@ -135,7 +257,7 @@ def build_nccs(plot_nccs=False):
     N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
     eps_nuc        = p.eps_nuc[::-1] * u.erg / u.g / u.s
     lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
-    
+
     R_star = (p.photosphere_r * u.R_sun).cgs
     
     #Put all MESA fields into cgs and calculate secondary MESA fields
@@ -146,6 +268,7 @@ def build_nccs(plot_nccs=False):
     dlogTdr         = dlogPdr*(nablaT)
     g_over_cp       = -g/cp
     grad_s_over_cp  = N2/g #entropy gradient, for NCC, includes composition terms
+    grad_s          = cp * grad_s_over_cp
     L_conv          = conv_L_div_L*Luminosity
     dTdr            = (T)*dlogTdr
 
@@ -203,12 +326,19 @@ def build_nccs(plot_nccs=False):
     s_nd    = L_nd**2 / tau_nd**2 / T_nd
     H_nd    = (m_nd / L_nd) * tau_nd**-3
     s_motions    = L_nd**2 / tau_heat**2 / T[0]
+    nondim_cp = (cp[r==L_nd][0]/s_nd).value
+    nondim_R_gas = (R_gas[r==L_nd][0]/s_nd).value
+    nondim_gamma1 = (gamma1[r==L_nd][0]).value
+    nondim_G = (constants.G * (rho_nd * tau_nd**2)).value
+    g               = constants.G.cgs*mass/r**2
     Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
+    logger.info('Thermo: Cp/s_nd: {:.2e}, R_gas/s_nd: {:.2e}, gamma1: {:.4f}'.format(nondim_cp, nondim_R_gas, nondim_gamma1))
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
     logger.info('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
 
 #    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
+    g_over_cp       = g / cp
     g_phi           = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
     g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = R_star
     grad_ln_g_phi   = g / g_phi
@@ -230,13 +360,13 @@ def build_nccs(plot_nccs=False):
     ### entropy gradient
     ### More core convection zone logic here
     #Build a nice function for our basis in the ball
-    if 'transition_point' in ncc_dict['grad_S0'].keys():
-        grad_s_transition_point = float(ncc_dict['grad_S0']['transition_point'])
+    if 'transition_point' in ncc_dict['grad_s0'].keys():
+        grad_s_transition_point = float(ncc_dict['grad_s0']['transition_point'])
     else:
         grad_s_transition_point = 1.05
         logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
-    if 'width' in ncc_dict['grad_S0'].keys():
-        grad_s_width = float(ncc_dict['grad_S0']['width'])
+    if 'width' in ncc_dict['grad_s0'].keys():
+        grad_s_width = float(ncc_dict['grad_s0']['width'])
     else:
         grad_s_width = 0.05
         logger.info('using default grad s width = {}'.format(grad_s_width))
@@ -244,9 +374,10 @@ def build_nccs(plot_nccs=False):
     grad_s_width *= (L_CZ/L_nd).value
     grad_s_center *= (L_CZ/L_nd).value
     
-    grad_S_smooth = np.copy(grad_s_over_cp)
-    flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s_over_cp)
-    grad_S_smooth[r/L_nd < grad_s_transition_point] = flat_value
+    grad_s_smooth = np.copy(grad_s)
+    flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s)
+    grad_s_smooth[r/L_nd < grad_s_transition_point] = flat_value
+    grad_s_smooth *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
     
    
     ### Make dedalus domain and bases
@@ -260,6 +391,10 @@ def build_nccs(plot_nccs=False):
     for bn in bases.keys():
         phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
+
+
+
+
 
 
 
@@ -309,6 +444,10 @@ def build_nccs(plot_nccs=False):
     else:
         raise NotImplementedError("must use smooth_h")
 #        sim_H_eff = H_eff
+
+
+    #Calculate simulation gravity.
+    g_sim = s_nd * nondim_cp * g_over_cp
     
    
     # Get some timestepping & wave frequency info
@@ -326,20 +465,60 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_rho'] = interp1d(r_nd, dlogrhodr*L_nd, **interp_kwargs)
     interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
     interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
-    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr, **interp_kwargs)
+#    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr, **interp_kwargs)
     if config.star['smooth_h']:
-        interpolations['H'] = interp1d(r_vals, ( sim_H_eff/np.exp(interpolations['ln_rho'](r_vals)))  * (1/H_nd), **interp_kwargs)
+        interpolations['H'] = interp1d(r_vals, ( sim_H_eff )  * (1/H_nd), **interp_kwargs)
     else:
-        interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd), **interp_kwargs)
+        interpolations['H'] = interp1d(r_nd, ( sim_H_eff ) * (1/H_nd), **interp_kwargs)
 #    interpolations['H'] = interp1d(r_nd, ( sim_H_eff/(rho) ) * (rho_nd/H_nd))
-    interpolations['grad_S0'] = interp1d(r_nd, L_nd * grad_S_smooth, **interp_kwargs)
+#    interpolations['grad_s0'] = interp1d(r_nd, L_nd * grad_s_smooth / s_nd, **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
     interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2), **interp_kwargs)
     interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
- 
+
+
+    N2_func = interp1d(r_nd, g_over_cp * grad_s_smooth * tau_nd**2, **interp_kwargs)
+    g_func = interpolations['g']
+    ln_rho_func = interpolations['ln_rho']
+    atmo = HSE_solve(resolutions[0][-1], N2_func, g_func,
+              radius=r_bound_nd[-1], dtype=np.float64, \
+              R=nondim_R_gas, gamma=nondim_gamma1, Cp=nondim_cp, comm=MPI.COMM_SELF, \
+              nondim_radius=1, g_nondim=interpolations['g'](1), G=nondim_G,
+              T_func = interpolations['T'], ln_rho_func = interpolations['ln_rho'])
+
+
+    interpolations['grad_s0'] = interp1d(atmo['r'].ravel(), atmo['dS_dr'][2,:].ravel(), **interp_kwargs)
+    interpolations['T'] = interp1d(atmo['r'].ravel(), atmo['T'].ravel(), **interp_kwargs)
+    interpolations['ln_rho'] = interp1d(atmo['r'].ravel(), atmo['ln_rho'].ravel(), **interp_kwargs)
+
+#    plt.figure()
+#    plt.plot(atmo['r'].ravel(), atmo['T'].ravel())
+#    plt.plot(r_nd, interpolations['T'](r_nd))
+#    plt.ylabel('T')
+#    plt.xlim(0, r_bound_nd[-1])
+#
+#    #Calculate grad ln rho from ds/dr, compare to grad_ln_rho.
+#    grad_ln_rho_atmo = (nondim_gamma1/(nondim_gamma1-1)) \
+#                       *((1/nondim_gamma1) * atmo['grad_T'][2,:]/atmo['T'] - dS_dr_func(atmo['r'])/nondim_cp)
+#    ln_rho_atmo = np.cumsum(grad_ln_rho_atmo.ravel() * np.gradient(atmo['r'].ravel()))
+#    f_ln_rho_atmo = interp1d(atmo['r'].ravel(), ln_rho_atmo)
+#    ln_rho_atmo -= f_ln_rho_atmo(1) #nondimensionalization at r = 1
+#    
+#
+#    plt.figure()
+#    plt.plot(atmo['r'].ravel(), atmo['ln_rho'].ravel())
+#    plt.plot(r_nd, ln_rho_func(r_nd))
+#    plt.ylabel('ln_rho check')
+#    plt.xlim(0, r_bound_nd[-1])
+#    plt.ylim(-1, 1)
+#    plt.show()
+
+#    import sys
+#    sys.exit()
+
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
             ncc_dict[ncc]['Nmax_{}'.format(bn)] = ncc_dict[ncc]['nr_max'][i]
@@ -382,13 +561,13 @@ def build_nccs(plot_nccs=False):
         #Evaluate for grad chi rad
         ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
     
-    #Further post-process work to make grad_S nice in the ball
-    nr_post = ncc_dict['grad_S0']['nr_post']
+    #Further post-process work to make grad_s nice in the ball
+    nr_post = ncc_dict['grad_s0']['nr_post']
 
     for i, bn in enumerate(bases.keys()):
-        ncc_dict['grad_S0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
-        ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-        ncc_dict['grad_S0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_S0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
+        ncc_dict['grad_s0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
+        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
+        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
     
 #    #Post-processing for grad chi rad - doesn't work great...
 #    nr_post = ncc_dict['grad_chi_rad']['nr_post']
@@ -396,6 +575,10 @@ def build_nccs(plot_nccs=False):
 #        if bn == 'B': continue
 #        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
 #        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
+
+    
+    interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
+    interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
@@ -415,18 +598,21 @@ def build_nccs(plot_nccs=False):
                 else:
                     dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:]))
     
-            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_S0']:
+            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0']:
                 log = True
-            if ncc == 'grad_S0': 
-                axhline = (s_motions / cp[0])
+            if ncc == 'grad_s0': 
+                axhline = (s_motions / s_nd)
             elif ncc in ['chi_rad', 'grad_chi_rad']:
                 axhline = rad_diff_cutoff
     
             interp_func = ncc_dict[ncc]['interp_func']
             if ncc == 'H':
-                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff/(np.exp(interpolations['ln_rho'](r_vals))) ) * (1/H_nd), **interp_kwargs )
-            elif ncc == 'grad_S0':
-                interp_func = interp1d(r_nd, (L_nd) * grad_s_over_cp, **interp_kwargs)
+                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff ) * (1/H_nd), **interp_kwargs )
+            elif ncc == 'grad_s0':
+                interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s, **interp_kwargs)
+                print(rvals, dedalus_yvals)
+            elif ncc in ['T', 'ln_rho']:
+                interp_func = interpolations[ncc]
     
             if ncc == 'grad_T':
                 interp_func = lambda r: -ncc_dict[ncc]['interp_func'](r)
@@ -441,13 +627,12 @@ def build_nccs(plot_nccs=False):
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
 
     
-    C = d3.integ(np.exp(ncc_dict['ln_rho']['field_B'])*ncc_dict['H']['field_B']).evaluate()['g']
-    int_rho = d3.integ(np.exp(ncc_dict['ln_rho']['field_B'])).evaluate()['g']
-    adj = C/int_rho
+    C = d3.integ(ncc_dict['H']['field_B']).evaluate()['g']
+    adj = C
     logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
     ncc_dict['H']['field_B']['g'] -= adj
 
-    dLdt = d3.integ(4*np.pi*np.exp(ncc_dict['ln_rho']['field_B'])*ncc_dict['H']['field_B']).evaluate()['g']
+    dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
     print(dLdt)
     
     with h5py.File('{:s}'.format(out_file), 'w') as f:
