@@ -194,7 +194,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['T_evol_{}'.format(bn)] = T*(((gamma-1)/gamma)*P/P0 + s1/Cp)
         variables['T_tot_{}'.format(bn)] = T_tot = T + variables['T_evol_{}'.format(bn)]
         variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
-        variables['TE_{}'.format(bn)] = rho * T_tot * s1
+        variables['TE_{}'.format(bn)] = rho * T * s1
         variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
         variables['Re_{}'.format(bn)] = np.sqrt(variables['u_squared_{}'.format(bn)]) / variables['nu_diff_{}'.format(bn)]
         variables['pomega_hat_{}'.format(bn)] = p - 0.5*variables['u_squared_{}'.format(bn)] + variables['pomega_tilde_{}'.format(bn)]
@@ -227,6 +227,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['Cp']['g'] = f['Cp'][()]
                 variables['R_gas']['g'] = f['R_gas'][()]
                 variables['gamma1']['g'] = f['gamma1'][()]
+                logger.info('using Cp: {}, R_gas: {}, gamma1: {}'.format(variables['Cp']['g'], variables['R_gas']['g'], variables['gamma1']['g']))
                 for k in vec_nccs:
                     dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
@@ -269,7 +270,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 if sponge:
                     f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     variables['sponge_{}'.format(bn)]['g'] *= f_brunt
-            for k in vec_nccs + scalar_nccs + ['H', 'rho']:
+            for k in vec_nccs + scalar_nccs + ['rho']:
                 variables['{}_{}'.format(k, bn)].change_scales((1,1,1))
 
         else:
@@ -313,7 +314,7 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'AN_HD':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0}/Cp - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = dot(u_{0}, grad_s1_{0}) + inv_rhoT_{0}*(H_{0} + nu_diff_{0}*VH_{0})".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = -dot(u_{0}, grad_s1_{0}) + inv_rhoT_{0}*(H_{0} + nu_diff_{0}*VH_{0})".format(bn)
         elif config.numerics['equations'] == 'AN_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0}/Cp - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
