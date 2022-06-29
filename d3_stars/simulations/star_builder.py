@@ -297,7 +297,6 @@ def build_nccs(plot_nccs=False):
     gamma1          = dlogPdr/(-g/csound**2)
     dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
     dlogTdr         = dlogPdr*(nablaT)
-    g_over_cp       = -g/cp
     grad_s_over_cp  = N2/g #entropy gradient, for NCC, includes composition terms
     grad_s          = cp * grad_s_over_cp
     L_conv          = conv_L_div_L*Luminosity
@@ -362,11 +361,12 @@ def build_nccs(plot_nccs=False):
     nondim_gamma1 = (gamma1[r==L_nd][0]).value
     nondim_G = (constants.G * (rho_nd * tau_nd**2)).value
     g               = constants.G.cgs*mass/r**2
+    u_heat_nd = (L_nd/tau_heat) / u_nd
     Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
     logger.info('Thermo: Cp/s_nd: {:.2e}, R_gas/s_nd: {:.2e}, gamma1: {:.4f}'.format(nondim_cp, nondim_R_gas, nondim_gamma1))
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
-    logger.info('estimated mach number: {:.3e}'.format(np.sqrt(Ma2_r0)))
+    logger.info('estimated mach number: {:.3e} / t_heat: {:.3e}'.format(np.sqrt(Ma2_r0), tau_heat))
 
 #    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
     g_over_cp       = g / cp
@@ -383,6 +383,9 @@ def build_nccs(plot_nccs=False):
     sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
     sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
     Re_shift = ((L_nd**2/tau_nd) / (L_CZ**2/tau_heat))
+
+    logger.info('u_heat_nd: {:.3e}'.format(u_heat_nd))
+    logger.info('rad_diff cutoff: {:.3e}'.format(rad_diff_cutoff))
     
     #MESA radial values at simulation joints & across full star in simulation units
     r_bound_nd = [(rb/L_nd).value for rb in r_bounds]
@@ -456,7 +459,7 @@ def build_nccs(plot_nccs=False):
         r_vals = []
         sim_H_eff = []
         sim_lum = []
-        for bn in bases.keys():
+        for i, bn in enumerate(bases.keys()):
             field = d.Field(bases=bases[bn])
             field.change_scales((1,1,0.5))
             phi, theta, rv = bases[bn].global_grids((1, 1, 0.5))
