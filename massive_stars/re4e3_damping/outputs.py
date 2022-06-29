@@ -3,7 +3,7 @@ from collections import OrderedDict
 from copy import deepcopy
 
 handler_defaults = OrderedDict()
-handler_defaults['max_writes'] = 10
+handler_defaults['max_writes'] = 40
 handler_defaults['time_unit'] = 'heating' #also avail: kepler
 handler_defaults['dt_factor'] = 0.05
 handler_defaults['even_outputs'] = False
@@ -36,36 +36,28 @@ shell_tasks['fields'] = ['s1', 'u']
 shell_tasks['interps'] = [0.5, 1, '0.75R', '0.95R', 'R']
 handlers['slices']['tasks'].append(shell_tasks)
 
-## Wave shells
+## Scalars
+handlers['scalars']['max_writes'] = 400
 
-handlers['shells']['max_writes'] = 20
-handlers['shells']['time_unit'] = 'kepler'
-handlers['shells']['dt_factor'] = 1
-handlers['shells']['even_outputs'] = True
+energy_prod_u = ['Eprod_u_{}'.format(s) for s in ['gradp', 'grav', 'visc', 'sponge', 'inertial']]
+energy_prod_s = ['Eprod_s_{}'.format(s) for s in ['inertial0', 'inertial1', 'radiative', 'heating', 'vischeat']]
 
-wave_shell_tasks = OrderedDict()
-wave_shell_tasks['type'] = 'shell'
-wave_shell_tasks['fields'] = ['ur', 'pomega_hat']
-wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
-handlers['shells']['tasks'].append(wave_shell_tasks)
+scalar_tasks = OrderedDict()
+scalar_tasks['type'] = 'vol_avg'
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
+scalar_tasks['fields'] += energy_prod_u 
+scalar_tasks['fields'] += energy_prod_s
+handlers['scalars']['tasks'].append(scalar_tasks)
 
-### Scalars
-#handlers['scalars']['max_writes'] = 400
-#
-#scalar_tasks = OrderedDict()
-#scalar_tasks['type'] = 'vol_avg'
-#scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
-#handlers['scalars']['tasks'].append(scalar_tasks)
-#
-### Profiles
-#handlers['profiles']['max_writes'] = 100
-#handlers['profiles']['dt_factor'] = 0.1
-#
-#prof_tasks = OrderedDict()
-#prof_tasks['type'] = 's2_avg'
-#prof_tasks['fields'] = ['s1', 'KE_lum_r', 'TE_lum_r', 'wave_lum_r', 'visc_lum_r', 'cond_lum_r']
-#handlers['profiles']['tasks'].append(prof_tasks)
-#
+## Profiles
+handlers['profiles']['max_writes'] = 100
+handlers['profiles']['dt_factor'] = 0.1
+
+prof_tasks = OrderedDict()
+prof_tasks['type'] = 's2_avg'
+prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r']
+handlers['profiles']['tasks'].append(prof_tasks)
+
 ### Checkpoints
 handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10
