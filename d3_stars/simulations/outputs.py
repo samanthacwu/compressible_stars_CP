@@ -13,9 +13,10 @@ from .parser import name_star
 from d3_stars.defaults import config
 
 output_tasks = {}
-defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'TE', 'TotE', 'Re', 'p',\
-            's1', 'grad_s1', 'pomega_hat', 'L']
-for k in defaults:
+flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
+defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'ln_rho1'\
+            'T1', 'grad_T1', 'L']
+for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
 
 #angular momentum components
@@ -24,30 +25,9 @@ output_tasks['Ly'] = 'dot(ey_{0},L_{0})'
 output_tasks['Lz'] = 'dot(ez_{0},L_{0})'
 output_tasks['L_squared'] = 'dot(L_{0}, L_{0})'
 
-output_tasks['Eprod_u_gradp'] = '-dot(momentum_{0}, grad(p_{0}))'
-output_tasks['Eprod_u_grav']  = '-dot(momentum_{0}, g_{0}*s1_{0})'
-output_tasks['Eprod_u_visc']  = 'dot(momentum_{0}, nu_diff_{0}*visc_div_stress_{0})'
-output_tasks['Eprod_u_sponge']  = '-dot(momentum_{0}, sponge_term_{0})'
-output_tasks['Eprod_u_inertial']  = 'dot(momentum_{0}, cross(u_{0}, curl(u_{0})))'
-output_tasks['Eprod_u_rotation']  = 'dot(momentum_{0}, rotation_term_{0})'
-
-output_tasks['Eprod_s_inertial0'] = '(g_phi_{0}*dot(momentum_{0}, grad_S0_{0}))'
-output_tasks['Eprod_s_inertial1'] = '(g_phi_{0}*dot(momentum_{0}, grad_s1_{0}))'
-output_tasks['Eprod_s_radiative'] = 'rho_{0}*(div_rad_flux_{0})'
-output_tasks['Eprod_s_heating'] = 'rho_{0}*(H_{0})'
-output_tasks['Eprod_s_vischeat'] = 'rho_{0}*(nu_diff_{0}*VH_{0})'
-
-
-output_tasks['KE_lum']   = '(4*np.pi*r_vals_{0}**2)*(u_{0}*(KE_{0}))'
-output_tasks['enth_lum']   = '(4*np.pi*r_vals_{0}**2)*(rho_{0}*Cp*u_{0}*T_fluc_{0})'
-
-#output_tasks['enth_lum']   = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*T_fluc_{0})'
-#output_tasks['wave_lum'] = '(4*np.pi*r_vals_{0}**2)*(momentum_{0}*(pomega_hat_{0}))'
-output_tasks['visc_lum'] = '(4*np.pi*r_vals_{0}**2)*(-nu_diff_{0}*(dot(momentum_{0}, sigma_RHS_{0})))'
-output_tasks['cond_lum'] = '(4*np.pi*r_vals_{0}**2)*(-rho_{0}*T_{0}*chi_rad_{0}*grad_s1_{0})'
-
-for lum in ['KE_lum', 'enth_lum', 'visc_lum', 'cond_lum']:
-    output_tasks['{}_r'.format(lum)] = 'dot(er_{0}, ' + output_tasks[lum] + ')'
+for t in flux_tags:
+    output_tasks['{}_lum'.format(t)] = '(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
+    output_tasks['{}_lum_r'.format(t)] = 'dot(er_{0}, ' + output_tasks['{}_lum'.format(t)] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales
