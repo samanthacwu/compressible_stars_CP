@@ -122,8 +122,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         I_mat = variables['I_matrix_{}'.format(bn)]
         grad_ln_rho = variables['grad_ln_rho_{}'.format(bn)]
         grad_ln_T = variables['grad_ln_T_{}'.format(bn)]
-        rho = variables['rho_{}'.format(bn)]
-        T = variables['T_{}'.format(bn)]
+        rho0 = variables['rho_{}'.format(bn)]
+        T0 = variables['T_{}'.format(bn)]
 
         g = variables['g_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
@@ -155,7 +155,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*div_u_RHS*I_mat)
         variables['visc_div_stress_{}'.format(bn)] = d3.div(sigma) + d3.dot(sigma, grad_ln_rho)
         variables['VH_{}'.format(bn)] = 2*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
-        variables['inv_rhoT_{}'.format(bn)] = 1/(rho*T)
+        variables['inv_rhoT_{}'.format(bn)] = 1/(rho0*T0)
 
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
@@ -182,19 +182,22 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         r_vec['g'][2] = variables['r1_{}'.format(bn)]
 
         er = variables['er_{}'.format(bn)]
-        rho = variables['rho_{}'.format(bn)]
         variables['gamma1'] = gamma = dist.Field(name='gamma1')
         variables['R_gas'] = R_gas = dist.Field(name='R_gas')
         variables['Cp'] = Cp = dist.Field(name='Cp')
-        variables['P0_{}'.format(bn)] = P0 = R_gas*rho*T
+        variables['Cv'] = Cv = Cp - R_gas
+        variables['P0_{}'.format(bn)] = P0 = R_gas*rho0*T0
         variables['ur_{}'.format(bn)] = d3.dot(er, u)
-        variables['momentum_{}'.format(bn)] = rho * u
+        variables['momentum_{}'.format(bn)] = rho0 * u
         variables['u_squared_{}'.format(bn)] = d3.dot(u,u)
-        variables['P_evol_{}'.format(bn)] = P = rho*(p - 0.5*variables['u_squared_{}'.format(bn)])
-        variables['T_evol_{}'.format(bn)] = T*(((gamma-1)/gamma)*P/P0 + s1/Cp)
-        variables['T_tot_{}'.format(bn)] = T_tot = T + variables['T_evol_{}'.format(bn)]
-        variables['KE_{}'.format(bn)] = 0.5 * rho * variables['u_squared_{}'.format(bn)]
-        variables['TE_{}'.format(bn)] = rho * T * s1
+        variables['KE_{}'.format(bn)] = KE = 0.5 * rho0 * variables['u_squared_{}'.format(bn)]
+        variables['P_fluc_{}'.format(bn)] = P1 = rho0*p - KE
+        variables['T_fluc_{}'.format(bn)] = T1 = T0*(s1/Cp) + T0*(gamma-1)/gamma*P1/P0
+#        variables['T_fluc_{}'.format(bn)] = T*(((gamma-1)/gamma)*P/P0 + s1/Cp)
+        variables['T_tot_{}'.format(bn)] = T_tot = T0 + variables['T_fluc_{}'.format(bn)]
+#        variables['TE_{}'.format(bn)] = rho0 * (Cp * T1 - P1)
+#        variables['TE_{}'.format(bn)] = rho0 * Cv * T1
+        variables['TE_{}'.format(bn)] = rho0 * T0 * s1
         variables['TotE_{}'.format(bn)] = variables['KE_{}'.format(bn)] + variables['TE_{}'.format(bn)]
         variables['Re_{}'.format(bn)] = np.sqrt(variables['u_squared_{}'.format(bn)]) / variables['nu_diff_{}'.format(bn)]
         variables['pomega_hat_{}'.format(bn)] = p - 0.5*variables['u_squared_{}'.format(bn)] + variables['pomega_tilde_{}'.format(bn)]
@@ -314,6 +317,7 @@ def set_anelastic_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'AN_HD':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(p_{0}) + g_{0}*s1_{0}/Cp - nu_diff_{0}*visc_div_stress_{0} + sponge_term_{0} + taus_u_{0} = cross(u_{0}, curl(u_{0})) + rotation_term_{0}".format(bn)
+#            equations['energy_{}'.format(bn)] = "dt(s1_{0}) - div_rad_flux_{0} + taus_s_{0} = -dot(u_{0}, grad_s1_{0}) + inv_rhoT_{0}*(H_{0} + nu_diff_{0}*VH_{0})".format(bn)
             equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_{0} + taus_s_{0} = -dot(u_{0}, grad_s1_{0}) + inv_rhoT_{0}*(H_{0} + nu_diff_{0}*VH_{0})".format(bn)
         elif config.numerics['equations'] == 'AN_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "div_u_{0} + dot(u_{0}, grad_ln_rho_{0}) = 0".format(bn)
