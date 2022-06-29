@@ -133,19 +133,22 @@ if __name__ == '__main__':
     logger.info("running on processor mesh={}".format(mesh))
 
     # Read in domain bound values
-    L_shell = r_outer - r_stitch[0]
-    sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
+    if len(r_stitch) > 0:
+        L_shell = r_outer - r_stitch[0]
+        sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
+    else:
+        sponge_function = lambda r: 0*r
 
     stitch_radii = r_stitch
     radius = r_outer
     coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
     vec_fields = ['u',]
-    scalar_fields = ['ln_rho1', 'T1', 'H', 'rho', 'pomega_tilde']
+    scalar_fields = ['ln_rho1', 'T1', 'H', 'rho0', 'pomega_tilde']
     vec_taus = ['tau_u']
     scalar_taus = ['tau_T']
-    vec_nccs = ['grad_ln_rho0', 'g', 'grad_s0', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
+    vec_nccs = ['grad_ln_rho0', 'g', 'grad_T0', 'grad_chi_rad']
+    scalar_nccs = ['ln_rho0', 'T0', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
 
     variables = make_fields(bases, coords, dist, 
                             vec_fields=vec_fields, scalar_fields=scalar_fields, 

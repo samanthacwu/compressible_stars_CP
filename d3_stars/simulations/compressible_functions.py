@@ -141,7 +141,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             lift_basis = basis.clone_with(k=0)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A: d3.Lift(A, lift_basis, -1)
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u_{}'.format(bn)])
-            variables['taus_s_{}'.format(bn)] = lift_fn(variables['tau_s_{}'.format(bn)])
+            variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T_{}'.format(bn)])
             variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_T1_{}'.format(bn)] = grad_T1 = d3.grad(T1)
             variables['grad_ln_rho1_{}'.format(bn)] = grad_ln_rho1 = d3.grad(ln_rho1)
@@ -150,7 +150,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             lift_basis = basis.clone_with(k=2)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
-            variables['taus_s_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
+            variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
             variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_T1_{}'.format(bn)] = grad_T1 = d3.grad(T1)
             variables['grad_ln_rho1_{}'.format(bn)] = grad_ln_rho1 = d3.grad(ln_rho1)
@@ -161,7 +161,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['E_RHS_{}'.format(bn)] = E_RHS = 0.5*(grad_u_RHS + d3.trans(grad_u_RHS))
         variables['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*I_mat)
         variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*div_u_RHS*I_mat)
-        variables['visc_div_stress_L_{}'.format(bn)] = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0)) + d3.dot(sigma, grad(nu_diff))
+        variables['visc_div_stress_L_{}'.format(bn)] = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0)) + d3.dot(sigma, d3.grad(nu_diff))
         variables['visc_div_stress_R_{}'.format(bn)] = nu_diff*(d3.dot(sigma, grad_ln_rho1))
         variables['VH_{}'.format(bn)] = 2*(nu_diff/Cv)*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
         variables['inv_rhoT_{}'.format(bn)] = 1/(rho0*T0)

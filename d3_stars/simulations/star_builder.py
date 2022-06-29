@@ -32,13 +32,14 @@ def zero_to_one(*args, **kwargs):
 
 
 
-def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtype=np.float64, \
+def HSE_solve(coords, dist, bases, grad_s_func, g_func, r_stitch=[], r_outer=1, dtype=np.float64, \
               R=1, gamma=5/3, Cp=2.5, G=1, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, T_func=None, ln_rho_func=None):
 
     Cv = Cp/gamma
+    N2_func = lambda r: grad_s_func(r)*(-g_func(r)) / Cp
 
     # Parameters
-    scales = 10
+    scales = bases['B'].dealias[-1]
     namespace = dict()
     for k, basis in bases.items():
         namespace['basis_{}'.format(k)] = basis
@@ -46,14 +47,19 @@ def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtyp
         namespace['S2_basis_{}'.format(k)] = S2_basis = basis.S2_basis()
         phi, theta, r = dist.local_grids(basis)
         phi_de, theta_de, r_de = dist.local_grids(basis, scales=basis.dealias)
-        phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,0.25))
+        phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,0.5))
         namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis, -1)
 
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
-        N2.change_scales((1,1,0.25))
-        N2['g'] = N2_func(r_low)
+        N2.change_scales((1,1,0.5))
+        N2['g'] = - g_func(r_low) * grad_s_func(r_low) / Cp
         N2.change_scales(basis.dealias)
-        N2['g'] *= zero_to_one(r_de, 0.5, width=0.2)
+        N2['g'] *= zero_to_one(r_de, 0.9, width=0.05)
+#        N2['g'] += 0.1 * N2['g'].max()
+        N2 = d3.Grid(N2).evaluate()
+#        plt.plot(r_de.ravel(), N2['g'].ravel())
+#        plt.yscale('log')
+#        plt.show()
 
         namespace['r_vec_{}'.format(k)] = r_vec = dist.VectorField(coords, bases=basis.radial_basis)
         r_vec['g'][2] = r
@@ -73,6 +79,7 @@ def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtyp
 #        namespace['T_{}'.format(k)] = T = np.exp(ln_T)
         namespace['rho_{}'.format(k)] = rho = np.exp(ln_rho)
         namespace['dS_dr_{}'.format(k)] = dS_dr = Cp * ((1/gamma) * d3.grad(ln_T) - ((gamma-1)/gamma)*d3.grad(ln_rho))
+        namespace['N2_op_{}'.format(k)] = -g@dS_dr/Cp
 
         if T_func is None:
             T['g']   = -(r**2 - radius**2) + 1
@@ -125,6 +132,9 @@ def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtyp
         solver.newton_iteration(damping=1)
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
         logger.info(f'Perturbation norm: {pert_norm:.3e}')
+#        plt.plot(r_de.ravel(), np.abs(namespace['N2_op_B'].evaluate()['g'].ravel()))
+#        plt.yscale('log')
+#        plt.show()
 
     rs = []
     gs = []
@@ -141,11 +151,11 @@ def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtyp
         ln_rho = namespace['ln_rho_{}'.format(k)]
         dS_dr = namespace['dS_dr_{}'.format(k)].evaluate()
         g = namespace['g_{}'.format(k)]
-        N2 = namespace['N2_{}'.format(k)]
+        N2_op = namespace['N2_op_{}'.format(k)]
+        N2 = N2_op.evaluate()
 
         grad_ln_T = d3.grad(ln_T).evaluate()
         grad_ln_rho = d3.grad(ln_rho).evaluate()
-        N2 = (-(1/Cp) * (g) @ dS_dr).evaluate()
         HSE = (-R*(d3.grad(ln_T) + d3.grad(ln_rho)) + g/T).evaluate()
 
         phi, theta, r = dist.local_grids(basis, scales=(1,1,scales))
@@ -188,10 +198,12 @@ def HSE_solve(coords, dist, bases, N2_func, g_func, r_stitch=[], r_outer=1, dtyp
     ax3.plot(r.ravel(), g[2,:].ravel(), label=r'$g$')
     ax3.legend()
     ax4.plot(r.ravel(), N2.ravel(), label=r'$N^2$')
+    ax4.plot(r.ravel(), -N2.ravel(), label=r'$-N^2$')
     ax4.plot(r.ravel(), (N2_func(r)).ravel(), label=r'$N^2$ goal', ls='--')
     ax4.set_yscale('log')
-    ax4.set_yticks((np.min(np.abs(N2.ravel())), np.max(N2_func(r).ravel())))
-    ax4.set_yticklabels(['{:.1e}'.format(n) for n in (np.min(np.abs(N2.ravel())), np.max(N2_func(r).ravel()))])
+    yticks = (np.max(np.abs(N2.ravel()[r.ravel() < 0.5])), np.max(N2_func(r).ravel()))
+    ax4.set_yticks(yticks)
+    ax4.set_yticklabels(['{:.1e}'.format(n) for n in yticks])
     ax4.legend()
     fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
 #    plt.show()
@@ -256,7 +268,8 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
     if grid_only:
         scales = basis.dealias
     else:
-        scales = (1, 1, Nmax/basis.radial_basis.radial_size)
+        scales = basis.dealias
+        scales_small = (1, 1, Nmax/basis.radial_basis.radial_size)
     rvals = basis.global_grid_radius(scales[2])
     if vector:
         this_field = dist.VectorField(coords, bases=basis)
@@ -267,6 +280,8 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field.change_scales(scales)
         this_field['g'] = interp_func(rvals)
     if not grid_only:
+        this_field.change_scales(scales_small)
+        this_field['g']
         this_field['c'][np.abs(this_field['c']) < ncc_cutoff] = 0
         this_field.change_scales(basis.dealias)
     return this_field
@@ -420,16 +435,21 @@ def build_nccs(plot_nccs=False):
     #Build a nice function for our basis in the ball
     grad_s_transition_point = 1.05
     logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
-    grad_s_width = 0.05
+    grad_s_width = 0.025
     logger.info('using default grad s width = {}'.format(grad_s_width))
     grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
     grad_s_width *= (L_CZ/L_nd).value
     grad_s_center *= (L_CZ/L_nd).value
-    
+   
+#    grad_s_outer_ball = grad_s[r/L_nd <= r_bound_nd[1]][-1]
     grad_s_smooth = np.copy(grad_s)
+#    grad_s_smooth[r/L_nd <= r_bound_nd[1]] = (grad_s_outer_ball * (r/L_nd / r_bound_nd[1])**2)[r/L_nd <= r_bound_nd[1]]
     flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s)
-    grad_s_smooth[r/L_nd < grad_s_transition_point] = flat_value
+    grad_s_smooth += (r/L_nd)**2 *  flat_value
     grad_s_smooth *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
+#    plt.plot(r/L_nd, grad_s_smooth)
+#    plt.yscale('log')
+#    plt.show()
     
    
     ### Make dedalus domain and bases
@@ -508,11 +528,11 @@ def build_nccs(plot_nccs=False):
  
     #Create interpolations of the various fields that may be used in the problem
     interpolations = OrderedDict()
-    interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
-    interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
-    interpolations['grad_ln_rho'] = interp1d(r_nd, dlogrhodr*L_nd, **interp_kwargs)
-    interpolations['grad_ln_T'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
-    interpolations['T'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
+    interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
+    interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
+    interpolations['grad_ln_rho0'] = interp1d(r_nd, dlogrhodr*L_nd, **interp_kwargs)
+    interpolations['grad_ln_T0'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
+    interpolations['T0'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
 #    interpolations['grad_T'] = interp1d(r_nd, (L_nd/T_nd)*dTdr, **interp_kwargs)
     if config.star['smooth_h']:
         interpolations['H'] = interp1d(r_vals, ( sim_H_eff / H_nd), **interp_kwargs)
@@ -528,19 +548,18 @@ def build_nccs(plot_nccs=False):
     interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
 
 
-    N2_func = interp1d(r_nd, g_over_cp * grad_s_smooth * tau_nd**2, **interp_kwargs)
+    grad_s_func = interp1d(r_nd, grad_s_smooth * L_nd/s_nd, **interp_kwargs)
     g_func = interpolations['g']
-    ln_rho_func = interpolations['ln_rho']
-    atmo = HSE_solve(c, d, bases, N2_func, g_func,
+    atmo = HSE_solve(c, d, bases, grad_s_func, g_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, dtype=np.float64, \
               R=nondim_R_gas, gamma=nondim_gamma1, Cp=nondim_cp, comm=MPI.COMM_SELF, \
               nondim_radius=1, g_nondim=interpolations['g'](1), G=nondim_G,
-              T_func = interpolations['T'], ln_rho_func = interpolations['ln_rho'])
+              T_func = interpolations['T0'], ln_rho_func = interpolations['ln_rho0'])
 
 
     interpolations['grad_s0'] = interp1d(atmo['r'].ravel(), atmo['dS_dr'][2,:].ravel(), **interp_kwargs)
-    interpolations['T'] = interp1d(atmo['r'].ravel(), atmo['T'].ravel(), **interp_kwargs)
-    interpolations['ln_rho'] = interp1d(atmo['r'].ravel(), atmo['ln_rho'].ravel(), **interp_kwargs)
+    interpolations['T0'] = interp1d(atmo['r'].ravel(), atmo['T'].ravel(), **interp_kwargs)
+    interpolations['ln_rho0'] = interp1d(atmo['r'].ravel(), atmo['ln_rho'].ravel(), **interp_kwargs)
 
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -600,8 +619,8 @@ def build_nccs(plot_nccs=False):
 #        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
 
     
-    interpolations['ln_rho'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
-    interpolations['ln_T'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
+    interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
+    interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
     
     if plot_nccs:
         for ncc in ncc_dict.keys():
@@ -655,18 +674,22 @@ def build_nccs(plot_nccs=False):
     rs = []
     for bn in bases_keys:
         rs.append(dedalus_r[bn].ravel())
-        T0 = ncc_dict['T']['field_{}'.format(bn)]
-        ln_rho0 = ncc_dict['ln_rho']['field_{}'.format(bn)]
-        grad_s0 = nondim_cp * ((1/nondim_gamma1) * (d3.grad(T0)/T0))
-#        grad_s0 = nondim_cp * ((1/nondim_gamma1) * (d3.grad(T0)/T0 - (nondim_gamma1-1) * d3.grad(ln_rho0)))
-        N2s.append((-1*d3.dot(grad_s0, ncc_dict['g']['field_{}'.format(bn)])/nondim_cp).evaluate()['g'])
-        grad_s0s.append(grad_s0.evaluate()['g'][2,:])
+        T0 = ncc_dict['T0']['field_{}'.format(bn)]
+        grad_T0 = ncc_dict['grad_T0']['field_{}'.format(bn)]
+        grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
+        gvec = ncc_dict['g']['field_{}'.format(bn)]
+        grad_s0 = nondim_cp * ((1/nondim_gamma1) * (grad_T0['g']/T0['g'] - (nondim_gamma1-1) * grad_ln_rho0['g']))
+        N2_val = -gvec['g'][2,:] * grad_s0[2,:] / nondim_cp 
+        N2s.append(N2_val)
+#        N2s.append((-1*d3.dot(grad_s0, ncc_dict['g']['field_{}'.format(bn)])/nondim_cp).evaluate()['g'])
+#        grad_s0s.append(grad_s0.evaluate()['g'][2,:])
     r_dedalus = np.concatenate(rs, axis=-1)
-    grad_s0_dedalus = np.concatenate(grad_s0s, axis=-1).ravel()
+#    grad_s0_dedalus = np.concatenate(grad_s0s, axis=-1).ravel()
     N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
 #    plt.plot(r_nd, tau_nd**2*g*grad_s_over_cp, label='mesa')
-    plt.plot(r_dedalus, grad_s0_dedalus, ls='--', label='dedalus')
-#    plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
+#    plt.plot(r_dedalus, grad_s0_dedalus, ls='--', label='dedalus')
+    plt.plot(atmo['r'].ravel(), atmo['N2'].ravel(), label='atmosphere')
+    plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
     plt.ylabel(r'$N^2$')
     plt.xlabel('r')
     plt.yscale('log')
