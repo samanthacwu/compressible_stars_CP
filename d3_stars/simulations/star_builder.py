@@ -32,11 +32,10 @@ def zero_to_one(*args, **kwargs):
 
 
 
-def HSE_solve(coords, dist, bases, grad_s_func, g_func, r_stitch=[], r_outer=1, dtype=np.float64, \
+def HSE_solve(coords, dist, bases, g_func, N2_func, r_stitch=[], r_outer=1, dtype=np.float64, \
               R=1, gamma=5/3, Cp=2.5, G=1, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, T_func=None, ln_rho_func=None):
 
     Cv = Cp/gamma
-    N2_func = lambda r: grad_s_func(r)*(-g_func(r)) / Cp
 
     # Parameters
     scales = bases['B'].dealias[-1]
@@ -50,18 +49,18 @@ def HSE_solve(coords, dist, bases, grad_s_func, g_func, r_stitch=[], r_outer=1, 
         phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,0.5))
         namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis, -1)
 
-        N2_func = lambda r: (-g_func(r)*grad_s_func(r) / Cp)
-        N2_outer = N2_func(r_outer)
-        N2_extra = lambda r: (r/r_outer)**2 * N2_outer
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
-        N2['g'] = N2_extra(r) * zero_to_one(r, 1.02, width=0.05)
+        if k == 'B':
+            N2_outer = N2_func(basis.radius)
+            N2_ball = lambda r: (r/basis.radius)**2 * N2_outer
+            N2['g'] = N2_ball(r) * zero_to_one(r, 1.02, width=0.05)
+        else:
+            N2['g'] = N2_func(r)
         N2.change_scales(basis.dealias)
         N2 = d3.Grid(N2).evaluate()
-#        plt.plot(r_de.ravel(),N2['g'].ravel())
-#        plt.plot(r_de.ravel(), N2_func(r_de.ravel()))
-##        plt.plot(r_de.ravel(),N2_extra(r_de.ravel()) -  N2['g'].ravel())
-#        plt.yscale('log')
-#        plt.show()
+        plt.plot(r_de.ravel(), N2_func(r_de.ravel()))
+        plt.plot(r_de.ravel(), N2['g'].ravel())
+        plt.show()
 
         namespace['r_vec_{}'.format(k)] = r_vec = dist.VectorField(coords, bases=basis.radial_basis)
         r_vec['g'][2] = r
@@ -324,7 +323,7 @@ def build_nccs(plot_nccs=False):
     Luminosity     = (p.luminosity[::-1] * u.L_sun).cgs
     conv_L_div_L   = p.lum_conv_div_L[::-1]
     csound         = p.csound[::-1] * u.cm / u.s
-    N2             = p.brunt_N2[::-1] / u.s**2
+    N2 = N2_mesa   = p.brunt_N2[::-1] / u.s**2
     N2_structure   = p.brunt_N2_structure_term[::-1] / u.s**2
     N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
     eps_nuc        = p.eps_nuc[::-1] * u.erg / u.g / u.s
@@ -550,9 +549,9 @@ def build_nccs(plot_nccs=False):
     interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
 
 
-    grad_s_func = interp1d(r_nd, grad_s_smooth * L_nd/s_nd, **interp_kwargs)
+    N2_func = interp1d(r_nd, tau_nd**2 * N2_mesa, **interp_kwargs)
     g_func = interpolations['g']
-    atmo = HSE_solve(c, d, bases, grad_s_func, g_func,
+    atmo = HSE_solve(c, d, bases,  g_func, N2_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, dtype=np.float64, \
               R=nondim_R_gas, gamma=nondim_gamma1, Cp=nondim_cp, comm=MPI.COMM_SELF, \
               nondim_radius=1, g_nondim=interpolations['g'](1), G=nondim_G,
@@ -655,7 +654,7 @@ def build_nccs(plot_nccs=False):
             elif ncc == 'grad_s0':
                 interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s, **interp_kwargs)
                 print(rvals, dedalus_yvals)
-            elif ncc in ['ln_T', 'ln_rho']:
+            elif ncc in ['ln_T0', 'ln_rho0', 'grad_s0']:
                 interp_func = interpolations[ncc]
     
             if ncc == 'grad_T':
@@ -683,19 +682,17 @@ def build_nccs(plot_nccs=False):
         grad_s0 = nondim_cp * ((1/nondim_gamma1) * (grad_T0['g']/T0['g'] - (nondim_gamma1-1) * grad_ln_rho0['g']))
         N2_val = -gvec['g'][2,:] * grad_s0[2,:] / nondim_cp 
         N2s.append(N2_val)
-#        N2s.append((-1*d3.dot(grad_s0, ncc_dict['g']['field_{}'.format(bn)])/nondim_cp).evaluate()['g'])
-#        grad_s0s.append(grad_s0.evaluate()['g'][2,:])
     r_dedalus = np.concatenate(rs, axis=-1)
-#    grad_s0_dedalus = np.concatenate(grad_s0s, axis=-1).ravel()
     N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
-#    plt.plot(r_nd, tau_nd**2*g*grad_s_over_cp, label='mesa')
-#    plt.plot(r_dedalus, grad_s0_dedalus, ls='--', label='dedalus')
+    plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa')
     plt.plot(atmo['r'].ravel(), atmo['N2'].ravel(), label='atmosphere')
     plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
+    plt.legend()
     plt.ylabel(r'$N^2$')
     plt.xlabel('r')
     plt.yscale('log')
     plt.savefig('star/N2_goodness.png')
+    plt.show()
 
         
 
