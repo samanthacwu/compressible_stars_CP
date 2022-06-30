@@ -192,10 +192,10 @@ if __name__ == '__main__':
     else:
         # Initial conditions
         for bk in bases_keys:
-            variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
-            variables['s1_{}'.format(bk)].low_pass_filter(scales=0.25)
-            variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
-            variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
+            variables['T1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
+            variables['T1_{}'.format(bk)].low_pass_filter(scales=0.25)
+            variables['T1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
+            variables['T1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
@@ -235,8 +235,10 @@ if __name__ == '__main__':
     just_wrote    = False
     slice_time = np.inf
     Re0 = 0
-    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-    surface_shell_slices = even_analysis_tasks['shells']
+#    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+#    surface_shell_slices = even_analysis_tasks['shells']
+    outer_shell_dt = 0
+    surface_shell_slices = []
     try:
         while solver.proceed:
             if max_dt_check and timestep < outer_shell_dt:
@@ -271,17 +273,17 @@ if __name__ == '__main__':
 
             if solver.iteration % 10 == 0 or solver.iteration <= 10:
                 Re_avg = logger_handler.fields['Re_avg_B']
-                KE_shell = logger_handler.fields['KE_S1']
+#                KE_shell = logger_handler.fields['KE_S1']
                 if dist.comm_cart.rank == 0:
-                    KE0 = KE_shell['g'].min()
+#                    KE0 = KE_shell['g'].min()
                     Re0 = Re_avg['g'].min()
                 else:
-                    KE0 = None
+#                    KE0 = None
                     Re0 = None
                 Re0 = dist.comm_cart.bcast(Re0, root=0)
-                KE0 = dist.comm_cart.bcast(KE0, root=0)
+#                KE0 = dist.comm_cart.bcast(KE0, root=0)
                 this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
-                this_str += ", KE = {:.4e}".format(KE0)
+#                this_str += ", KE = {:.4e}".format(KE0)
                 logger.info(this_str)
 
 
@@ -309,11 +311,4 @@ if __name__ == '__main__':
         fcheckpoint.add_tasks(solver.state, layout='g')
         solver.step(timestep)
 
-        logger.info('Stitching open virtual files...')
-        for k, handler in analysis_tasks.items():
-            if not handler.check_file_limits():
-                file = handler.get_file()
-                file.close()
-                if dist.comm_cart.rank == 0:
-                    handler.process_virtual_file()
 
