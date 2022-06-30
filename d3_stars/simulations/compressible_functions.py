@@ -168,14 +168,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['visc_div_stress_L_{}'.format(bn)] = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0))# + d3.dot(sigma, d3.grad(nu_diff))
         variables['visc_div_stress_R_{}'.format(bn)] = nu_diff*(d3.dot(sigma, grad_ln_rho1))
         variables['VH_{}'.format(bn)] = 2*(nu_diff/Cv)*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
-        variables['inv_rhoT_{}'.format(bn)] = 1/(rho0*T0)
 
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
         chi_rad = variables['chi_rad_{}'.format(bn)]
         grad_chi_rad = variables['grad_chi_rad_{}'.format(bn)]
         variables['div_rad_flux_L_{}'.format(bn)] = gamma*(chi_rad*(d3.div(grad_T1) + d3.dot(grad_T1, grad_ln_rho0)) + d3.dot(grad_T1, grad_chi_rad))
-        variables['div_rad_flux_R_{}'.format(bn)] = gamma*d3.dot(grad_T1, grad_ln_rho1)
+        variables['div_rad_flux_R_{}'.format(bn)] = gamma*chi_rad*d3.dot(grad_T1, grad_ln_rho1)
 
         # Rotation and damping terms
         if do_rotation:
@@ -270,6 +269,7 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho0_{}'.format(bn)]['g']       = np.exp(f['ln_rho0_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
+                print(variables['nu_diff_{}'.format(bn)]['g'])
 
 #                #TODO: do this in star_builder
 #                grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
@@ -339,7 +339,10 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + R_gas*(grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0})) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - R_gas*T1_{0}*grad(ln_rho1_{0}) + rotation_term_{0} + visc_div_stress_R_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div(u_{0}) - div_rad_flux_L_{0} + taus_T_{0} = -dot(u_{0}, grad_T1_{0}) - (gamma-1)*T1_{0}*div(u_{0}) + (1/Cv)*(1/rho_full_{0})*(H_{0}) + VH_{0} + div_rad_flux_R_{0}".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = -dot(u_{0}, grad_T1_{0}) - (gamma-1)*T1_{0}*div(u_{0}) + (1/Cv)*(1/rho_full_{0})*H_{0} + VH_{0} + div_rad_flux_R_{0}".format(bn)
+#            equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
+#            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + R_gas*(grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0})) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = 0".format(bn)
+#            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = 0".format(bn)
         elif config.numerics['equations'] == 'FC_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0}) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
@@ -407,19 +410,21 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         problem.add_equation(energy)
 
     for BC in u_BCs.values():
-        logger.info('adding BC "{}" for ntheta != 0'.format(BC))
-        problem.add_equation(BC, condition="ntheta != 0")
+        logger.info('adding BC "{}"'.format(BC))
+        problem.add_equation(BC)
+#        logger.info('adding BC "{}" for ntheta != 0'.format(BC))
+#        problem.add_equation(BC, condition="ntheta != 0")
 
-    for bn, basis in bases.items():
-        if type(basis) == d3.BallBasis:
-            BC = 'tau_u_{} = 0'.format(bn)
-            logger.info('adding BC "{}" for ntheta == 0'.format(BC))
-            problem.add_equation(BC, condition="ntheta == 0")
-        else:
-            for i in [1, 2]:
-                BC = 'tau_u{}_{} = 0'.format(i, bn)
-                logger.info('adding BC "{}" for ntheta == 0'.format(BC))
-                problem.add_equation(BC, condition="ntheta == 0")
+#    for bn, basis in bases.items():
+#        if type(basis) == d3.BallBasis:
+#            BC = 'tau_u_{} = 0'.format(bn)
+#            logger.info('adding BC "{}" for ntheta == 0'.format(BC))
+#            problem.add_equation(BC, condition="ntheta == 0")
+#        else:
+#            for i in [1, 2]:
+#                BC = 'tau_u{}_{} = 0'.format(i, bn)
+#                logger.info('adding BC "{}" for ntheta == 0'.format(BC))
+#                problem.add_equation(BC, condition="ntheta == 0")
 
     for BC in s_BCs.values():
         logger.info('adding BC "{}"'.format(BC))

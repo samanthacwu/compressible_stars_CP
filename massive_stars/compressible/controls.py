@@ -25,7 +25,7 @@ numerics['equations'] = 'FC_HD' #anelastic hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
-numerics['reynolds_target'] = 1e3
+numerics['reynolds_target'] = 1e-3
 
 numerics['prandtl'] = 1
 
@@ -48,7 +48,7 @@ dynamics['ntheta'] = 4
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 #dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'
-dynamics['restart'] = 'checkpoint/checkpoint_s1.h5'
+#dynamics['restart'] = 'checkpoint/checkpoint_s1.h5'
 
 #In nondimensional units
 dynamics['CFL_max_r'] = 1.05

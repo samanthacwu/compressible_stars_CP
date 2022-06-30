@@ -39,14 +39,10 @@ handlers['slices']['tasks'].append(shell_tasks)
 ## Scalars
 handlers['scalars']['max_writes'] = 400
 
-energy_prod_u = ['Eprod_u_{}'.format(s) for s in ['gradp', 'grav', 'visc', 'sponge', 'inertial']]
-energy_prod_s = ['Eprod_s_{}'.format(s) for s in ['inertial0', 'inertial1', 'radiative', 'heating', 'vischeat']]
 
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'TE', 'TotE', 'Lx', 'Ly', 'Lz', 'L_squared']
-scalar_tasks['fields'] += energy_prod_u 
-scalar_tasks['fields'] += energy_prod_s
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared']
 handlers['scalars']['tasks'].append(scalar_tasks)
 
 ## Profiles
@@ -55,7 +51,7 @@ handlers['profiles']['dt_factor'] = 0.1
 
 prof_tasks = OrderedDict()
 prof_tasks['type'] = 's2_avg'
-prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r']
+prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r', 'PE_lum_r']
 handlers['profiles']['tasks'].append(prof_tasks)
 
 ### Checkpoints

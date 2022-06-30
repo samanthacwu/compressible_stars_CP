@@ -69,6 +69,7 @@ Dark2_7 = Dark2_7.mpl_colors
 def luminosities(ax, dictionary, index):
     rs = []
     KEs = []
+    PEs = []
     enths = []
     viscs = []
     conds = []
@@ -78,15 +79,17 @@ def luminosities(ax, dictionary, index):
         enths.append(dictionary['s2_avg(enth_lum_r_{})'.format(bn)][index].ravel())
         viscs.append(dictionary['s2_avg(visc_lum_r_{})'.format(bn)][index].ravel())
         conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index].ravel())
+        PEs.append(dictionary['s2_avg(PE_lum_r_{})'.format(bn)][index].ravel())
     legend = False
-    ax.plot(sim_lum_r, sim_lum, c='k')
-    for r, KE, enth, visc, cond in zip(rs, KEs, enths, viscs, conds):
+    ax.plot(sim_lum_r, sim_lum, c='k', lw=3)
+    for r, KE, enth, visc, cond, PE in zip(rs, KEs, enths, viscs, conds, PEs):
         ax.plot(r, KE, label='KE', c=Dark2_7[0])
         ax.plot(r, enth, label='enth', c=Dark2_7[1])
         ax.plot(r, visc, label='visc', c=Dark2_7[3])
         ax.plot(r, cond, label='cond', c=Dark2_7[4])
-        sum = KE +enth + visc + cond
-        ax.plot(r, sum, label='sum', c=Dark2_7[5])
+        ax.plot(r, PE, label='PE', c=Dark2_7[6])
+        sum = KE +enth + visc + cond + PE
+        ax.plot(r, sum, label='sum', c=Dark2_7[5], ls='--')
         if not legend:
             ax.legend()
             legend = True

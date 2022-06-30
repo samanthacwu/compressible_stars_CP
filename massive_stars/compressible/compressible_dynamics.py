@@ -267,9 +267,7 @@ if __name__ == '__main__':
                 for f in solver.state:
                     f.require_grid_space()
 
-            logger.info('about to timestep')
             solver.step(timestep)
-            logger.info('took a timestep')
 
             if solver.iteration % 10 == 0 or solver.iteration <= 10:
                 Re_avg = logger_handler.fields['Re_avg_B']

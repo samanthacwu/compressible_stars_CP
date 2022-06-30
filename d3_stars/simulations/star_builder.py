@@ -50,14 +50,16 @@ def HSE_solve(coords, dist, bases, grad_s_func, g_func, r_stitch=[], r_outer=1, 
         phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,0.5))
         namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis, -1)
 
+        N2_func = lambda r: (-g_func(r)*grad_s_func(r) / Cp)
+        N2_outer = N2_func(r_outer)
+        N2_extra = lambda r: (r/r_outer)**2 * N2_outer
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
-        N2.change_scales((1,1,0.5))
-        N2['g'] = - g_func(r_low) * grad_s_func(r_low) / Cp
+        N2['g'] = N2_extra(r) * zero_to_one(r, 1.02, width=0.05)
         N2.change_scales(basis.dealias)
-        N2['g'] *= zero_to_one(r_de, 0.9, width=0.05)
-#        N2['g'] += 0.1 * N2['g'].max()
         N2 = d3.Grid(N2).evaluate()
-#        plt.plot(r_de.ravel(), N2['g'].ravel())
+#        plt.plot(r_de.ravel(),N2['g'].ravel())
+#        plt.plot(r_de.ravel(), N2_func(r_de.ravel()))
+##        plt.plot(r_de.ravel(),N2_extra(r_de.ravel()) -  N2['g'].ravel())
 #        plt.yscale('log')
 #        plt.show()
 

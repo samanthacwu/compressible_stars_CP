@@ -27,7 +27,7 @@ nccs['g_phi']['nr_max'] = (8,)
 nccs['g_phi']['get_grad'] = True
 nccs['g_phi']['grad_name'] = 'neg_g'
 
-nccs['ln_rho0']['nr_max'] = (16,)
+nccs['ln_rho0']['nr_max'] = (64,)
 nccs['ln_rho0']['get_grad'] = True
 nccs['ln_rho0']['grad_name'] = 'grad_ln_rho0'
 
@@ -40,7 +40,7 @@ nccs['chi_rad']['grad_name'] = 'grad_chi_rad'
 
 nccs['nu_diff']['nr_max'] = (1,)
 
-nccs['T0']['nr_max'] = (16,)
+nccs['T0']['nr_max'] = (64,)
 nccs['T0']['get_grad'] = True
 nccs['T0']['grad_name'] = 'grad_T0'
 

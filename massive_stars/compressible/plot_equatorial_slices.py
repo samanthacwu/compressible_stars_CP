@@ -58,7 +58,8 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
 plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
 kwargs = {'azimuth_basis' : 'phi', 'radial_basis' : 'r', 'r_inner' : r_inner, 'r_outer' : r_outer}
-plotter.add_polar_colormesh('equator(s1_B)', remove_x_mean=True, divide_x_mean=True, **kwargs)
+plotter.add_polar_colormesh('equator(s1_B)', remove_x_mean=False, divide_x_mean=False, **kwargs)
+#plotter.add_polar_colormesh('equator(s1_B)', remove_x_mean=True, divide_x_mean=True, **kwargs)
 plotter.add_polar_colormesh('equator(u_B)', vector_ind=0, cmap='PuOr_r', **kwargs)
 plotter.add_polar_colormesh('equator(u_B)', vector_ind=1, cmap='PuOr_r', **kwargs)
 plotter.add_polar_colormesh('equator(u_B)', vector_ind=2, cmap='PuOr_r', **kwargs)
