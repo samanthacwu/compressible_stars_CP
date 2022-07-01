@@ -159,7 +159,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         else:
             lift_basis = basis.clone_with(k=2)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
-            variables['taus_lnrho_{}'.format(bn)] = lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
+            variables['taus_lnrho_{}'.format(bn)] = 0 #lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
 #            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + er_LHS*(lift_fn(variables['tau_rho1_{}'.format(bn)], -2) + lift_fn(variables['tau_div_u1_{}'.format(bn)], -2) + lift_fn(variables['tau_ur1_{}'.format(bn)], -2))
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
             variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
@@ -342,10 +342,10 @@ def get_compressible_variables(bases, bases_keys, variables):
                 problem_taus.append(variables['{}2_{}'.format(tau, bn)])
 
 #    for tau in ['tau_rho', 'tau_div_u', 'tau_ur']:
-    for tau in ['tau_rho',]:
-        for basis_number, bn in enumerate(bases_keys):
-            if type(bases[bn]) != d3.BallBasis:
-                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
+#    for tau in ['tau_rho',]:
+#        for basis_number, bn in enumerate(bases_keys):
+#            if type(bases[bn]) != d3.BallBasis:
+#                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
 
     return problem_variables + problem_taus
 
@@ -387,10 +387,10 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
-            u_BCs['BC_u1_vec_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, below_name, rval)
+            u_BCs['BC_u1_vec_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = ((1-exp(ln_rho1_{0}))*u_{0})(r={2}) - ((1-exp(ln_rho1_{1}))*u_{1}(r={2}))".format(bn, below_name, rval)
 #            u_BCs['BC_u1_vec_{}'.format(bn)] = "radial(u_{0}(r={2}) - u_{1}(r={2})) = 0".format(bn, below_name, rval)
 #            u_BCs['BC_u2_vec_{}'.format(bn)] = "div_u_{0}(r={2}) - div_u_{1}(r={2}) = 0".format(bn, below_name, rval)
-            u_BCs['BC_u3_vec_{}'.format(bn)] = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0".format(bn, below_name, rval)
+#            u_BCs['BC_u3_vec_{}'.format(bn)] = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0".format(bn, below_name, rval)
             T_BCs['BC_T1_{}'.format(bn)] = "radial(grad(T1_{0})(r={2}) - grad(T1_{1})(r={2})) = 0".format(bn, below_name, rval)
 
             #Add upper BCs
