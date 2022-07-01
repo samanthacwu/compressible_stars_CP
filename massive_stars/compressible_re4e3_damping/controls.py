@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 128
+dynamics['ntheta'] = 64
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 #dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'

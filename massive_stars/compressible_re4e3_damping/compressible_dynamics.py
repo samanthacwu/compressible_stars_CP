@@ -146,7 +146,7 @@ if __name__ == '__main__':
     vec_fields = ['u',]
     scalar_fields = ['ln_rho1', 'T1', 'H', 'rho0', 'pomega_tilde']
     vec_taus = ['tau_u']
-    scalar_taus = ['tau_T']
+    scalar_taus = ['tau_T', 'tau_rho', 'tau_div_u', 'tau_ur']
     vec_nccs = ['grad_ln_rho0', 'g', 'grad_T0', 'grad_chi_rad']
     scalar_nccs = ['ln_rho0', 'T0', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
 
@@ -267,6 +267,11 @@ if __name__ == '__main__':
                 for f in solver.state:
                     f.require_grid_space()
 
+#            logger.info('cv: {}'.format(solver.problem.namespace['Cv']['g']))
+#            logger.info('cv: {}'.format((1/solver.problem.namespace['Cv']).evaluate()['g']))
+#            logger.info('VH_B: {}'.format(solver.problem.namespace['VH_B'].evaluate()['g']))
+#            logger.info('VH_S1: {}'.format(solver.problem.namespace['VH_S1'].evaluate()['g']))
+#            logger.info('VH_S2: {}'.format(solver.problem.namespace['VH_S1'].evaluate()['g']))
             solver.step(timestep)
 
             if solver.iteration % 10 == 0 or solver.iteration <= 10:

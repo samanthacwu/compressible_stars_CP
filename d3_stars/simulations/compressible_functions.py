@@ -97,6 +97,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         if sponge:
             variables['sponge_{}'.format(bn)]['g'] = sponge_function(r1)
 
+        variables['er'] = dist.VectorField(coords, name='er')
+        variables['ephi'] = dist.VectorField(coords, name='ephi')
+        variables['etheta'] = dist.VectorField(coords, name='etheta')
+        variables['er']['g'][2] = 1
+        variables['ephi']['g'][0] = 1
+        variables['etheta']['g'][1] = 1
+
         variables['ephi_{}'.format(bn)]['g'][0,:] = 1 
         variables['etheta_{}'.format(bn)]['g'][1,:] = 1 
         variables['er_{}'.format(bn)]['g'][2,:] = 1 
@@ -131,7 +138,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['gamma'] = gamma = dist.Field(name='gamma')
         variables['R_gas'] = R_gas = dist.Field(name='R_gas')
         variables['Cp'] = Cp = dist.Field(name='Cp')
-        variables['Cv'] = Cv = Cp - R_gas
+        variables['Cv'] = Cv = dist.Field(name='Cv')
 
         g = variables['g_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
@@ -152,7 +159,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         else:
             lift_basis = basis.clone_with(k=2)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
-            variables['taus_lnrho_{}'.format(bn)] = 0
+            variables['taus_lnrho_{}'.format(bn)] = lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
+#            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + er_LHS*(lift_fn(variables['tau_rho1_{}'.format(bn)], -2) + lift_fn(variables['tau_div_u1_{}'.format(bn)], -2) + lift_fn(variables['tau_ur1_{}'.format(bn)], -2))
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
             variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
             variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
@@ -167,7 +175,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E_RHS - (1/3)*div_u_RHS*I_mat)
         variables['visc_div_stress_L_{}'.format(bn)] = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0))# + d3.dot(sigma, d3.grad(nu_diff))
         variables['visc_div_stress_R_{}'.format(bn)] = nu_diff*(d3.dot(sigma, grad_ln_rho1))
-        variables['VH_{}'.format(bn)] = 2*(nu_diff/Cv)*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
+        variables['VH_{}'.format(bn)] = 2*(nu_diff)*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
+#        variables['VH_{}'.format(bn)] = 2*(nu_diff/Cv)*(d3.trace(d3.dot(E_RHS, E_RHS)) - (1/3)*div_u_RHS*div_u_RHS)
 
 
         #variables['div_rad_flux_{}'.format(bn)] = (1/Re)*d3.div(grad_s)
@@ -251,7 +260,8 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                 variables['Cp']['g'] = f['Cp'][()]
                 variables['R_gas']['g'] = f['R_gas'][()]
                 variables['gamma']['g'] = f['gamma1'][()]
-                logger.info('using Cp: {}, R_gas: {}, gamma: {}'.format(variables['Cp']['g'], variables['R_gas']['g'], variables['gamma']['g']))
+                variables['Cv']['g'] = f['Cp'][()] - f['R_gas'][()]
+                logger.info('using Cp: {}, Cv: {}, R_gas: {}, gamma: {}'.format(variables['Cp']['g'], variables['Cv']['g'], variables['R_gas']['g'], variables['gamma']['g']))
                 for k in vec_nccs:
                     dist.comm_cart.Barrier()
                     if '{}_{}'.format(k, bn) not in f.keys():
@@ -269,7 +279,6 @@ def fill_structure(bases, dist, variables, ncc_file, radius, Pe, vec_fields=[], 
                     variables['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
                 variables['H_{}'.format(bn)]['g']         = f['H_{}'.format(bn)][:,:,grid_slices[-1]]
                 variables['rho0_{}'.format(bn)]['g']       = np.exp(f['ln_rho0_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
-                print(variables['nu_diff_{}'.format(bn)]['g'])
 
 #                #TODO: do this in star_builder
 #                grad_ln_rho = (d3.grad(variables['rho_{}'.format(bn)])/variables['rho_{}'.format(bn)]).evaluate()
@@ -317,7 +326,14 @@ def get_compressible_variables(bases, bases_keys, variables):
             problem_variables.append(variables['{}_{}'.format(field, bn)])
 
     problem_taus = []
-    for tau in ['tau_u', 'tau_T']:
+    for tau in ['tau_T']:
+        for basis_number, bn in enumerate(bases_keys):
+            if type(bases[bn]) == d3.BallBasis:
+                problem_taus.append(variables['{}_{}'.format(tau, bn)])
+            else:
+                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
+                problem_taus.append(variables['{}2_{}'.format(tau, bn)])
+    for tau in ['tau_u']:
         for basis_number, bn in enumerate(bases_keys):
             if type(bases[bn]) == d3.BallBasis:
                 problem_taus.append(variables['{}_{}'.format(tau, bn)])
@@ -325,12 +341,18 @@ def get_compressible_variables(bases, bases_keys, variables):
                 problem_taus.append(variables['{}1_{}'.format(tau, bn)])
                 problem_taus.append(variables['{}2_{}'.format(tau, bn)])
 
+#    for tau in ['tau_rho', 'tau_div_u', 'tau_ur']:
+    for tau in ['tau_rho',]:
+        for basis_number, bn in enumerate(bases_keys):
+            if type(bases[bn]) != d3.BallBasis:
+                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
+
     return problem_variables + problem_taus
 
 def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
     equations = OrderedDict()
     u_BCs = OrderedDict()
-    s_BCs = OrderedDict()
+    T_BCs = OrderedDict()
     for basis_number, bn in enumerate(bases_keys):
         basis = bases[bn]
 
@@ -339,10 +361,9 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + R_gas*(grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0})) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - R_gas*T1_{0}*grad(ln_rho1_{0}) + rotation_term_{0} + visc_div_stress_R_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = -dot(u_{0}, grad_T1_{0}) - (gamma-1)*T1_{0}*div(u_{0}) + (1/Cv)*(1/rho_full_{0})*H_{0} + VH_{0} + div_rad_flux_R_{0}".format(bn)
-#            equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
-#            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + R_gas*(grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0})) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = 0".format(bn)
-#            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = 0".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = -dot(u_{0}, grad_T1_{0}) - (gamma-1)*T1_{0}*div(u_{0}) + (1/Cv)*((1/rho_full_{0})*H_{0} + VH_{0}) + div_rad_flux_R_{0}".format(bn)
+#            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = -dot(u_{0}, grad_T1_{0}) - (gamma-1)*T1_{0}*div(u_{0}) + (1/Cv)*(1/rho_full_{0})*H_{0} + VH_{0} + div_rad_flux_R_{0}".format(bn)
+#            equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div_u_{0} - div_rad_flux_L_{0} + taus_T_{0} = 0 ".format(bn)
         elif config.numerics['equations'] == 'FC_HD_LinForce':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0}) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
@@ -354,34 +375,36 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-#                u_BCs['BC_u2_{}'.format(bn)] = "angular(u_{0}(r={1})) = 0".format(bn, 'radius')
-#                s_BCs['BC_s_{}'.format(bn)] = "s1_{0}(r={1}) = 0".format(bn, 'radius')
-                s_BCs['BC_s_{}'.format(bn)] = "radial(grad_T1_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_T1_{0}(r={1})) = 0".format(bn, 'radius')
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-                u_BCs['BC_u_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, shell_name, rval)
-                s_BCs['BC_s_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shell_name, rval)
+#                u_BCs['BC_u1_vec_{}'.format(bn)] = "angular(u_{0}(r={2}) - u_{1}(r={2})) = 0".format(bn, shell_name, rval)
+                u_BCs['BC_u1_{}'.format(bn)] = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0".format(bn, shell_name, rval)
+
+                T_BCs['BC_T_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shell_name, rval)
         else:
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
-            u_BCs['BC_u1_{}'.format(bn)] = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0".format(bn, below_name, rval)
-            u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0".format(bn, below_name, rval)
-            s_BCs['BC_T1_{}'.format(bn)] = "radial(grad(T1_{0})(r={2}) - grad(T1_{1})(r={2})) = 0".format(bn, below_name, rval)
+            u_BCs['BC_u1_vec_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, below_name, rval)
+#            u_BCs['BC_u1_vec_{}'.format(bn)] = "radial(u_{0}(r={2}) - u_{1}(r={2})) = 0".format(bn, below_name, rval)
+#            u_BCs['BC_u2_vec_{}'.format(bn)] = "div_u_{0}(r={2}) - div_u_{1}(r={2}) = 0".format(bn, below_name, rval)
+            u_BCs['BC_u3_vec_{}'.format(bn)] = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0".format(bn, below_name, rval)
+            T_BCs['BC_T1_{}'.format(bn)] = "radial(grad(T1_{0})(r={2}) - grad(T1_{1})(r={2})) = 0".format(bn, below_name, rval)
 
             #Add upper BCs
             if basis_number == len(bases_keys) - 1:
                 #top of domain
-                u_BCs['BC_u3_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
-                u_BCs['BC_u4_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+                u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
+                u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
 #                u_BCs['BC_u4_{}'.format(bn)] = "angular(u_{0}(r={1})) = 0".format(bn, 'radius')
-                s_BCs['BC_s2_{}'.format(bn)] = "radial(grad_T1_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_T1_{0}(r={1})) = 0".format(bn, 'radius')
             else:
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-                u_BCs['BC_u3_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = 0".format(bn, shn, rval)
-                s_BCs['BC_s2_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shn, rval)
+                u_BCs['BC_u4_vec_{}'.format(bn)] = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0".format(bn, shn, rval)
+                T_BCs['BC_T2_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shn, rval)
 
 
     for bn, basis in bases.items():
@@ -426,7 +449,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
 #                logger.info('adding BC "{}" for ntheta == 0'.format(BC))
 #                problem.add_equation(BC, condition="ntheta == 0")
 
-    for BC in s_BCs.values():
+    for BC in T_BCs.values():
         logger.info('adding BC "{}"'.format(BC))
         problem.add_equation(BC)
 
