@@ -218,6 +218,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['ur_{}'.format(bn)] = d3.dot(er, u)
         variables['T_full_{}'.format(bn)]   = T_full = T0*ones + T1
         variables['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
+        variables['rho_fluc_{}'.format(bn)] = rho_fluc = rho0*(np.exp(ln_rho1) - 1)
+        variables['rho_fluc_drho0_{}'.format(bn)] = rho_fluc_drho0 = (np.exp(ln_rho1) - 1)
         variables['P_full_{}'.format(bn)] = rho_full = R_gas*rho_full*T_full
         variables['s_full_{}'.format(bn)] = s_full = Cp * ( (1/gamma)*np.log(T_full) - ((gamma-1)/gamma)*np.log(rho_full))
         variables['s0_{}'.format(bn)] = s0 = Cp * ( (1/gamma)*np.log(T0*ones) - ((gamma-1)/gamma)*ones*ln_rho0)
@@ -382,8 +384,12 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
 
 
         constant_gradP = "(grad(T1_{0}) + T0_{0}*grad(ln_rho1_{0}) + T1_{0}*grad_ln_rho0_{0})(r={2}) - (grad(T1_{1}) + T0_{1}*grad(ln_rho1_{1}) + T1_{1}*grad_ln_rho0_{1})(r={2}) = (T1_{1}*grad(ln_rho1_{1}))(r={2}) - (T1_{0}*grad_ln_rho1_{0})(r={2})"
-        constant_rhoU = "u_{0}(r={2}) - u_{1}(r={2}) = ((exp(ln_rho1_{1}) - 1)*u_{1})(r={2}) - ((exp(ln_rho1_{0}) - 1)*u_{0})(r={2}) "
-        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0"
+        constant_rhoU = "u_{0}(r={2}) - u_{1}(r={2}) = -((rho_fluc_drho0_{0}*u_{0})(r={2}) - (rho_fluc_drho0_{1}*u_{1})(r={2})) "
+        constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
+        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2}))"
+        constant_T = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0"
+        constant_rhoT = "T1_{0}(r={2}) - T1_{1}(r={2}) = -((rho_fluc_drho0_{0}*T1_{0})(r={2}) - (rho_fluc_drho0_{1}*T1_{1})(r={2}))"
+        constant_rho_gradT = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*grad_T1_{0})(r={2}) - (rho_fluc_drho0_{1}*grad_T1_{1})(r={2}))"
 
         #Boundary conditions
         if type(basis) == d3.BallBasis:
@@ -395,15 +401,16 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
+#                u_BCs['BC_u1_{}'.format(bn)] = constant_U.format(bn, shell_name, rval)
                 u_BCs['BC_u1_{}'.format(bn)] = constant_rhoU.format(bn, shell_name, rval)
-
-                T_BCs['BC_T_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shell_name, rval)
+                T_BCs['BC_T_{}'.format(bn)] = constant_T.format(bn, shell_name, rval)
+#                T_BCs['BC_T_{}'.format(bn)] = constant_rhoT.format(bn, shell_name, rval)
         else:
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
             u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_sigma.format(bn, below_name, rval)
-            T_BCs['BC_T0_{}'.format(bn)] = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = 0".format(bn, below_name, rval)
+            T_BCs['BC_T0_{}'.format(bn)] = constant_rho_gradT.format(bn, below_name, rval)
 
             #Add upper BCs
             if basis_number == len(bases_keys) - 1:
@@ -414,8 +421,10 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             else:
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
+#                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
                 u_BCs['BC_u4_vec_{}'.format(bn)] = constant_rhoU.format(bn, shn, rval)
-                T_BCs['BC_T2_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shn, rval)
+                T_BCs['BC_T2_{}'.format(bn)] = constant_T.format(bn, shn, rval)
+#                T_BCs['BC_T2_{}'.format(bn)] = constant_rhoT.format(bn, shn, rval)
 
 
     for bn, basis in bases.items():
