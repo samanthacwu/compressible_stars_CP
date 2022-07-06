@@ -32,6 +32,7 @@ def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64,
 
 def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[], scalar_taus=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, sponge_function=lambda r: r**2):
     variables = OrderedDict()
+    variables['exp'] = np.exp
     for basis_number, bn in enumerate(bases.keys()):
         unit_vectors = ['ephi', 'etheta', 'er', 'ex', 'ey', 'ez']
         basis = bases[bn]
@@ -68,12 +69,16 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
                 variables[key] = dist.Field(name=key, bases=S2_basis)
         
         #Define problem NCCs
-        for fn in vec_nccs + ['er_LHS', 'rvec_LHS']:
+        for fn in vec_nccs + ['er_LHS', 'etheta_LHS', 'ephi_LHS', 'rvec_LHS']:
             key = '{}_{}'.format(fn, bn)
             logger.debug('creating vector NCC {}'.format(key))
             variables[key] = dist.VectorField(coords, name=key, bases=basis.radial_basis)
             if fn == 'er_LHS':
                 variables[key]['g'][2] = 1
+            if fn == 'etheta_LHS':
+                variables[key]['g'][1] = 1
+            if fn == 'ephi_LHS':
+                variables[key]['g'][0] = 1
             elif fn == 'rvec_LHS':
                 variables[key]['g'][2] = r1
         for fn in scalar_nccs:
@@ -142,6 +147,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
 
         g = variables['g_{}'.format(bn)]
         er_LHS = variables['er_LHS_{}'.format(bn)]
+        ephi_LHS = variables['ephi_LHS_{}'.format(bn)]
+        etheta_LHS = variables['etheta_LHS_{}'.format(bn)]
 
         # Lift operators for boundary conditions
         variables['grad_u_RHS_{}'.format(bn)] = grad_u_RHS = d3.grad(u)
@@ -160,8 +167,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             lift_basis = basis.clone_with(k=2)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
             variables['taus_lnrho_{}'.format(bn)] = 0 #lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
-#            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + er_LHS*(lift_fn(variables['tau_rho1_{}'.format(bn)], -2) + lift_fn(variables['tau_div_u1_{}'.format(bn)], -2) + lift_fn(variables['tau_ur1_{}'.format(bn)], -2))
+#            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + er_LHS*lift_fn(variables['tau_rho1_{}'.format(bn)], -2) + ephi_LHS*lift_fn(variables['tau_div_u1_{}'.format(bn)], -2) + etheta_LHS*lift_fn(variables['tau_ur1_{}'.format(bn)], -2)
             variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
+#            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2) + er_LHS*lift_fn(variables['tau_rho1_{}'.format(bn)], -3)
             variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
             variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_T1_{}'.format(bn)] = grad_T1 = d3.grad(T1)
@@ -210,6 +218,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['ur_{}'.format(bn)] = d3.dot(er, u)
         variables['T_full_{}'.format(bn)]   = T_full = T0*ones + T1
         variables['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
+        variables['P_full_{}'.format(bn)] = rho_full = R_gas*rho_full*T_full
         variables['s_full_{}'.format(bn)] = s_full = Cp * ( (1/gamma)*np.log(T_full) - ((gamma-1)/gamma)*np.log(rho_full))
         variables['s0_{}'.format(bn)] = s0 = Cp * ( (1/gamma)*np.log(T0*ones) - ((gamma-1)/gamma)*ones*ln_rho0)
         variables['s1_{}'.format(bn)] = s1 = s_full - s0
@@ -342,11 +351,12 @@ def get_compressible_variables(bases, bases_keys, variables):
                 problem_taus.append(variables['{}2_{}'.format(tau, bn)])
 
 #    for tau in ['tau_rho', 'tau_div_u', 'tau_ur']:
-#    for tau in ['tau_rho',]:
+##    for tau in ['tau_rho',]:
 #        for basis_number, bn in enumerate(bases_keys):
 #            if type(bases[bn]) != d3.BallBasis:
 #                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
-
+##                problem_taus.append(variables['{}2_{}'.format(tau, bn)])
+#
     return problem_variables + problem_taus
 
 def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
@@ -369,6 +379,12 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + grad(T1_{0}) + T1_{0}*grad_ln_rho0_{0} + T0_{0}*grad(ln_rho1_{0}) - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = F_{0}".format(bn)
             equations['energy_{}'.format(bn)] = "dt(T1_{0}) + dot(u_{0}, grad_T0_{0}) + (gamma-1)*T0_{0}*div(u_{0}) - div_rad_flux_L_{0} + taus_T_{0} = 0".format(bn)
 
+
+
+        constant_gradP = "(grad(T1_{0}) + T0_{0}*grad(ln_rho1_{0}) + T1_{0}*grad_ln_rho0_{0})(r={2}) - (grad(T1_{1}) + T0_{1}*grad(ln_rho1_{1}) + T1_{1}*grad_ln_rho0_{1})(r={2}) = (T1_{1}*grad(ln_rho1_{1}))(r={2}) - (T1_{0}*grad_ln_rho1_{0})(r={2})"
+        constant_rhoU = "u_{0}(r={2}) - u_{1}(r={2}) = ((exp(ln_rho1_{1}) - 1)*u_{1})(r={2}) - ((exp(ln_rho1_{0}) - 1)*u_{0})(r={2}) "
+        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0"
+
         #Boundary conditions
         if type(basis) == d3.BallBasis:
             if basis_number == len(bases_keys) - 1:
@@ -379,31 +395,26 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-#                u_BCs['BC_u1_vec_{}'.format(bn)] = "angular(u_{0}(r={2}) - u_{1}(r={2})) = 0".format(bn, shell_name, rval)
-                u_BCs['BC_u1_{}'.format(bn)] = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0".format(bn, shell_name, rval)
+                u_BCs['BC_u1_{}'.format(bn)] = constant_rhoU.format(bn, shell_name, rval)
 
                 T_BCs['BC_T_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shell_name, rval)
         else:
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
-            u_BCs['BC_u1_vec_{}'.format(bn)] = "u_{0}(r={2}) - u_{1}(r={2}) = ((1-exp(ln_rho1_{0}))*u_{0})(r={2}) - ((1-exp(ln_rho1_{1}))*u_{1}(r={2}))".format(bn, below_name, rval)
-#            u_BCs['BC_u1_vec_{}'.format(bn)] = "radial(u_{0}(r={2}) - u_{1}(r={2})) = 0".format(bn, below_name, rval)
-#            u_BCs['BC_u2_vec_{}'.format(bn)] = "div_u_{0}(r={2}) - div_u_{1}(r={2}) = 0".format(bn, below_name, rval)
-#            u_BCs['BC_u3_vec_{}'.format(bn)] = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0".format(bn, below_name, rval)
-            T_BCs['BC_T1_{}'.format(bn)] = "radial(grad(T1_{0})(r={2}) - grad(T1_{1})(r={2})) = 0".format(bn, below_name, rval)
+            u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_sigma.format(bn, below_name, rval)
+            T_BCs['BC_T0_{}'.format(bn)] = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = 0".format(bn, below_name, rval)
 
             #Add upper BCs
             if basis_number == len(bases_keys) - 1:
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-#                u_BCs['BC_u4_{}'.format(bn)] = "angular(u_{0}(r={1})) = 0".format(bn, 'radius')
                 T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_T1_{0}(r={1})) = 0".format(bn, 'radius')
             else:
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-                u_BCs['BC_u4_vec_{}'.format(bn)] = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0".format(bn, shn, rval)
+                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_rhoU.format(bn, shn, rval)
                 T_BCs['BC_T2_{}'.format(bn)] = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0".format(bn, shn, rval)
 
 
@@ -411,21 +422,11 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         continuity = equations['continuity_{}'.format(bn)]
         logger.info('adding eqn "{}"'.format(continuity))
         problem.add_equation(continuity)
-#        continuity_ell0 = "_{} = 0".format(bn)
-#        logger.info('adding eqn "{}" for ntheta != 0'.format(continuity))
-#        logger.info('adding eqn "{}" for ntheta == 0'.format(continuity_ell0))
-#        problem.add_equation(continuity, condition="ntheta != 0")
-#        problem.add_equation(continuity_ell0, condition="ntheta == 0")
 
     for bn, basis in bases.items():
         momentum = equations['momentum_{}'.format(bn)]
         logger.info('adding eqn "{}"'.format(momentum))
         problem.add_equation(momentum)
-#        momentum_ell0 = "u_{} = 0".format(bn)
-#        logger.info('adding eqn "{}" for ntheta != 0'.format(momentum))
-#        logger.info('adding eqn "{}" for ntheta == 0'.format(momentum_ell0))
-#        problem.add_equation(momentum, condition="ntheta != 0")
-#        problem.add_equation(momentum_ell0, condition="ntheta == 0")
 
     for bn, basis in bases.items():
         energy = equations['energy_{}'.format(bn)]
@@ -435,19 +436,6 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
     for BC in u_BCs.values():
         logger.info('adding BC "{}"'.format(BC))
         problem.add_equation(BC)
-#        logger.info('adding BC "{}" for ntheta != 0'.format(BC))
-#        problem.add_equation(BC, condition="ntheta != 0")
-
-#    for bn, basis in bases.items():
-#        if type(basis) == d3.BallBasis:
-#            BC = 'tau_u_{} = 0'.format(bn)
-#            logger.info('adding BC "{}" for ntheta == 0'.format(BC))
-#            problem.add_equation(BC, condition="ntheta == 0")
-#        else:
-#            for i in [1, 2]:
-#                BC = 'tau_u{}_{} = 0'.format(i, bn)
-#                logger.info('adding BC "{}" for ntheta == 0'.format(BC))
-#                problem.add_equation(BC, condition="ntheta == 0")
 
     for BC in T_BCs.values():
         logger.info('adding BC "{}"'.format(BC))
