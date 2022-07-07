@@ -33,6 +33,7 @@ def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64,
 def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[], scalar_taus=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, sponge_function=lambda r: r**2):
     variables = OrderedDict()
     variables['exp'] = np.exp
+    variables['log'] = np.log
     for basis_number, bn in enumerate(bases.keys()):
         unit_vectors = ['ephi', 'etheta', 'er', 'ex', 'ey', 'ez']
         basis = bases[bn]
@@ -235,7 +236,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
         variables['IE1_{}'.format(bn)] = IE1 = IE - IE0
         variables['TotE_{}'.format(bn)] = KE + PE + IE
         variables['FlucE_{}'.format(bn)] = KE + PE1 + IE1
-        variables['Re_{}'.format(bn)] = u_squared / nu_diff
+        variables['Re_{}'.format(bn)] = np.sqrt(u_squared) / nu_diff
         variables['L_{}'.format(bn)] = d3.cross(r_vec, momentum)
 
         variables['F_cond_{}'.format(bn)] = F_cond = -rho_full * Cp * chi_rad * grad_T1
@@ -391,6 +392,12 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         constant_rhoT = "T1_{0}(r={2}) - T1_{1}(r={2}) = -((rho_fluc_drho0_{0}*T1_{0})(r={2}) - (rho_fluc_drho0_{1}*T1_{1})(r={2}))"
         constant_rho_gradT = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*grad_T1_{0})(r={2}) - (rho_fluc_drho0_{1}*grad_T1_{1})(r={2}))"
 
+        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = -angular(radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2})))"
+#        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
+        constant_gradT = "radial((chi_rad_{0}*grad_T1_{0})(r={2}) - (chi_rad_{1}*grad_T1_{1})(r={2})) = 0"
+        constant_P = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
+#        constant_P = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = -((ln_rho0_{0}*ones_{0} + log(T_full_{0}))(r={2}) - (ln_rho0_{1}*ones_{1} + log(T_full_{1}))(r={2}))" 
+
         #Boundary conditions
         if type(basis) == d3.BallBasis:
             if basis_number == len(bases_keys) - 1:
@@ -401,16 +408,19 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-#                u_BCs['BC_u1_{}'.format(bn)] = constant_U.format(bn, shell_name, rval)
-                u_BCs['BC_u1_{}'.format(bn)] = constant_rhoU.format(bn, shell_name, rval)
+                u_BCs['BC_u1_{}'.format(bn)] = constant_U.format(bn, shell_name, rval)
+#                u_BCs['BC_u1_{}'.format(bn)] = constant_rhoU.format(bn, shell_name, rval)
                 T_BCs['BC_T_{}'.format(bn)] = constant_T.format(bn, shell_name, rval)
 #                T_BCs['BC_T_{}'.format(bn)] = constant_rhoT.format(bn, shell_name, rval)
         else:
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
-            u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_sigma.format(bn, below_name, rval)
-            T_BCs['BC_T0_{}'.format(bn)] = constant_rho_gradT.format(bn, below_name, rval)
+#            u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_sigma.format(bn, below_name, rval)
+#            T_BCs['BC_T0_{}'.format(bn)] = constant_rho_gradT.format(bn, below_name, rval)
+            u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_ang_sigma.format(bn, below_name, rval)
+            u_BCs['BC_u2_vec_{}'.format(bn)] = constant_P.format(bn, below_name, rval)
+            T_BCs['BC_T0_{}'.format(bn)] = constant_gradT.format(bn, below_name, rval)
 
             #Add upper BCs
             if basis_number == len(bases_keys) - 1:
@@ -421,8 +431,8 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             else:
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
-#                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
-                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_rhoU.format(bn, shn, rval)
+                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
+#                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_rhoU.format(bn, shn, rval)
                 T_BCs['BC_T2_{}'.format(bn)] = constant_T.format(bn, shn, rval)
 #                T_BCs['BC_T2_{}'.format(bn)] = constant_rhoT.format(bn, shn, rval)
 
