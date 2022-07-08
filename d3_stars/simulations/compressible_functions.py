@@ -165,12 +165,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_taus=[
             variables['grad_ln_rho1_{}'.format(bn)] = grad_ln_rho1 = d3.grad(ln_rho1)
             variables['div_u_{}'.format(bn)] = div_u = div_u_RHS
         else:
-            lift_basis = basis.clone_with(k=2)
+            lift_basis = basis.clone_with(k=1)
             variables['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
-            variables['taus_lnrho_{}'.format(bn)] = 0 #lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
-#            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + er_LHS*lift_fn(variables['tau_rho1_{}'.format(bn)], -2) + ephi_LHS*lift_fn(variables['tau_div_u1_{}'.format(bn)], -2) + etheta_LHS*lift_fn(variables['tau_ur1_{}'.format(bn)], -2)
-            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
+#            variables['taus_lnrho_{}'.format(bn)] = 0
+            variables['taus_lnrho_{}'.format(bn)] = lift_fn(variables['tau_rho1_{}'.format(bn)], -1)
 #            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2) + er_LHS*lift_fn(variables['tau_rho1_{}'.format(bn)], -3)
+            variables['taus_u_{}'.format(bn)] = lift_fn(variables['tau_u1_{}'.format(bn)], -1) + lift_fn(variables['tau_u2_{}'.format(bn)], -2)
             variables['taus_T_{}'.format(bn)] = lift_fn(variables['tau_T1_{}'.format(bn)], -1) + lift_fn(variables['tau_T2_{}'.format(bn)], -2)
             variables['grad_u_{}'.format(bn)] = grad_u = grad_u_RHS
             variables['grad_T1_{}'.format(bn)] = grad_T1 = d3.grad(T1)
@@ -353,13 +353,11 @@ def get_compressible_variables(bases, bases_keys, variables):
                 problem_taus.append(variables['{}1_{}'.format(tau, bn)])
                 problem_taus.append(variables['{}2_{}'.format(tau, bn)])
 
-#    for tau in ['tau_rho', 'tau_div_u', 'tau_ur']:
-##    for tau in ['tau_rho',]:
-#        for basis_number, bn in enumerate(bases_keys):
-#            if type(bases[bn]) != d3.BallBasis:
-#                problem_taus.append(variables['{}1_{}'.format(tau, bn)])
-##                problem_taus.append(variables['{}2_{}'.format(tau, bn)])
-#
+    for tau in ['tau_rho1',]:
+        for basis_number, bn in enumerate(bases_keys):
+            if type(bases[bn]) != d3.BallBasis:
+                problem_taus.append(variables['{}_{}'.format(tau, bn)])
+
     return problem_variables + problem_taus
 
 def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
@@ -384,18 +382,25 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
 
 
 
-        constant_gradP = "(grad(T1_{0}) + T0_{0}*grad(ln_rho1_{0}) + T1_{0}*grad_ln_rho0_{0})(r={2}) - (grad(T1_{1}) + T0_{1}*grad(ln_rho1_{1}) + T1_{1}*grad_ln_rho0_{1})(r={2}) = (T1_{1}*grad(ln_rho1_{1}))(r={2}) - (T1_{0}*grad_ln_rho1_{0})(r={2})"
-        constant_rhoU = "u_{0}(r={2}) - u_{1}(r={2}) = -((rho_fluc_drho0_{0}*u_{0})(r={2}) - (rho_fluc_drho0_{1}*u_{1})(r={2})) "
+#        constant_gradP = "(grad(T1_{0}) + T0_{0}*grad(ln_rho1_{0}) + T1_{0}*grad_ln_rho0_{0})(r={2}) - (grad(T1_{1}) + T0_{1}*grad(ln_rho1_{1}) + T1_{1}*grad_ln_rho0_{1})(r={2}) = (T1_{1}*grad(ln_rho1_{1}))(r={2}) - (T1_{0}*grad_ln_rho1_{0})(r={2})"
+#        constant_rhoU = "u_{0}(r={2}) - u_{1}(r={2}) = -((rho_fluc_drho0_{0}*u_{0})(r={2}) - (rho_fluc_drho0_{1}*u_{1})(r={2})) "
         constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
-        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2}))"
+#        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2}))"
+        constant_rad_sigma = "radial(sigma_{0}(r={2}) - sigma_{1}(r={2})) = 0"
         constant_T = "T1_{0}(r={2}) - T1_{1}(r={2}) = 0"
-        constant_rhoT = "T1_{0}(r={2}) - T1_{1}(r={2}) = -((rho_fluc_drho0_{0}*T1_{0})(r={2}) - (rho_fluc_drho0_{1}*T1_{1})(r={2}))"
-        constant_rho_gradT = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*grad_T1_{0})(r={2}) - (rho_fluc_drho0_{1}*grad_T1_{1})(r={2}))"
+#        constant_rhoT = "T1_{0}(r={2}) - T1_{1}(r={2}) = -((rho_fluc_drho0_{0}*T1_{0})(r={2}) - (rho_fluc_drho0_{1}*T1_{1})(r={2}))"
+#        constant_rho_gradT = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = -radial((rho_fluc_drho0_{0}*grad_T1_{0})(r={2}) - (rho_fluc_drho0_{1}*grad_T1_{1})(r={2}))"
 
-        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = -angular(radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2})))"
-#        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
-        constant_gradT = "radial((chi_rad_{0}*grad_T1_{0})(r={2}) - (chi_rad_{1}*grad_T1_{1})(r={2})) = 0"
-        constant_P = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
+#        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = -angular(radial((rho_fluc_drho0_{0}*sigma_RHS_{0})(r={2}) - (rho_fluc_drho0_{1}*sigma_RHS_{1})(r={2})))"
+        constant_rad_ang_sigma = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
+#        constant_gradT = "radial((chi_rad_{0}*grad_T1_{0})(r={2}) - (chi_rad_{1}*grad_T1_{1})(r={2})) = 0"
+        constant_gradT = "radial(grad_T1_{0}(r={2}) - grad_T1_{1}(r={2})) = 0"
+#        constant_P = "radial(grad(ln_rho1_{0})(r={2}) - grad(ln_rho1_{1})(r={2})) = 0"
+#        constant_P = "div_u_{0}(r={2}) - div_u_{1}(r={2}) = 0"
+        constant_rad_grad_u = "radial(radial(grad(u_{0})(r={2}) - grad(u_{1})(r={2}))) = 0"
+#        constant_P = "radial(grad(ln_rho1_{0})(r={2}) - grad(ln_rho1_{1})(r={2})) = 0"
+        constant_ln_rho = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
+#        constant_P = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
 #        constant_P = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = -((ln_rho0_{0}*ones_{0} + log(T_full_{0}))(r={2}) - (ln_rho0_{1}*ones_{1} + log(T_full_{1}))(r={2}))" 
 
         #Boundary conditions
@@ -409,17 +414,14 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
                 u_BCs['BC_u1_{}'.format(bn)] = constant_U.format(bn, shell_name, rval)
-#                u_BCs['BC_u1_{}'.format(bn)] = constant_rhoU.format(bn, shell_name, rval)
                 T_BCs['BC_T_{}'.format(bn)] = constant_T.format(bn, shell_name, rval)
-#                T_BCs['BC_T_{}'.format(bn)] = constant_rhoT.format(bn, shell_name, rval)
         else:
             #Stitch to basis below
             below_name = bases_keys[basis_number - 1]
             rval = stitch_radii[basis_number - 1]
-#            u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_sigma.format(bn, below_name, rval)
-#            T_BCs['BC_T0_{}'.format(bn)] = constant_rho_gradT.format(bn, below_name, rval)
             u_BCs['BC_u1_vec_{}'.format(bn)] = constant_rad_ang_sigma.format(bn, below_name, rval)
-            u_BCs['BC_u2_vec_{}'.format(bn)] = constant_P.format(bn, below_name, rval)
+            u_BCs['BC_u2_vec_{}'.format(bn)] = constant_rad_grad_u.format(bn, below_name, rval)
+            u_BCs['BC_u3_vec_{}'.format(bn)] = constant_ln_rho.format(bn, below_name, rval)
             T_BCs['BC_T0_{}'.format(bn)] = constant_gradT.format(bn, below_name, rval)
 
             #Add upper BCs
@@ -432,9 +434,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
                 u_BCs['BC_u4_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
-#                u_BCs['BC_u4_vec_{}'.format(bn)] = constant_rhoU.format(bn, shn, rval)
                 T_BCs['BC_T2_{}'.format(bn)] = constant_T.format(bn, shn, rval)
-#                T_BCs['BC_T2_{}'.format(bn)] = constant_rhoT.format(bn, shn, rval)
 
 
     for bn, basis in bases.items():
