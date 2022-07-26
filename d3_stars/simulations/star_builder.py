@@ -141,7 +141,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
 
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
-    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'grad_s', 'g', 'pomega', 'rho', 'ln_rho', 'g_phi', 'r_vec', 'HSE', 'N2_op']
+    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'grad_s', 'g', 'pomega', 'rho', 'ln_rho', 'g_phi', 'r_vec', 'HSE', 'N2_op', 'Q']
     for f in fields:
         stitch_fields[f] = []
     
@@ -170,6 +170,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
     ln_rho = stitch_fields['ln_rho'].ravel()
     g_phi = stitch_fields['g_phi'].ravel()
     N2 = stitch_fields['N2_op'].ravel()
+    Q = stitch_fields['Q'].ravel()
 
 
 
@@ -221,6 +222,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
     atmosphere['ln_rho'] = interp1d(r, ln_rho, **interp_kwargs)
     atmosphere['g_phi'] = interp1d(r, g_phi, **interp_kwargs)
     atmosphere['N2'] = interp1d(r, N2, **interp_kwargs)
+    atmosphere['Q'] = interp1d(r, Q, **interp_kwargs)
     return atmosphere
 
 
@@ -573,10 +575,13 @@ def build_nccs(plot_nccs=False):
               R=nondim_R_gas, gamma=nondim_gamma1, comm=MPI.COMM_SELF, \
               nondim_radius=1, g_nondim=interpolations['g'](1), ln_rho_func=interpolations['ln_rho0'], s_motions=s_motions/s_nd)
 
-
-    interpolations['grad_s0'] = interp1d(atmo['r'].ravel(), atmo['dS_dr'][2,:].ravel(), **interp_kwargs)
-    interpolations['T0'] = interp1d(atmo['r'].ravel(), atmo['T'].ravel(), **interp_kwargs)
-    interpolations['ln_rho0'] = interp1d(atmo['r'].ravel(), atmo['ln_rho'].ravel(), **interp_kwargs)
+    interpolations['ln_rho0'] = atmo['ln_rho']
+    interpolations['Q'] = atmo['Q']
+    interpolations['g'] = atmo['g']
+    interpolations['g_phi'] = atmo['g_phi']
+    interpolations['grad_s0'] = atmo['grad_s']
+    interpolations['pom0'] = atmo['pomega']
+    interpolations['grad_ln_pom0'] = atmo['grad_ln_pomega']
 
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -691,17 +696,15 @@ def build_nccs(plot_nccs=False):
     rs = []
     for bn in bases_keys:
         rs.append(dedalus_r[bn].ravel())
-        T0 = ncc_dict['T0']['field_{}'.format(bn)]
-        grad_T0 = ncc_dict['grad_T0']['field_{}'.format(bn)]
         grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
         gvec = ncc_dict['g']['field_{}'.format(bn)]
-        grad_s0 = nondim_cp * ((1/nondim_gamma1) * (grad_T0['g']/T0['g'] - (nondim_gamma1-1) * grad_ln_rho0['g']))
-        N2_val = -gvec['g'][2,:] * grad_s0[2,:] / nondim_cp 
+        grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
+        N2_val = -gvec['g'][2,:] * grad_s0['g'][2,:] / nondim_cp 
         N2s.append(N2_val)
     r_dedalus = np.concatenate(rs, axis=-1)
     N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
     plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa')
-    plt.plot(atmo['r'].ravel(), atmo['N2'].ravel(), label='atmosphere')
+    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere')
     plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
     plt.legend()
     plt.ylabel(r'$N^2$')
@@ -712,14 +715,14 @@ def build_nccs(plot_nccs=False):
 
         
 
-    C = d3.integ(ncc_dict['H']['field_B']).evaluate()['g']
+    C = d3.integ(ncc_dict['Q']['field_B']).evaluate()['g']
     vol = (4/3)*np.pi * bases['B'].radius**3
     adj = C / vol
     logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
-    ncc_dict['H']['field_B']['g'] -= adj 
+    ncc_dict['Q']['field_B']['g'] -= adj 
 
-    dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
-    print(dLdt)
+#    dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
+#    print(dLdt)
     
     with h5py.File('{:s}'.format(out_file), 'w') as f:
         # Save output fields.
@@ -777,14 +780,16 @@ def build_nccs(plot_nccs=False):
         f['cp_mesa'] = cp
         f['cp_mesa'].attrs['units'] = str(cp.unit)
 
+        #TODO: put sim lum back
         f['lum_r_vals'] = r_vals
-        f['sim_lum'] = sim_lum
+#        f['sim_lum'] = sim_lum
         f['r_stitch']   = stitch_radii
         f['Re_shift'] = Re_shift
         f['r_outer']   = r_bound_nd[-1] 
         f['max_dt'] = max_dt
         f['Ma2_r0'] = Ma2_r0
-        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
+#        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
+        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', \
                     'Cp', 'R_gas', 'gamma1']:
             f[k].attrs['units'] = 'dimensionless'
     logger.info('finished saving NCCs to {}'.format(out_file))
