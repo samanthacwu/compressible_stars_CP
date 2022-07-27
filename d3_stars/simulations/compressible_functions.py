@@ -147,10 +147,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         ones = namespace['ones_{}'.format(bn)]
         ones['g'] = 1
 
-        namespace['gamma'] = gamma = dist.Field(name='gamma')
-        namespace['R_gas'] = R_gas = dist.Field(name='R_gas')
-        namespace['Cp'] = Cp = dist.Field(name='Cp')
-        namespace['Cv'] = Cv = dist.Field(name='Cv')
+        if bn == 'B':
+            namespace['gamma'] = gamma = dist.Field(name='gamma')
+            namespace['R_gas'] = R_gas = dist.Field(name='R_gas')
+            namespace['Cp'] = Cp = dist.Field(name='Cp')
+            namespace['Cv'] = Cv = dist.Field(name='Cv')
+
 
         g = namespace['g_{}'.format(bn)]
         er = namespace['er']
@@ -185,7 +187,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['VH_{}'.format(bn)] = 2*(nu_diff)*(d3.trace(d3.dot(E, E)) - (1/3)*div_u*div_u)
 
         #Thermodynamics
-        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/rho0)
+        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
         namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
@@ -335,6 +337,9 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
 
+    for k in ['pom0']:
+        print(namespace['{}_B'.format(k)]['g'], namespace['{}_S1'.format(k)]['g'])
+
 
     # Grid-lock some operators / define grad's
     for field in ['Q']:
@@ -411,16 +416,16 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
             T_BCs['BC_T0_{}'.format(bn)] = constant_gradT.format(bn, below_name, rval)
 
             #Add upper BCs
-            if basis_number == len(bases_keys) - 1:
-                #top of domain
-                u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
-                u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = -radial(grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
-            else:
+            if basis_number != len(bases_keys) - 1:
                 shn = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
                 u_BCs['BC_u3_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
                 T_BCs['BC_T3_{}'.format(bn)] = constant_s.format(bn, shn, rval)
+            else:
+                #top of domain
+                u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
+                u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = -radial(grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
 
 
     for bn, basis in bases.items():
