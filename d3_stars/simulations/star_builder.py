@@ -147,7 +147,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
     
     for k, basis in bases.items():
         for f in fields:
-            stitch_fields[f] += [namespace['{}_{}'.format(f, k)].evaluate()['g']]
+            stitch_fields[f] += [np.copy(namespace['{}_{}'.format(f, k)].evaluate()['g'])]
 
     if len(stitch_fields['r_vec']) == 1:
         for f in fields:
@@ -187,7 +187,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
     ax1.legend()
     ax2.plot(r, grad_ln_rho, label='grad ln rho')
     ax2.legend()
-    ax3.plot(r, pom, label='pomega')
+    ax3.plot(r, pom/R, label='pomega/R')
     ax3.plot(r, rho, label='rho')
     ax3.legend()
     ax4.plot(r, HSE, label='HSE')
@@ -210,6 +210,9 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
     ax8.legend()
     fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
 #    plt.show()
+
+    print('rho', rho)
+    print('ln_rho', ln_rho)
 
     atmosphere = dict()
     atmosphere['grad_pomega'] = interp1d(r, grad_pom, **interp_kwargs)
@@ -711,7 +714,7 @@ def build_nccs(plot_nccs=False):
     plt.xlabel('r')
     plt.yscale('log')
     plt.savefig('star/N2_goodness.png')
-    plt.show()
+#    plt.show()
 
         
 
@@ -782,14 +785,13 @@ def build_nccs(plot_nccs=False):
 
         #TODO: put sim lum back
         f['lum_r_vals'] = r_vals
-#        f['sim_lum'] = sim_lum
+        f['sim_lum'] = L_conv_func(r_vals)
         f['r_stitch']   = stitch_radii
         f['Re_shift'] = Re_shift
         f['r_outer']   = r_bound_nd[-1] 
         f['max_dt'] = max_dt
         f['Ma2_r0'] = Ma2_r0
-#        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
-        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', \
+        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
                     'Cp', 'R_gas', 'gamma1']:
             f[k].attrs['units'] = 'dimensionless'
     logger.info('finished saving NCCs to {}'.format(out_file))

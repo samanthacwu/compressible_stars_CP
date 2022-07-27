@@ -15,7 +15,7 @@ from d3_stars.defaults import config
 output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'ln_rho1'\
-            'T1', 'grad_T1', 'L', 's1']
+            'pom1', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1']
 for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
 
@@ -27,7 +27,7 @@ output_tasks['L_squared'] = 'dot(L_{0}, L_{0})'
 
 for t in flux_tags:
     output_tasks['{}_lum'.format(t)] = '(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
-    output_tasks['{}_lum_r'.format(t)] = 'dot(er_{0}, ' + output_tasks['{}_lum'.format(t)] + ')'
+    output_tasks['{}_lum_r'.format(t)] = 'dot(er, ' + output_tasks['{}_lum'.format(t)] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales

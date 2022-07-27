@@ -39,6 +39,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
     scalar_nccs = ['pom0', 'rho0', 'ln_rho0', 'g_phi', 'nu_diff', 'chi_rad'] + scalar_nccs
     sphere_unit_vectors = ['ephi', 'etheta', 'er']
     cartesian_unit_vectors = ['ex', 'ey', 'ez']
+    if sponge:
+        scalar_nccs += ['sponge']
 
     namespace = OrderedDict()
     namespace['exp'] = np.exp
@@ -98,7 +100,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['sponge_{}'.format(bn)]['g'] = sponge_function(r1)
 
         #Define unit vectors
-        for fn in spherical_unit_vectors:
+        for fn in sphere_unit_vectors:
             logger.debug('creating unit vector field {}'.format(key))
             namespace[fn] = dist.VectorField(coords, name=fn)
         namespace['er']['g'][2] = 1
@@ -136,6 +138,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         rho0 = namespace['rho0_{}'.format(bn)]
         ln_rho0 = namespace['ln_rho0_{}'.format(bn)]
         pom0 = namespace['pom0_{}'.format(bn)]
+        grad_s0 = namespace['grad_s0_{}'.format(bn)]
         g_phi = namespace['g_phi_{}'.format(bn)]
         nu_diff = namespace['nu_diff_{}'.format(bn)]
         grad_nu_diff = namespace['grad_nu_diff_{}'.format(bn)]
@@ -150,9 +153,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['Cv'] = Cv = dist.Field(name='Cv')
 
         g = namespace['g_{}'.format(bn)]
-        er = namespace['er_{}'.format(bn)]
-        ephi = namespace['ephi_{}'.format(bn)]
-        etheta = namespace['etheta_{}'.format(bn)]
+        er = namespace['er']
+        ephi = namespace['ephi']
+        etheta = namespace['etheta']
         rvec = namespace['rvec_{}'.format(bn)]
 
         # Lift operators for boundary conditions
@@ -165,13 +168,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['lift_{}'.format(bn)] = lift_fn = lambda A: d3.Lift(A, lift_basis, -1)
             namespace['taus_lnrho_{}'.format(bn)] = 0
             namespace['taus_u_{}'.format(bn)] = lift_fn(namespace['tau_u_{}'.format(bn)])
-            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_T_{}'.format(bn)])
+            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_s_{}'.format(bn)])
         else:
             lift_basis = basis.derivative_basis(2)
             namespace['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
             namespace['taus_lnrho_{}'.format(bn)] = (1/nu_diff)*rvec@lift_fn(namespace['tau_u2_{}'.format(bn)], -1)
             namespace['taus_u_{}'.format(bn)] = lift_fn(namespace['tau_u1_{}'.format(bn)], -1) + lift_fn(namespace['tau_u2_{}'.format(bn)], -2)
-            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_T1_{}'.format(bn)], -1) + lift_fn(namespace['tau_T2_{}'.format(bn)], -2)
+            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(namespace['tau_s2_{}'.format(bn)], -2)
 
 
         #Stress matrices & viscous terms
@@ -224,7 +227,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         #output tasks
         namespace['r_vals_{}'.format(bn)] = r_vals = ones*rvec
 
-        er = namespace['er_{}'.format(bn)]
+        er = namespace['er']
         namespace['ur_{}'.format(bn)] = d3.dot(er, u)
         namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
         namespace['u_squared_{}'.format(bn)] = u_squared = d3.dot(u,u)
@@ -233,8 +236,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['IE_{}'.format(bn)] = IE = rho_full * (1/(gamma-1)) * pom_full
         namespace['PE0_{}'.format(bn)] = PE0 = rho0 * g_phi
         namespace['IE0_{}'.format(bn)] = IE0 = rho0 * (1/(gamma-1)) * pom0
-        namespace['PE1_{}'.format(bn)] = PE1 = PE - PE0
-        namespace['IE1_{}'.format(bn)] = IE1 = IE - IE0
+        namespace['PE1_{}'.format(bn)] = PE1 = PE - PE0*ones
+        namespace['IE1_{}'.format(bn)] = IE1 = IE - IE0*ones
         namespace['TotE_{}'.format(bn)] = KE + PE + IE
         namespace['FlucE_{}'.format(bn)] = KE + PE1 + IE1
         namespace['Re_{}'.format(bn)] = np.sqrt(u_squared) / nu_diff
@@ -247,6 +250,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
     return namespace
 
 def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, scales=None):
+    vec_fields = ['u', ] + vec_fields
+    scalar_fields = ['ln_rho1', 's1', 'Q', 'ones']
+    vec_taus = ['tau_u']
+    scalar_taus = ['tau_s']
+    vec_nccs = ['grad_pom0', 'grad_ln_pom0', 'grad_ln_rho0', 'grad_s0', 'g', 'rvec', 'grad_nu_diff', 'grad_chi_rad'] + vec_nccs
+    scalar_nccs = ['pom0', 'rho0', 'ln_rho0', 'g_phi', 'nu_diff', 'chi_rad'] + scalar_nccs
+
     logger.info('using NCC file {}'.format(ncc_file))
     max_dt = None
     t_buoy = None
@@ -333,12 +343,12 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
 
 def get_compressible_variables(bases, bases_keys, namespace):
     problem_variables = []
-    for field in ['ln_rho1', 'u', 'T1']:
+    for field in ['ln_rho1', 'u', 's1']:
         for basis_number, bn in enumerate(bases_keys):
             problem_variables.append(namespace['{}_{}'.format(field, bn)])
 
     problem_taus = []
-    for tau in ['tau_T']:
+    for tau in ['tau_s']:
         for basis_number, bn in enumerate(bases_keys):
             if type(bases[bn]) == d3.BallBasis:
                 problem_taus.append(namespace['{}_{}'.format(tau, bn)])
@@ -367,7 +377,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_HSE_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_HSE_{0} + visc_div_stress_R_{0} ".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas)*((1/(rho_full_{0}*pom_full_{0})))*(H_{0} + VH_{0})".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas)*((1/(rho_full_{0}*pom_full_{0})))*(Q_{0} + VH_{0})".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 

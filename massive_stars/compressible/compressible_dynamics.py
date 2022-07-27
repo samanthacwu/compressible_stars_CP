@@ -38,6 +38,7 @@ if __name__ == '__main__':
     
     ntheta = config.dynamics['ntheta']
     nphi = 2*ntheta
+#    nphi = 1#2*ntheta
     L_dealias = config.numerics['L_dealias']
     N_dealias = config.numerics['N_dealias']
     ncc_cutoff = config.numerics['ncc_cutoff']
@@ -143,26 +144,12 @@ if __name__ == '__main__':
     radius = r_outer
     coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
-    vec_fields = ['u',]
-    scalar_fields = ['ln_rho1', 'T1', 'H', 'rho0', 'pomega_tilde']
-    vec_taus = ['tau_u']
-    scalar_taus = ['tau_T']
-    vec_nccs = ['grad_ln_rho0', 'g', 'grad_T0', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho0', 'T0', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
+    variables = make_fields(bases, coords, dist, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
+    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, sponge=sponge, do_rotation=do_rotation)
 
-    variables = make_fields(bases, coords, dist, 
-                            vec_fields=vec_fields, scalar_fields=scalar_fields, 
-                            vec_taus=vec_taus, scalar_taus=scalar_taus, 
-                            vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                            sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
-
-
-    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe,
-                                            vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                                            sponge=sponge, do_rotation=do_rotation)
-
-    for i, bn in enumerate(bases.keys()):
-        variables['sponge_{}'.format(bn)]['g'] *= tau_factor
+    if sponge:
+        for i, bn in enumerate(bases.keys()):
+            variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     t_kep, t_heat, t_rot = timescales
     logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
 
@@ -192,10 +179,10 @@ if __name__ == '__main__':
     else:
         # Initial conditions
         for bk in bases_keys:
-            variables['T1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
-            variables['T1_{}'.format(bk)].low_pass_filter(scales=0.25)
-            variables['T1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
-            variables['T1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
+            variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
+            variables['s1_{}'.format(bk)].low_pass_filter(scales=0.25)
+            variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
+            variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
