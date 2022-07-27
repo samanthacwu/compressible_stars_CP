@@ -241,6 +241,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['TotE_{}'.format(bn)] = KE + PE + IE
         namespace['FlucE_{}'.format(bn)] = KE + PE1 + IE1
         namespace['Re_{}'.format(bn)] = np.sqrt(u_squared) / nu_diff
+        namespace['Ma_{}'.format(bn)] = np.sqrt(u_squared) / np.sqrt(pom_full) 
         namespace['L_{}'.format(bn)] = d3.cross(rvec, momentum)
 
         namespace['F_KE_{}'.format(bn)] = F_KE = u * KE
