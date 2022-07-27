@@ -210,8 +210,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['nonlinear_HSE_{}'.format(bn)] = nonlinear_HSE = gamma*(pom1 + pom_fluc)*(grad_ln_rho1 + grad_s1/Cp) + g*pom_fluc_over_pom0
 
         #Thermal diffusion
-        namespace['F_cond_{}'.format(bn)] = F_cond = -1*(gamma/(gamma-1))*chi_rad*rho_full*(grad_pom1 + grad_pom_fluc)
-        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (gamma/(gamma-1)) * (chi_rad * d3.div(grad_pom1*inv_pom0) + (grad_pom1*inv_pom0)@(chi_rad * grad_ln_rho0 + chi_rad * grad_ln_pom0 + grad_chi_rad) )
+        namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom1 + grad_pom_fluc)/R_gas)
+        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * (chi_rad * d3.div(grad_pom1*inv_pom0) + (grad_pom1*inv_pom0)@(chi_rad * grad_ln_rho0 + chi_rad * grad_ln_pom0 + grad_chi_rad) )
         namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/(rho_full*pom_full)) * d3.div(-F_cond) - div_rad_flux_L
 
         # Rotation and damping terms
@@ -336,10 +336,6 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
-
-    for k in ['pom0']:
-        print(namespace['{}_B'.format(k)]['g'], namespace['{}_S1'.format(k)]['g'])
-
 
     # Grid-lock some operators / define grad's
     for field in ['Q']:
