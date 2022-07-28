@@ -32,8 +32,8 @@ def zero_to_one(*args, **kwargs):
 
 
 
-def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_outer=1, dtype=np.float64, \
-              R=1, gamma=5/3, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, ln_rho_func=None, s_motions=1):
+def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Lconv_func, r_stitch=[], r_outer=1, dtype=np.float64, \
+              R=1, gamma=5/3, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, s_motions=1):
 
     Cp = R*gamma/(gamma-1)
     Cv = Cp/gamma
@@ -52,14 +52,17 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
         namespace['g_phi_{}'.format(k)] = Q = dist.Field(name='g_phi', bases=basis)
         namespace['Q_{}'.format(k)] = Q = dist.Field(name='Q', bases=basis)
         namespace['s_{}'.format(k)] = s = dist.Field(name='s', bases=basis)
+        namespace['g_{}'.format(k)] = g = dist.VectorField(basis.coordsystem, name='g', bases=basis)
         namespace['ln_rho_{}'.format(k)] = ln_rho = dist.Field(name='ln_rho', bases=basis)
+        namespace['grad_ln_rho_{}'.format(k)] = grad_ln_rho = dist.VectorField(coords, name='grad_ln_rho', bases=basis)
         namespace['tau_s_{}'.format(k)] = tau_s = dist.Field(name='tau_s', bases=S2_basis)
         namespace['tau_rho_{}'.format(k)] = tau_rho = dist.Field(name='tau_rho', bases=S2_basis)
         namespace['tau_g_phi_{}'.format(k)] = tau_g_phi = dist.Field(name='tau_g_phi', bases=S2_basis)
 
         phi, theta, r = dist.local_grids(basis)
         phi_de, theta_de, r_de = dist.local_grids(basis, scales=basis.dealias)
-        phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,0.5))
+        low_scales = 8/basis.radial_basis.radial_size
+        phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,low_scales))
         if k == 'B':
             namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis, -1)
         else:
@@ -68,31 +71,59 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
         namespace['ones_{}'.format(k)] = ones = dist.Field(bases=basis, name='ones')
         ones['g'] = 1
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
-        N2['g'] = N2_func(r)
+
+        if k == 'B':
+            N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius-0.05, width=0.025)
+#            grad_S = dist.VectorField(basis.coordsystem, bases=basis)
+#            grad_S['g'][2] = -N2['g']/(g_func(r)/Cp)
+#            plt.plot(np.abs(grad_S['c'][1,0,:].ravel()))
+#            plt.yscale('log')
+#            plt.show()
+        else:
+            N2['g'] = N2_func(r)
 
         namespace['r_vec_{}'.format(k)] = r_vec = dist.VectorField(coords, bases=basis.radial_basis)
         r_vec['g'][2] = r
+        namespace['r_squared_{}'.format(k)] = r_squared = dist.Field(bases=basis.radial_basis)
+        r_squared['g'] = r**2
 
-        namespace['g_{}'.format(k)] = g   = dist.VectorField(coords, name='g', bases=basis.radial_basis)
-        g['g'][2] = g_func(r)
+#        namespace['ln_rho_{}'.format(k)] = ln_rho = dist.Field(name='g', bases=basis.radial_basis)
+#        ln_rho.change_scales((1,1,low_scales))
+#        ln_rho['g'] = ln_rho_func(r_low)
+#        ln_rho.change_scales((1,1,1))
+#
+#        grad_ln_rho.change_scales(basis.dealias)
+        grad_ln_rho['g'] = grad_ln_rho_func(r)
+#        grad_ln_rho['g'] = d3.grad(ln_rho*ones).evaluate()['g']
+
+#        namespace['g_{}'.format(k)] = g   = dist.VectorField(coords, name='g', bases=basis.radial_basis)
+#        g['g'][2] = g_func(r)
 
 
         namespace['Fconv_{}'.format(k)] = Fconv   = dist.VectorField(coords, name='Fconv', bases=basis)
         Fconv['g'][2] = Lconv_func(r)/(4*np.pi*r**2)
 
-        ln_rho['g'] = np.log(Cp)
+#        ln_rho['g'] = np.log(Cp)
+#        g['g'][2] = -Cp*r
+        s['g'] = r**2
 
-        namespace['ln_pomega_{}'.format(k)] = ln_pomega = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho)
+        namespace['ln_pomega_{}'.format(k)] = ln_pomega = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho*ones)
         namespace['pomega_{}'.format(k)] = pomega = np.exp(ln_pomega)
-        namespace['HSE_{}'.format(k)] = HSE = gamma*pomega*(d3.grad(ln_rho) + d3.grad(s)/Cp) - g*ones
+        namespace['HSE_{}'.format(k)] = HSE = gamma*pomega*(d3.grad(ones*ln_rho) + d3.grad(s)/Cp) - g*ones
         namespace['N2_op_{}'.format(k)] = N2_op = -g@d3.grad(s)/Cp
-        namespace['rho_{}'.format(k)] = rho = np.exp(ln_rho)
+        namespace['rho_{}'.format(k)] = rho = np.exp(ln_rho*ones)
         namespace['T_{}'.format(k)] = T = pomega/R
         namespace['ln_T_{}'.format(k)] = ln_T = ln_pomega - np.log(R)
         namespace['grad_pomega_{}'.format(k)] = d3.grad(pomega)
         namespace['grad_ln_pomega_{}'.format(k)] = d3.grad(ln_pomega)
-        namespace['grad_ln_rho_{}'.format(k)] = d3.grad(ln_rho)
-        namespace['grad_s_{}'.format(k)] = d3.grad(s)
+#        namespace['grad_ln_rho_{}'.format(k)] = grad_ln_rho = d3.grad(ln_rho*ones)
+        namespace['grad_s_{}'.format(k)] = grad_s = d3.grad(s)
+        namespace['r_vec_g_{}'.format(k)] = r_vec@g
+        namespace['g_op_{}'.format(k)] = gamma * pomega * (grad_s/Cp + grad_ln_rho)
+
+#        plt.plot(r.ravel(), namespace['ln_rho_{}'.format(k)]['g'].ravel())
+#        plt.plot(r_de.ravel(), namespace['r_vec_g_{}'.format(k)].evaluate()['g'].ravel())
+#        plt.show()
         
 
     namespace['pi'] = pi = np.pi
@@ -100,29 +131,38 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
 
     variables = []
     for k, basis in bases.items():
-        variables += [namespace['s_{}'.format(k)], namespace['ln_rho_{}'.format(k)], namespace['Q_{}'.format(k)], namespace['g_phi_{}'.format(k)]]
+        variables += [namespace['s_{}'.format(k)], namespace['g_{}'.format(k)], namespace['Q_{}'.format(k)], namespace['g_phi_{}'.format(k)], namespace['ln_rho_{}'.format(k)]]
     for k, basis in bases.items():
+#        variables += [namespace['tau_s_{}'.format(k)], namespace['tau_g_phi_{}'.format(k)]]
         variables += [namespace['tau_s_{}'.format(k)], namespace['tau_rho_{}'.format(k)], namespace['tau_g_phi_{}'.format(k)]]
 
 
     problem = d3.NLBVP(variables, namespace=locals())
 
     for k, basis in bases.items():
-        problem.add_equation("grad(s_{0})/Cp + grad(ln_rho_{0}) + r_vec_{0}*lift_{0}(tau_rho_{0}) = g_{0}/(gamma*pomega_{0})".format(k))
-        problem.add_equation("N2_op_{0} + lift_{0}(tau_s_{0}) = N2_{0}".format(k))
+        problem.add_equation("grad_ln_rho_{0}@(grad(s_{0})/Cp) + lift_{0}(tau_s_{0}) = -N2_{0}/(gamma*pomega_{0}) - grad(s_{0})@grad(s_{0}) / Cp**2".format(k))
+#        problem.add_equation("r_vec_{0}@grad(s_{0})/Cp + lift_{0}(tau_s_{0}) = N2_op_{0}/(gamma*pomega_{0}) - grad(s_{0})@grad(s_{0}) / Cp**2".format(k))
+#        problem.add_equation("g_{0}/gamma +  r_vec_{0}*lift_{0}(tau_rho_{0}) = pomega_{0} * ( grad(s_{0})/Cp  + grad_ln_rho_{0}) ".format(k))
+#        problem.add_equation("r_vec_{0}@(grad(s_{0})/Cp - g_{0}) + lift_{0}(tau_s_{0}) = -r_squared_{0} * N2_{0} / (r_vec_{0}@g_{0}) - r_vec_{0}@g_{0} ".format(k))
+#        problem.add_equation("r_vec_{0}@grad(s_{0})/Cp + lift_{0}(tau_s_{0}) = -r_squared_{0} * N2_{0} / (r_vec_{0}@g_{0})".format(k))
+#        problem.add_equation("N2_op_{0} + lift_{0}(tau_s_{0}) = N2_{0}".format(k))
+        problem.add_equation("grad(ln_rho_{0}) - grad_ln_rho_{0} + r_vec_{0}*lift_{0}(tau_rho_{0}) = 0".format(k))
+        problem.add_equation("g_{0} = g_op_{0} ".format(k))
         problem.add_equation("Q_{0} = div(Fconv_{0})".format(k))
-        problem.add_equation("grad(g_phi_{0}) + r_vec_{0}*lift_{0}(tau_g_phi_{0}) = -ones_{0}*g_{0}".format(k))
+        problem.add_equation("grad(g_phi_{0}) + g_{0} + r_vec_{0}*lift_{0}(tau_g_phi_{0}) = 0".format(k))
     iter = 0
     for k, basis in bases.items():
         if k != 'B':
             k_old = list(bases.keys())[iter-1]
             r_s = r_stitch[iter-1]
             problem.add_equation("s_{0}(r={2}) - s_{1}(r={2}) = 0".format(k, k_old, r_s))
+#            problem.add_equation("radial(g_{0}(r={2}) - g_{1}(r={2})) = 0".format(k, k_old, r_s))
             problem.add_equation("ln_rho_{0}(r={2}) - ln_rho_{1}(r={2}) = 0".format(k, k_old, r_s))
             problem.add_equation("g_phi_{0}(r={2}) - g_phi_{1}(r={2}) = 0".format(k, k_old, r_s))
         iter += 1
         if iter == len(bases.items()):
             problem.add_equation("g_phi_{0}(r=r_outer) = 0".format(k))
+#            problem.add_equation("radial(g_{0}(r=r_outer)) = -1".format(k))
     problem.add_equation("ln_pomega_B(r=nondim_radius) = log(R)")
     problem.add_equation("ln_rho_B(r=nondim_radius) = 0")
 
@@ -135,7 +175,7 @@ def HSE_solve(coords, dist, bases, g_func, N2_func, Lconv_func, r_stitch=[], r_o
         solver.newton_iteration(damping=1)
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
         logger.info(f'Perturbation norm: {pert_norm:.3e}')
-#        plt.plot(r_de.ravel(), np.abs(namespace['N2_op_B'].evaluate()['g'].ravel()))
+#        plt.plot(r_de.ravel(), np.abs(namespace['pomega_B'].evaluate()['g'].ravel()))
 #        plt.yscale('log')
 #        plt.show()
 
@@ -336,11 +376,13 @@ def build_nccs(plot_nccs=False):
     N2_structure   = p.brunt_N2_structure_term[::-1] / u.s**2
     N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
     eps_nuc        = p.eps_nuc[::-1] * u.erg / u.g / u.s
+    mu             = p.mu[::-1] * u.g / u.mol 
     lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
 
     R_star = (p.photosphere_r * u.R_sun).cgs
     
     #Put all MESA fields into cgs and calculate secondary MESA fields
+    R_gas           = constants.R.cgs / mu[0]
     g               = constants.G.cgs*mass/r**2
     dlogPdr         = -rho*g/P
     gamma1          = dlogPdr/(-g/csound**2)
@@ -406,11 +448,10 @@ def build_nccs(plot_nccs=False):
     H_nd    = (m_nd / L_nd) * tau_nd**-3
     s_motions    = L_nd**2 / tau_heat**2 / T[0]
     lum_nd  = L_nd**2 * m_nd / (tau_nd**2) / tau_nd
-    nondim_cp = (cp[r==L_nd][0]/s_nd).value
-    nondim_gamma1 = (gamma1[r==L_nd][0]).value
-    nondim_R_gas = nondim_cp * (nondim_gamma1 - 1) / nondim_gamma1
+    nondim_R_gas = (R_gas / s_nd).cgs.value
+    nondim_gamma1 = (gamma1[0]).value
+    nondim_cp = nondim_R_gas * nondim_gamma1 / (nondim_gamma1 - 1)
     nondim_G = (constants.G * (rho_nd * tau_nd**2)).value
-    g               = constants.G.cgs*mass/r**2
     u_heat_nd = (L_nd/tau_heat) / u_nd
     Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
@@ -444,9 +485,9 @@ def build_nccs(plot_nccs=False):
     ### entropy gradient
     ### More core convection zone logic here
     #Build a nice function for our basis in the ball
-    grad_s_transition_point = 1.05
+    grad_s_width = 0.05
+    grad_s_transition_point = r_bound_nd[1] - grad_s_width
     logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
-    grad_s_width = 0.025
     logger.info('using default grad s width = {}'.format(grad_s_width))
     grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
     grad_s_width *= (L_CZ/L_nd).value
@@ -567,16 +608,17 @@ def build_nccs(plot_nccs=False):
 #    plt.plot(r/L_nd, grad_s_smooth)
 #
     smooth_N2 = np.copy(N2_mesa)
-    flat_value = np.interp(grad_s_transition_point, r/L_nd, N2_mesa)
-#    smooth_N2[r/L_nd < grad_s_transition_point] = (r[r/L_nd < grad_s_transition_point]/L_nd / grad_s_transition_point)**2 * flat_value
-    smooth_N2 = (r/L_nd)**2 * flat_value
+    stitch_value = np.interp(bases['B'].radius, r/L_nd, N2_mesa)
+    smooth_N2[r/L_nd < bases['B'].radius] = (r[r/L_nd < bases['B'].radius]/L_nd / bases['B'].radius)**2 * stitch_value
+#    smooth_N2 = (r/L_nd)**2 * flat_value
     smooth_N2 *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
-    g_func = interpolations['g']
-    atmo = HSE_solve(c, d, bases,  g_func, N2_func, L_conv_func,
+    ln_rho_func = interpolations['ln_rho0']
+    grad_ln_rho_func = interpolations['grad_ln_rho0']
+    atmo = HSE_solve(c, d, bases,  grad_ln_rho_func, N2_func, L_conv_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, dtype=np.float64, \
               R=nondim_R_gas, gamma=nondim_gamma1, comm=MPI.COMM_SELF, \
-              nondim_radius=1, g_nondim=interpolations['g'](1), ln_rho_func=interpolations['ln_rho0'], s_motions=s_motions/s_nd)
+              nondim_radius=1, g_nondim=interpolations['g'](1), s_motions=s_motions/s_nd)
 
     interpolations['ln_rho0'] = atmo['ln_rho']
     interpolations['Q'] = atmo['Q']
@@ -716,6 +758,11 @@ def build_nccs(plot_nccs=False):
     plt.savefig('star/N2_goodness.png')
 #    plt.show()
 
+    plt.figure()
+    plt.plot(np.abs(ncc_dict['grad_s0']['field_B']['c'][1,0,0,:]))
+    plt.yscale('log')
+#    plt.show()
+
         
 
     C = d3.integ(ncc_dict['Q']['field_B']).evaluate()['g']
@@ -784,8 +831,8 @@ def build_nccs(plot_nccs=False):
         f['cp_mesa'].attrs['units'] = str(cp.unit)
 
         #TODO: put sim lum back
-        f['lum_r_vals'] = r_vals
-        f['sim_lum'] = L_conv_func(r_vals)
+        f['lum_r_vals'] = lum_r_vals = np.linspace(r_bound_nd[0], r_bound_nd[-1], 1000)
+        f['sim_lum'] = L_conv_func(lum_r_vals)
         f['r_stitch']   = stitch_radii
         f['Re_shift'] = Re_shift
         f['r_outer']   = r_bound_nd[-1] 
