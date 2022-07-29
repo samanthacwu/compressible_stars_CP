@@ -79,7 +79,8 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         if k == 'B':
             N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius-0.04, width=0.03)
         else:
-            N2['g'] = N2_func(r)
+            N2.change_scales(low_scales)
+            N2['g'] = N2_func(r_low)
 
         namespace['r_vec_{}'.format(k)] = r_vec = dist.VectorField(coords, bases=basis.radial_basis)
         r_vec['g'][2] = r
@@ -112,7 +113,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
     locals().update(namespace)
     ncc_cutoff=1e-9
     tolerance=1e-9
-    max_ncc_terms=16
+    HSE_tolerance = 1e-7
 
     #Solve for ln_rho.
     variables = []
@@ -132,7 +133,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
             problem.add_equation("ln_rho_{0}(r={2}) - ln_rho_{1}(r={2}) = 0".format(k, k_old, r_s))
         iter += 1
     problem.add_equation("ln_rho_B(r=nondim_radius) = 0")
-    solver = problem.build_solver(ncc_cutoff=ncc_cutoff, max_ncc_terms=max_ncc_terms)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
     while pert_norm > tolerance:
         solver.newton_iteration(damping=1)
@@ -174,10 +175,16 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
 
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
-    while pert_norm > tolerance:
+    while pert_norm > tolerance or HSE_err > HSE_tolerance:
+        HSE_err = 0
         solver.newton_iteration(damping=1)
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
         logger.info(f'Perturbation norm: {pert_norm:.3e}')
+        for k, basis in bases.items():
+            this_HSE = np.max(np.abs(namespace['HSE_{}'.format(k)].evaluate()['g']))
+            logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
+            if this_HSE > HSE_err:
+                HSE_err = this_HSE
 #        plt.plot(namespace['r_de_B'].ravel(),  namespace['g_op_B'].evaluate()['g'][2].ravel())
 #        plt.plot(namespace['r_de_S1'].ravel(), namespace['g_op_S1'].evaluate()['g'][2].ravel())
 #        plt.show()
