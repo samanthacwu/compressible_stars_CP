@@ -8,10 +8,10 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
-star['r_bounds'] = (0, '1.05L', '0.50R')
+star['r_bounds'] = (0, '1.05L', '0.85R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (64,64)
+star['nr'] = (64,64,32)
 
 #options for building the star
 star['smooth_h'] = True
@@ -44,7 +44,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 16
+dynamics['ntheta'] = 64
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 #dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'
