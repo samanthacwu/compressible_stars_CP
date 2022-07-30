@@ -686,17 +686,29 @@ def build_nccs(plot_nccs=False):
 
     plt.figure()
     N2s = []
+    HSEs = []
     grad_s0s = []
+    grad_ln_rho0s = []
+    grad_ln_pom0s = []
     rs = []
     for bn in bases_keys:
         rs.append(dedalus_r[bn].ravel())
         grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
+        grad_ln_pom0 = ncc_dict['grad_ln_pom0']['field_{}'.format(bn)]
         gvec = ncc_dict['g']['field_{}'.format(bn)]
         grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        HSE = (nondim_gamma1*pom0*(grad_ln_rho0 + grad_s0 / nondim_cp) - gvec).evaluate()
         N2_val = -gvec['g'][2,:] * grad_s0['g'][2,:] / nondim_cp 
         N2s.append(N2_val)
+        HSEs.append(HSE['g'][2,:])
+        grad_ln_rho0s.append(grad_ln_rho0['g'][2,:])
+        grad_ln_pom0s.append(grad_ln_pom0['g'][2,:])
     r_dedalus = np.concatenate(rs, axis=-1)
     N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
+    HSE_dedalus = np.concatenate(HSEs, axis=-1).ravel()
+    grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
+    grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
     plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa')
     plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere')
     plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
@@ -708,9 +720,25 @@ def build_nccs(plot_nccs=False):
 #    plt.show()
 
     plt.figure()
-    plt.plot(np.abs(ncc_dict['grad_s0']['field_B']['c'][1,0,0,:]))
+    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    plt.plot(r_dedalus, np.abs(HSE_dedalus))
     plt.yscale('log')
-#    plt.show()
+    plt.xlabel('r')
+    plt.ylabel("HSE")
+    plt.savefig('star/HSE_goodness.png')
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2,1,1)
+    plt.plot(r_dedalus, grad_ln_rho0_dedalus)
+    plt.xlabel('r')
+    plt.ylabel("grad_ln_rho0")
+    ax2 = fig.add_subplot(2,1,2)
+    plt.plot(r_dedalus, grad_ln_pom0_dedalus)
+    plt.xlabel('r')
+    plt.ylabel("grad_ln_pom0")
+    plt.savefig('star/ln_thermo_goodness.png')
+    plt.show()
+
 
         
 
