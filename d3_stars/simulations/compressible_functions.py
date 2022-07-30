@@ -195,6 +195,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0) - (1 + pom1_over_pom0)
         namespace['pom_fluc_{}'.format(bn)] = pom_fluc = pom0*pom_fluc_over_pom0
         namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = d3.grad(pom_fluc)
+        namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = ones*grad_pom0 + grad_pom1 + grad_pom_fluc
+        namespace['grad_pom_1_fluc_{}'.format(bn)] = grad_pom_1_fluc = grad_pom1 + grad_pom_fluc
+        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = ones*grad_ln_rho0 + grad_ln_rho1
         namespace['pom_full_{}'.format(bn)] = pom_full = ones*pom0 + pom1 + pom_fluc
         namespace['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
@@ -211,8 +214,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         #Thermal diffusion
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom1 + grad_pom_fluc)/R_gas)
-        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * (chi_rad * d3.div(grad_pom1*inv_pom0) + (grad_pom1*inv_pom0)@(chi_rad * grad_ln_rho0 + chi_rad * grad_ln_pom0 + grad_chi_rad) )
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/(rho_full*pom_full)) * d3.div(-F_cond) - div_rad_flux_L
+        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/(pom_full)) * (d3.div(chi_rad*Cp*grad_pom_1_fluc/R_gas) + (chi_rad*Cp*grad_pom_1_fluc/R_gas)@(grad_ln_rho_full) ) - div_rad_flux_L
 
         # Rotation and damping terms
         if do_rotation:
