@@ -55,10 +55,10 @@ dynamics['CFL_max_r'] = 1
 
 #Stop conditions
 dynamics['wall_hours'] = 23.5
-dynamics['buoy_end_time'] = 100
+dynamics['buoy_end_time'] = 1e3
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor
-dynamics['sponge'] = True
+dynamics['sponge'] = False
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
