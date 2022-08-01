@@ -382,7 +382,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_HSE_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_HSE_{0} + visc_div_stress_R_{0} ".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas)*((1/(rho_full_{0}*pom_full_{0})))*(Q_{0} + VH_{0})".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas)*((1/(rho_full_{0}*pom_full_{0})))*(Q_{0}) + (R_gas/pom_full_{0})*VH_{0}".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
