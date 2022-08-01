@@ -84,7 +84,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             key = '{}_{}'.format(fn, bn)
             logger.debug('creating vector NCC {}'.format(key))
             namespace[key] = dist.VectorField(coords, name=key, bases=basis.radial_basis)
-        namespace['rvec_{}'.format(bn)]['g'] = r1
+        namespace['rvec_{}'.format(bn)]['g'][2] = r1
         for fn in scalar_nccs:
             key = '{}_{}'.format(fn, bn)
             logger.debug('creating scalar NCC {}'.format(key))
@@ -230,13 +230,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['sponge_term_{}'.format(bn)] = 0
 
         #output tasks
-        namespace['r_vals_{}'.format(bn)] = r_vals = ones*rvec
 
         er = namespace['er']
+        namespace['r_vals_{}'.format(bn)] = r_vals = (er@(ones*rvec)).evaluate()
         namespace['ur_{}'.format(bn)] = d3.dot(er, u)
         namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
         namespace['u_squared_{}'.format(bn)] = u_squared = d3.dot(u,u)
-        namespace['KE_{}'.format(bn)] = KE = 0.5 * rho_full * namespace['u_squared_{}'.format(bn)]
+        namespace['KE_{}'.format(bn)] = KE = 0.5 * rho_full * u_squared
         namespace['PE_{}'.format(bn)] = PE = rho_full * g_phi
         namespace['IE_{}'.format(bn)] = IE = rho_full * (1/(gamma-1)) * pom_full
         namespace['PE0_{}'.format(bn)] = PE0 = rho0 * g_phi

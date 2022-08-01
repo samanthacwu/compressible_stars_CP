@@ -95,15 +95,16 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         for this_task in tasks:
             handler = this_dict['handler']
             if this_task['type'] == 'full_integ':
-                task = None
-                for bn, basis in bases.items():
-                    fieldstr = output_tasks[fieldname].format(bn)
-                    this_task = eval('integ({})'.format(fieldstr), dict(solver.problem.namespace))
-                    if task is None:
-                        task = this_task
-                    else:
-                        task += this_task
-                handler.add_task(task, name='integ({})'.format(fieldname))
+                for fieldname in this_task['fields']:
+                    task = None
+                    for bn, basis in bases.items():
+                        fieldstr = output_tasks[fieldname].format(bn)
+                        tmp_task = eval('integ({})'.format(fieldstr), dict(solver.problem.namespace))
+                        if task is None:
+                            task = tmp_task
+                        else:
+                            task += tmp_task
+                    handler.add_task(task, name='integ({})'.format(fieldname))
                 continue
 
             for bn, basis in bases.items():
