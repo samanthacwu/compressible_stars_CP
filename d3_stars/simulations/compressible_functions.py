@@ -197,6 +197,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = d3.grad(pom_fluc)
         namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = ones*grad_pom0 + grad_pom1 + grad_pom_fluc
         namespace['grad_pom_1_fluc_{}'.format(bn)] = grad_pom_1_fluc = grad_pom1 + grad_pom_fluc
+        namespace['pom_1_fluc_{}'.format(bn)] = pom_1_fluc = pom1 + pom_fluc
         namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = ones*grad_ln_rho0 + grad_ln_rho1
         namespace['pom_full_{}'.format(bn)] = pom_full = ones*pom0 + pom1 + pom_fluc
         namespace['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
