@@ -37,12 +37,15 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     # Cadence
     az_avg = lambda A: d3.Average(A, coords.coords[0])
     s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
+    integ  = lambda A: d3.Integrate(A, coords)
 
     
     solver.problem.namespace['az_avg'] = az_avg
     solver.problem.namespace['s2_avg'] = s2_avg
+    solver.problem.namespace['integ'] = integ
     namespace['az_avg'] = solver.problem.namespace['az_avg']
     namespace['s2_avg'] = solver.problem.namespace['s2_avg']
+    namespace['integ'] = solver.problem.namespace['integ']
 
     star_dir, out_file = name_star()
     with h5py.File(out_file, 'r') as f:
@@ -56,11 +59,6 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         return d3.Integrate(A/volume, coords)
 
     for bn, basis in bases.items():
-#        solver.problem.namespace['r_vec_{}'.format(bn)] = r_vec = dist.VectorField(coords, name='r_vec_{}'.format(bn), bases=basis)
-#        solver.problem.namespace['r_vals_{}'.format(bn)] = r_vals = dist.Field(name='r_vals_{}'.format(bn), bases=basis)
-#        r_vals['g'] = namespace['r1_{}'.format(bn)]
-#        r_vec['g'][2] = namespace['r1_{}'.format(bn)]
-
         if type(basis) == d3.BallBasis:
             vol = namespace['volume_{}'.format(bn)]  = (4/3)*np.pi*basis.radius**3
         else:
@@ -96,6 +94,18 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         tasks = this_dict['tasks']
         for this_task in tasks:
             handler = this_dict['handler']
+            if this_task['type'] == 'full_integ':
+                task = None
+                for bn, basis in bases.items():
+                    fieldstr = output_tasks[fieldname].format(bn)
+                    this_task = eval('integ({})'.format(fieldstr), dict(solver.problem.namespace))
+                    if task is None:
+                        task = this_task
+                    else:
+                        task += this_task
+                handler.add_task(task, name='integ({})'.format(fieldname))
+                continue
+
             for bn, basis in bases.items():
                 if this_task['type'] == 'equator':
                     for fieldname in this_task['fields']:
