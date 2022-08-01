@@ -193,9 +193,13 @@ if __name__ == '__main__':
         re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
         ma_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Ma'].format(bn) + ')', dict(solver.problem.namespace))
         integ_KE = eval('integ(' + output_tasks['KE'].format(bn) + ')', dict(solver.problem.namespace))
+#        integ_PE1 = eval('integ(' + output_tasks['PE1'].format(bn) + ')', dict(solver.problem.namespace))
+#        integ_IE1 = eval('integ(' + output_tasks['IE1'].format(bn) + ')', dict(solver.problem.namespace))
         logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(ma_avg, name='Ma_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(integ_KE, name='KE_{}'.format(bn), layout='g')
+#        logger_handler.add_task(integ_PE1, name='PE1_{}'.format(bn), layout='g')
+#        logger_handler.add_task(integ_IE1, name='IE1_{}'.format(bn), layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -267,6 +271,15 @@ if __name__ == '__main__':
 #                    KE0 = KE_shell['g'].min()
                     Re0 = Re_avg['g'].min()
                     Ma0 = Ma_avg['g'].min()
+#                    logger.info("Ball energies: {}, {}, {}".format(logger_handler.fields['KE_B']['g'].min(), \
+#                                                                   logger_handler.fields['IE1_B']['g'].min(), \
+#                                                                   logger_handler.fields['PE1_B']['g'].min() ))
+#                    logger.info("Shell1 energies: {}, {}, {}".format(logger_handler.fields['KE_S1']['g'].min(), \
+#                                                                   logger_handler.fields['IE1_S1']['g'].min(), \
+#                                                                   logger_handler.fields['PE1_S1']['g'].min() ))
+#                    logger.info("Shell2 energies: {}, {}, {}".format(logger_handler.fields['KE_S2']['g'].min(), \
+#                                                                   logger_handler.fields['IE1_S2']['g'].min(), \
+#                                                                   logger_handler.fields['PE1_S2']['g'].min() ))
                 else:
 #                    KE0 = None
                     Re0 = None

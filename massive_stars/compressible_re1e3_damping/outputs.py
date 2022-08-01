@@ -39,10 +39,13 @@ handlers['slices']['tasks'].append(shell_tasks)
 ## Scalars
 handlers['scalars']['max_writes'] = 400
 
-
+energy_tasks = OrderedDict()
+energy_tasks['type'] = 'full_integ'
+energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared']
+handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared']
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE']
 handlers['scalars']['tasks'].append(scalar_tasks)
 
 ## Profiles
