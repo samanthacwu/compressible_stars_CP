@@ -41,18 +41,30 @@ figs = []
 
 # Nu vs time
 fig1 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='energy')
-fig1.add_field(0, 'vol_avg(KE_B)')
-fig1.add_field(0, 'vol_avg(IE_B)')
-fig1.add_field(0, 'vol_avg(PE_B)')
-fig1.add_field(1, 'vol_avg(TotE_B)')
+fig1.add_field(0, 'integ(KE)')
+fig1.add_field(0, 'integ(IE)')
+fig1.add_field(0, 'integ(PE)')
+fig1.add_field(1, 'integ(TotE)')
 figs.append(fig1)
 
 fig2 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='energy_fluc')
-fig2.add_field(0, 'vol_avg(KE_B)')
-fig2.add_field(0, 'vol_avg(IE1_B)')
-fig2.add_field(0, 'vol_avg(PE1_B)')
-fig2.add_field(1, 'vol_avg(FlucE_B)')
+fig2.add_field(0, 'integ(KE)')
+fig2.add_field(0, 'integ(IE1)')
+fig2.add_field(0, 'integ(PE1)')
+fig2.add_field(1, 'integ(FlucE)')
 figs.append(fig2)
+
+fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='diff_production')
+fig3.add_field(0, 'integ(visc_production)')
+fig3.add_field(1, 'integ(rad_flux_production)')
+fig3.add_field(2, 'integ(Q_production)')
+figs.append(fig3)
+
+#fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='other_production')
+#fig3.add_field(0, 'integ(sponge_production)')
+#figs.append(fig3)
+
+
 
 
 

@@ -10,7 +10,7 @@ handler_defaults['even_outputs'] = False
 handler_defaults['tasks'] = list()
 
 handlers = OrderedDict()
-for hname in ['slices', 'shells', 'scalars', 'profiles', 'checkpoint']:
+for hname in ['slices', 'shells', 'scalars', 'profiles', 'checkpoint', 'wave_shells']:
     handlers[hname] = OrderedDict()
     for k, val in handler_defaults.items():
         handlers[hname][k] = deepcopy(val)
@@ -39,10 +39,13 @@ handlers['slices']['tasks'].append(shell_tasks)
 ## Scalars
 handlers['scalars']['max_writes'] = 400
 
-
+energy_tasks = OrderedDict()
+energy_tasks['type'] = 'full_integ'
+energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'visc_production', 'rad_flux_production', 'Q_production',]
+handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared']
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE']
 handlers['scalars']['tasks'].append(scalar_tasks)
 
 ## Profiles
@@ -58,3 +61,16 @@ handlers['profiles']['tasks'].append(prof_tasks)
 handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10
    
+## Hi-cadence shells
+handlers['wave_shells']['max_writes'] = 50
+handlers['wave_shells']['time_unit'] = 'kepler'
+handlers['wave_shells']['dt_factor'] = 1
+handlers['wave_shells']['even_outputs'] = True
+
+wave_shell_tasks = OrderedDict()
+wave_shell_tasks['type'] = 'shell'
+wave_shell_tasks['fields'] = ['u', 'pom_1_fluc', 'ln_rho1', 's1']
+wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
+handlers['wave_shells']['tasks'].append(wave_shell_tasks)
+
+
