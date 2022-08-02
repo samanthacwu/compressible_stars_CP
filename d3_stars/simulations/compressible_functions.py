@@ -140,6 +140,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         pom0 = namespace['pom0_{}'.format(bn)]
         grad_s0 = namespace['grad_s0_{}'.format(bn)]
         g_phi = namespace['g_phi_{}'.format(bn)]
+        gravity = namespace['g_{}'.format(bn)]
         nu_diff = namespace['nu_diff_{}'.format(bn)]
         grad_nu_diff = namespace['grad_nu_diff_{}'.format(bn)]
         chi_rad = namespace['chi_rad_{}'.format(bn)]
@@ -182,9 +183,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         #Stress matrices & viscous terms
         namespace['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
         namespace['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*eye)
-        namespace['visc_div_stress_L_{}'.format(bn)] = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0)) + d3.dot(sigma, grad_nu_diff)
-        namespace['visc_div_stress_R_{}'.format(bn)] = nu_diff*(d3.dot(sigma, grad_ln_rho1))
-        namespace['VH_{}'.format(bn)] = 2*(nu_diff)*(d3.trace(d3.dot(E, E)) - (1/3)*div_u*div_u)
+        namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0)) + d3.dot(sigma, grad_nu_diff)
+        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = nu_diff*(d3.dot(sigma, grad_ln_rho1))
+        namespace['VH_{}'.format(bn)] = VH = 2*(nu_diff)*(d3.trace(d3.dot(E, E)) - (1/3)*div_u*div_u)
 
         #Thermodynamics
         namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
@@ -239,9 +240,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['u_squared_{}'.format(bn)] = u_squared = d3.dot(u,u)
         namespace['KE_{}'.format(bn)] = KE = 0.5 * rho_full * u_squared
         namespace['PE_{}'.format(bn)] = PE = rho_full * g_phi
-        namespace['IE_{}'.format(bn)] = IE = rho_full * (1/(gamma-1)) * pom_full
+        namespace['IE_{}'.format(bn)] = IE = (P_full/(gamma-1))
         namespace['PE0_{}'.format(bn)] = PE0 = rho0 * g_phi
-        namespace['IE0_{}'.format(bn)] = IE0 = rho0 * (1/(gamma-1)) * pom0
+        namespace['IE0_{}'.format(bn)] = IE0 = (P0/(gamma-1))
         namespace['PE1_{}'.format(bn)] = PE1 = PE - PE0*ones
         namespace['IE1_{}'.format(bn)] = IE1 = IE - IE0*ones
         namespace['TotE_{}'.format(bn)] = KE + PE + IE
@@ -254,6 +255,24 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['F_PE_{}'.format(bn)] = F_PE = u * PE
         namespace['F_enth_{}'.format(bn)] = F_enth = momentum * (gamma/(gamma-1)) * pom_full
         namespace['F_visc_{}'.format(bn)] = F_visc = -nu_diff*d3.dot(momentum, sigma)
+
+        namespace['momentum_VC_{}'.format(bn)] = momentum_VC = momentum @ (visc_div_stress_L + visc_div_stress_R)
+        namespace['energy_VH_{}'.format(bn)] = energy_VH = rho_full * VH
+        namespace['visc_production_{}'.format(bn)] = momentum_VC + energy_VH
+        namespace['rad_flux_production_{}'.format(bn)] = rad_flux_production = (rho_full*pom_full/R_gas)*(div_rad_flux_L + div_rad_flux_R)
+        namespace['Q_production_{}'.format(bn)] = Q_production = namespace['Q_{}'.format(bn)]
+        namespace['extra_P_term_{}'.format(bn)] = extra_P = -P_full*u@(ones*grad_ln_rho0 + grad_ln_rho1)
+        extra_KE = -1 * momentum @ (d3.grad(P_full)/rho_full) #works for = 0
+        namespace['source_KE_{}'.format(bn)] = - d3.div(u*KE) + momentum_VC + extra_KE
+#        namespace['source_KE_{}'.format(bn)] = momentum @ (-d3.grad(P_full)/rho_full - d3.grad(g_phi*ones)) - d3.div(u*KE) + momentum_VC
+#        namespace['source_KE_{}'.format(bn)] = momentum @ (-linear_HSE - nonlinear_HSE) - d3.div(u*KE) + momentum_VC
+        extra_IE  = -P_full*div_u #works for = 0
+        namespace['source_IE_{}'.format(bn)] = Q_production + rad_flux_production + energy_VH + extra_IE
+        namespace['tot_source_{}'.format(bn)] = namespace['source_KE_{}'.format(bn)] + namespace['source_IE_{}'.format(bn)]
+
+#            equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
+#            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_HSE_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_HSE_{0} + visc_div_stress_R_{0} ".format(bn)
+#            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + dot(u_{0}, grad_s0_{0}) - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas)*((1/(rho_full_{0}*pom_full_{0})))*(Q_{0}) + (R_gas/pom_full_{0})*VH_{0}".format(bn)
     return namespace
 
 def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], vec_nccs=[], scalar_nccs=[], sponge=False, do_rotation=False, scales=None):
@@ -401,7 +420,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = -radial(grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
@@ -425,7 +444,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = -radial(grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
 
 
     for bn, basis in bases.items():

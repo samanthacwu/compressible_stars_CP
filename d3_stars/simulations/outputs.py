@@ -15,7 +15,8 @@ from d3_stars.defaults import config
 output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'Ma', 'ln_rho1', \
-            'pom1', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'pom_1_fluc']
+            'pom1', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'pom_1_fluc',\
+            'visc_production', 'rad_flux_production', 'Q_production', 'extra_P_term', 'source_KE', 'source_IE', 'tot_source']
 for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
 
