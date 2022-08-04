@@ -94,7 +94,8 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         namespace['Fconv_{}'.format(k)] = Fconv   = dist.VectorField(coords, name='Fconv', bases=basis)
         Fconv['g'][2] = Fconv_func(r)
 
-        namespace['ln_pomega_{}'.format(k)] = ln_pomega = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho*ones)
+        namespace['ln_pomega_LHS_{}'.format(k)] = ln_pomega_LHS = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho*ones)
+        namespace['ln_pomega_{}'.format(k)] = ln_pomega = ln_pomega_LHS + np.log(R)
         namespace['pomega_{}'.format(k)] = pomega = np.exp(ln_pomega)
         namespace['HSE_{}'.format(k)] = HSE = gamma*pomega*(d3.grad(ones*ln_rho) + d3.grad(s)/Cp) - g*ones
         namespace['N2_op_{}'.format(k)] = N2_op = -g@d3.grad(s)/Cp
@@ -170,7 +171,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         iter += 1
         if iter == len(bases.items()):
             problem.add_equation("g_phi_{0}(r=r_outer) = 0".format(k))
-    problem.add_equation("ln_pomega_B(r=nondim_radius) = log(R)")
+    problem.add_equation("ln_pomega_LHS_B(r=nondim_radius) = 0")
 
 
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)

@@ -41,7 +41,7 @@ handlers['scalars']['max_writes'] = 400
 
 energy_tasks = OrderedDict()
 energy_tasks['type'] = 'full_integ'
-energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'visc_production', 'rad_flux_production', 'Q_production', 'extra_P_term', 'source_KE', 'source_IE', 'tot_source']
+energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'tot_source', 'EOS_goodness', 'rho_fluc']
 handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
@@ -69,7 +69,7 @@ handlers['wave_shells']['even_outputs'] = True
 
 wave_shell_tasks = OrderedDict()
 wave_shell_tasks['type'] = 'shell'
-wave_shell_tasks['fields'] = ['u', 'pom_1_fluc', 'ln_rho1', 's1']
+wave_shell_tasks['fields'] = ['u', 'pom_fluc', 'ln_rho1', 's1']
 wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
 handlers['wave_shells']['tasks'].append(wave_shell_tasks)
 
