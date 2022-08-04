@@ -119,7 +119,7 @@ if __name__ == '__main__':
         logger.info('using default timestepper SBDF2')
         ts = d3.SBDF2
         timestepper_history = [0, 1,]
-#    hermitian_cadence = 100
+
     safety = config.dynamics['safety']
     if 'CFL_max_r' in config.dynamics.keys():
         CFL_max_r = config.dynamics['CFL_max_r']
