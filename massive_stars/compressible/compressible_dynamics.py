@@ -37,8 +37,7 @@ if __name__ == '__main__':
     out_dir = './'
     
     ntheta = config.dynamics['ntheta']
-#    nphi = 2*ntheta
-    nphi = 1
+    nphi = 2*ntheta
     L_dealias = config.numerics['L_dealias']
     N_dealias = config.numerics['N_dealias']
     ncc_cutoff = config.numerics['ncc_cutoff']
