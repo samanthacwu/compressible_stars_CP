@@ -199,6 +199,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['P_full_{}'.format(bn)] = P_full = np.exp(np.log(R_gas) + gamma*((s0*ones+s1)/Cp + ln_rho0*ones + ln_rho1*ones))
         namespace['s_full_{}'.format(bn)] = s_full = ones*s0 + s1
         namespace['grad_s_full_{}'.format(bn)] = grad_s_full = ones*grad_s0 + grad_s1
+        namespace['enthalpy_{}'.format(bn)] = enthalpy = (Cp/R_gas)*P_full
+        namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - (Cp/R_gas)*P0*ones
 
         #Linear Pomega = R * T
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
@@ -267,10 +269,14 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['Ma_{}'.format(bn)] = np.sqrt(u_squared) / np.sqrt(pom_full) 
         namespace['L_{}'.format(bn)] = d3.cross(rvec, momentum)
 
+        #Fluxes
         namespace['F_KE_{}'.format(bn)] = F_KE = u * KE
         namespace['F_PE_{}'.format(bn)] = F_PE = u * PE
         namespace['F_enth_{}'.format(bn)] = F_enth = momentum * (gamma/(gamma-1)) * pom_full
         namespace['F_visc_{}'.format(bn)] = F_visc = -nu_diff*d3.dot(momentum, sigma)
+
+        #Waves
+        namespace['N2_{}'.format(bn)] = N2 = -g@grad_s_full/Cp
 
         #Source terms
         namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L + visc_div_stress_R)

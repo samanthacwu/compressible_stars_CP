@@ -15,7 +15,7 @@ from d3_stars.defaults import config
 output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'Ma', 'ln_rho1', \
-            'pom1', 'pom2', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'rho_full', 'rho_fluc',\
+            'pom1', 'pom2', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'rho_full', 'rho_fluc', 'enthalpy_fluc', 'N2', \
             'momentum_visc_cooling', 'energy_visc_heating', 'rad_flux_production', 'Q_production', 'momentum_gradP', 'energy_PdivU',\
             'momentum_flux_div', 'energy_flux_div', 'source_KE', 'source_IE', 'tot_source', 'EOS_goodness', 'EOS_goodness_bg']
 

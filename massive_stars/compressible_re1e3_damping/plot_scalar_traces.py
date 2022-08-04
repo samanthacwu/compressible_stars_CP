@@ -54,6 +54,12 @@ fig2.add_field(0, 'integ(PE1)')
 fig2.add_field(1, 'integ(FlucE)')
 figs.append(fig2)
 
+fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='mass')
+fig3.add_field(0, 'integ(tot_source)')
+fig3.add_field(1, 'integ(rho_fluc)')
+fig3.add_field(2, 'integ(EOS_goodness)')
+figs.append(fig3)
+
 
 
 # Load in figures and make plots

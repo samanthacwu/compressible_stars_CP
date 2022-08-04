@@ -41,7 +41,7 @@ handlers['scalars']['max_writes'] = 400
 
 energy_tasks = OrderedDict()
 energy_tasks['type'] = 'full_integ'
-energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared']
+energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'tot_source', 'EOS_goodness', 'rho_fluc']
 handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
@@ -54,7 +54,7 @@ handlers['profiles']['dt_factor'] = 0.1
 
 prof_tasks = OrderedDict()
 prof_tasks['type'] = 's2_avg'
-prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r', 'PE_lum_r']
+prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r', 'PE_lum_r', 'N2']
 handlers['profiles']['tasks'].append(prof_tasks)
 
 ### Checkpoints
@@ -69,8 +69,8 @@ handlers['wave_shells']['even_outputs'] = True
 
 wave_shell_tasks = OrderedDict()
 wave_shell_tasks['type'] = 'shell'
-wave_shell_tasks['fields'] = ['u', 'pom_1_fluc', 'ln_rho1', 's1']
-wave_shell_tasks['interps'] = ['R']
+wave_shell_tasks['fields'] = ['u', 's1', 'enthalpy_fluc']
+wave_shell_tasks['interps'] = ['R',]
 handlers['wave_shells']['tasks'].append(wave_shell_tasks)
 
 
