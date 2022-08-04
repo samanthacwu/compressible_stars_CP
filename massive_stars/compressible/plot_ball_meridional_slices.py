@@ -2,10 +2,9 @@
 This script plots snapshots of the evolution of a 2D slice through the equator of a BallBasis simulation.
 
 Usage:
-    ball_plot_meridional_slices.py [options]
+    ball_plot_meridional_slices.py <root_dir> [options]
 
 Options:
-    --root_dir=<str>                    Path to root data directory [default: .]
     --data_dir=<dir>                    Name of data handler directory [default: slices]
     --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_meridional]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
@@ -21,7 +20,7 @@ args = docopt(__doc__)
 from plotpal.slices import SlicePlotter
 
 # Read in master output directory
-root_dir    = args['--root_dir']
+root_dir    = args['<root_dir>']
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
@@ -37,7 +36,7 @@ if n_files is not None:
     n_files = int(n_files)
 
 r_inner = 0
-r_outer = 1.1
+r_outer = 1
 
 # Create Plotter object, tell it which fields to plot
 plotter = SlicePlotter(root_dir, data_dir, fig_name, start_file=start_file, n_files=n_files)

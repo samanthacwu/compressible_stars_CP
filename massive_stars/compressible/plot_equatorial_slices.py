@@ -47,8 +47,8 @@ plotter = SlicePlotter(root_dir, file_dir=data_dir, out_name=out_name, start_fil
 plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['--row_inch']) }
 
 plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
-plotter.add_ball_shell_polar_colormesh(ball='equator(s1_B)', shell='equator(s1_S1)', azimuth_basis='phi', radial_basis='r', remove_x_mean=True, divide_x_mean=True, r_inner=r_inner, r_outer=r_outer)
-plotter.add_ball_shell_polar_colormesh(ball='equator(u_B)', shell='equator(u_S1)', vector_ind=0, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
-plotter.add_ball_shell_polar_colormesh(ball='equator(u_B)', shell='equator(u_S1)', vector_ind=1, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
-plotter.add_ball_shell_polar_colormesh(ball='equator(u_B)', shell='equator(u_S1)', vector_ind=2, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
+plotter.add_polar_colormesh('equator(s1_B)', azimuth_basis='phi', radial_basis='r', remove_x_mean=True, divide_x_mean=True, r_inner=r_inner, r_outer=r_outer)
+plotter.add_polar_colormesh('equator(u_B)', vector_ind=0, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
+plotter.add_polar_colormesh('equator(u_B)', vector_ind=1, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
+plotter.add_polar_colormesh('equator(u_B)', vector_ind=2, azimuth_basis='phi', radial_basis='r', remove_x_mean=False, divide_x_mean=False, r_inner=r_inner, r_outer=r_outer)
 plotter.plot_colormeshes(start_fig=start_fig, dpi=int(args['--dpi']))

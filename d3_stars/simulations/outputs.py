@@ -15,8 +15,8 @@ from d3_stars.defaults import config
 output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'Ma', 'ln_rho1', \
-            'pom1', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'pom_1_fluc',\
-            'visc_production', 'rad_flux_production', 'Q_production', 'extra_P_term', 'source_KE', 'source_IE', 'tot_source']
+            'pom1', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'pom_1_fluc', 'rho_full', 'rho_fluc',\
+            'visc_production', 'rad_flux_production', 'Q_production', 'source_KE', 'source_IE', 'tot_source', 'momentum_gradP', 'energy_PdivU', 'momentum_gradP_simple', 'EOS', 'EOS_0']
 for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
 
@@ -38,7 +38,10 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
     # Cadence
     az_avg = lambda A: d3.Average(A, coords.coords[0])
     s2_avg = lambda A: d3.Average(A, coords.S2coordsys)
-    integ  = lambda A: d3.Integrate(A, coords)
+
+
+    def integ(A):
+        return d3.Integrate(A, coords)
 
     
     solver.problem.namespace['az_avg'] = az_avg

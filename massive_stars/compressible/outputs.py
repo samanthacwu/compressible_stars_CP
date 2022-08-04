@@ -41,7 +41,7 @@ handlers['scalars']['max_writes'] = 400
 
 energy_tasks = OrderedDict()
 energy_tasks['type'] = 'full_integ'
-energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'visc_production', 'rad_flux_production', 'Q_production', 'extra_P_term', 'source_KE', 'source_IE', 'tot_source']
+energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'visc_production', 'rad_flux_production', 'Q_production', 'source_KE', 'source_IE', 'tot_source', 'rho_full', 'rho_fluc', 'momentum_gradP', 'energy_PdivU', 'momentum_gradP_simple', 'EOS']
 handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'

@@ -37,8 +37,8 @@ if __name__ == '__main__':
     out_dir = './'
     
     ntheta = config.dynamics['ntheta']
-    nphi = 2*ntheta
-#    nphi = 1
+#    nphi = 2*ntheta
+    nphi = 1
     L_dealias = config.numerics['L_dealias']
     N_dealias = config.numerics['N_dealias']
     ncc_cutoff = config.numerics['ncc_cutoff']
@@ -111,11 +111,15 @@ if __name__ == '__main__':
             logger.info('using timestepper RK222')
             ts = d3.RK222
             timestepper_history = [0, ]
+        elif config.dynamics['timestepper'] == 'RK443':
+            logger.info('using timestepper RK443')
+            ts = d3.RK443
+            timestepper_history = [0, ]
     if ts is None:
         logger.info('using default timestepper SBDF2')
         ts = d3.SBDF2
         timestepper_history = [0, 1,]
-    hermitian_cadence = 100
+#    hermitian_cadence = 100
     safety = config.dynamics['safety']
     if 'CFL_max_r' in config.dynamics.keys():
         CFL_max_r = config.dynamics['CFL_max_r']
@@ -180,9 +184,11 @@ if __name__ == '__main__':
         # Initial conditions
         for bk in bases_keys:
             variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
-            variables['s1_{}'.format(bk)].low_pass_filter(scales=0.25)
-            variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
-            variables['s1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
+            variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
+    #        variables['s1_{}'.format(bk)]['g'] *= np.cos(variables['theta1_{}'.format(bk)])
+            variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
+            #make perturbations pressure-neutral.
+            variables['ln_rho1_{}'.format(bk)]['g'] = variables['s1_{}'.format(bk)]['g']/variables['Cp']['g']
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
@@ -193,13 +199,19 @@ if __name__ == '__main__':
         re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
         ma_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Ma'].format(bn) + ')', dict(solver.problem.namespace))
         integ_KE = eval('integ(' + output_tasks['KE'].format(bn) + ')', dict(solver.problem.namespace))
-#        integ_PE1 = eval('integ(' + output_tasks['PE1'].format(bn) + ')', dict(solver.problem.namespace))
-#        integ_IE1 = eval('integ(' + output_tasks['IE1'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_PE1 = eval('integ(' + output_tasks['PE1'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_IE1 = eval('integ(' + output_tasks['IE1'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_FlucE = eval('integ(' + output_tasks['FlucE'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_EOS = eval('integ(' + output_tasks['EOS'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_EOS_0 = eval('integ(' + output_tasks['EOS_0'].format(bn) + ')', dict(solver.problem.namespace))
         logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(ma_avg, name='Ma_avg_{}'.format(bn), layout='g')
         logger_handler.add_task(integ_KE, name='KE_{}'.format(bn), layout='g')
-#        logger_handler.add_task(integ_PE1, name='PE1_{}'.format(bn), layout='g')
-#        logger_handler.add_task(integ_IE1, name='IE1_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_PE1, name='PE1_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_IE1, name='IE1_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_FlucE, name='FlucE_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_EOS, name='EOS_{}'.format(bn), layout='g')
+        logger_handler.add_task(integ_EOS_0, name='EOS_0_{}'.format(bn), layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -231,6 +243,10 @@ if __name__ == '__main__':
     Ma0 = 0
     outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
     surface_shell_slices = even_analysis_tasks['wave_shells']
+
+    alt_op = d3.Integrate(solver.problem.namespace['EOS_0_B']*solver.problem.namespace['ones_B'], coords)
+#    integ_EOS_0_eval = np.copy(alt_op.evaluate()['g'])
+    integ_EOS_0_eval = np.copy(integ_EOS_0.evaluate()['g'])
     try:
         while solver.proceed:
             if max_dt_check and timestep < outer_shell_dt:
@@ -255,9 +271,9 @@ if __name__ == '__main__':
             if t_future >= slice_time*(1-1e-8):
                slice_process = True
 
-            if solver.iteration % hermitian_cadence in timestepper_history:
-                for f in solver.state:
-                    f.require_grid_space()
+#            if solver.iteration % hermitian_cadence in timestepper_history:
+#                for f in solver.state:
+#                    f.require_grid_space()
 
             solver.step(timestep)
 
@@ -269,9 +285,11 @@ if __name__ == '__main__':
 #                    KE0 = KE_shell['g'].min()
                     Re0 = Re_avg['g'].min()
                     Ma0 = Ma_avg['g'].min()
-#                    logger.info("Ball energies: {}, {}, {}".format(logger_handler.fields['KE_B']['g'].min(), \
-#                                                                   logger_handler.fields['IE1_B']['g'].min(), \
-#                                                                   logger_handler.fields['PE1_B']['g'].min() ))
+                    logger.info("Ball energies: {:.3e} (EOS: {:.3e} / bg: {:.3e})".format(logger_handler.fields['FlucE_B']['g'].min(), \
+                                                                        logger_handler.fields['EOS_B']['g'].min(), \
+                                                                        logger_handler.fields['EOS_0_B']['g'].min()))
+                    print('err {:.3e}'.format(logger_handler.fields['EOS_0_B']['g'].min() - integ_EOS_0_eval.min()))
+                    print('alt err {:.3e}'.format(alt_op.evaluate()['g'].min() - integ_EOS_0_eval.min()))
 #                    logger.info("Shell1 energies: {}, {}, {}".format(logger_handler.fields['KE_S1']['g'].min(), \
 #                                                                   logger_handler.fields['IE1_S1']['g'].min(), \
 #                                                                   logger_handler.fields['PE1_S1']['g'].min() ))
