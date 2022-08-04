@@ -233,7 +233,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         #Thermal diffusion
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom1 + grad_pom2)/R_gas)
         namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/P_full) * (d3.div(rho_full*chi_rad*Cp*grad_pom_fluc/R_gas)) - div_rad_flux_L
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/(pom_full)) * (d3.div(chi_rad*Cp*grad_pom_fluc/R_gas) + (chi_rad*Cp*grad_pom_fluc/R_gas)@(grad_ln_rho_full) ) - div_rad_flux_L
 
         # Rotation and damping terms
         if do_rotation:
