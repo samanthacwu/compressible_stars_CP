@@ -187,7 +187,8 @@ if __name__ == '__main__':
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
             #make perturbations pressure-neutral.
-            variables['ln_rho1_{}'.format(bk)]['g'] = variables['s1_{}'.format(bk)]['g']/variables['Cp']['g']
+            variables['ln_rho1_{}'.format(bk)].change_scales(bases[bk].dealias)
+            variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
