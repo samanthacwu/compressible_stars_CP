@@ -92,7 +92,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         #Define identity matrix
         logger.debug('creating identity matrix')
-        namespace['eye'] = dist.TensorField(coords, name='eye')
+        namespace['eye'] = dist.TensorField(coords, name='eye', bases=basis.radial_basis)
         for i in range(3):
             namespace['eye']['g'][i,i] = 1
 
