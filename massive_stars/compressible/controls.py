@@ -50,7 +50,7 @@ dynamics['timestepper'] = 'SBDF2'
 #dynamics['restart'] = 'stored_checkpoints/checkpoint_s3.h5'
 
 #In nondimensional units
-dynamics['CFL_max_r'] = 1.5
+dynamics['CFL_max_r'] = 1
 
 #Stop conditions
 dynamics['wall_hours'] = 23.5
@@ -61,5 +61,5 @@ dynamics['sponge'] = False
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
-dynamics['A0'] = 1e-6
+dynamics['A0'] = 1e-10
 

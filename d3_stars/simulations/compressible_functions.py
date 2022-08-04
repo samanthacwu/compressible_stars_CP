@@ -189,48 +189,51 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = nu_diff*(d3.dot(sigma, grad_ln_rho1))
         namespace['VH_{}'.format(bn)] = VH = 2*(nu_diff)*(d3.trace(d3.dot(E, E)) - (1/3)*div_u*div_u)
 
-        #Thermodynamics
-        namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
+        #Thermodynamics: rho, pressure, s 
+        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
         namespace['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
         namespace['rho_fluc_{}'.format(bn)] = rho_fluc = rho0*(np.exp(ln_rho1) - 1)
+        namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (ones*ln_rho0 + ln_rho1)
+        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = (ones*grad_ln_rho0 + grad_ln_rho1)
+        namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
+        namespace['P_full_{}'.format(bn)] = P_full = np.exp(np.log(R_gas) + gamma*((s0*ones+s1)/Cp + ln_rho0*ones + ln_rho1*ones))
+        namespace['s_full_{}'.format(bn)] = s_full = ones*s0 + s1
+        namespace['grad_s_full_{}'.format(bn)] = grad_s_full = ones*grad_s0 + grad_s1
 
-        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
+        #Linear Pomega = R * T
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
         namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
         namespace['grad_pom1_{}'.format(bn)] = grad_pom1 = grad_pom0*pom1_over_pom0 + pom0*grad_pom1_over_pom0
 
+        #Nonlinear Pomega = R*T
+        namespace['pom2_over_pom0_{}'.format(bn)] = pom2_over_pom0 = np.exp(pom1_over_pom0) - (1 + pom1_over_pom0)
+        namespace['pom2_{}'.format(bn)] = pom2 = pom0*pom2_over_pom0
+        namespace['grad_pom2_{}'.format(bn)] = grad_pom2 = d3.grad(pom2)
 
-        namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0) - (1 + pom1_over_pom0)
-        namespace['pom_fluc_{}'.format(bn)] = pom_fluc = pom0*pom_fluc_over_pom0
-        namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = d3.grad(pom_fluc)
-        namespace['grad_pom_1_fluc_{}'.format(bn)] = grad_pom_1_fluc = (grad_pom1 + grad_pom_fluc)
-        namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (ones*grad_pom0 + grad_pom_1_fluc)
-        namespace['pom_1_fluc_{}'.format(bn)] = pom_1_fluc = (pom1 + pom_fluc)
-        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = (ones*grad_ln_rho0 + grad_ln_rho1)
-        namespace['pom_full_{}'.format(bn)] = pom_full = (ones*pom0 + pom_1_fluc)
-        namespace['P_full_{}'.format(bn)] = P_full = np.exp(np.log(R_gas) + gamma*((s0*ones+s1)/Cp + ln_rho0*ones + ln_rho1*ones))
-#        namespace['P_full_{}'.format(bn)] = P_full = rho_full*pom_full
-        namespace['EOS_true_{}'.format(bn)] = EOS_true = (s1 + s0*ones)/Cp - ( (1/(gamma)) * (np.log(pom0*ones + pom1 + pom_fluc) - np.log(R_gas)) - ((gamma-1)/(gamma)) * (ln_rho1 + ln_rho0*ones))
-        namespace['EOS_true_{}'.format(bn)] = EOS_true = (s1 + s0*ones)/Cp - ( (1/(gamma)) * (np.log(P_full) - np.log(R_gas)) - (ln_rho1 + ln_rho0*ones))
-        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = d3.Grid(ones*(s0/Cp - ( (1/(gamma)) * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0)))
-        namespace['EOS_{}'.format(bn)] = EOS = (EOS_true**2)**(1/2)
-        namespace['EOS_0_{}'.format(bn)] = EOS_0 = ((EOS_bg)**2)**(1/2)
+        #Full pomega subs
+        namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = (grad_pom1 + grad_pom2)
+        namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (ones*grad_pom0 + grad_pom_fluc)
+        namespace['pom_fluc_{}'.format(bn)] = pom_fluc = (pom1 + pom2)
+        namespace['pom_full_{}'.format(bn)] = pom_full = (ones*pom0 + pom_fluc)
 
-
+        #Equation of state goodness
+        namespace['EOS_{}'.format(bn)]    = EOS = (s_full)/Cp - ( (1/(gamma)) * (np.log(pom_full) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho_full )
+        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = ones*(s0/Cp - ( (1/(gamma)) * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0))
+        namespace['EOS_goodness_{}'.format(bn)]    = EOS_good_ = np.sqrt(EOS**2)
+        namespace['EOS_goodness_bg_{}'.format(bn)] = EOS_good_bg = np.sqrt(EOS_bg**2)
 
         #Momentum thermo / hydrostatic terms:
-        namespace['background_HSE_{}'.format(bn)] = background_HSE = gamma*pom0*(grad_ln_rho0 + grad_s0/Cp) - g
-        namespace['linear_HSE_{}'.format(bn)] = linear_HSE = gamma*pom0*(grad_ln_rho1 + grad_s1/Cp) + g*pom1_over_pom0
-        namespace['nonlinear_HSE_{}'.format(bn)] = nonlinear_HSE = pom_full*(grad_ln_rho1 + grad_ln_rho0*ones) + grad_pom_full - gamma*pom0*ones*(grad_ln_rho0 + grad_s0/Cp) - linear_HSE
-#        namespace['nonlinear_HSE_{}'.format(bn)] = nonlinear_HSE = d3.grad(P_full)/rho_full - d3.grad(ones*P0)/rho0 - linear_HSE
-       # gamma*(pom1 + pom_fluc)*(grad_ln_rho1 + grad_s1/Cp) + g*pom_fluc_over_pom0
+        namespace['gradP0_div_rho0_{}'.format(bn)]         = gradP0_div_rho0 = gamma*pom0*(grad_ln_rho0 + grad_s0/Cp)
+        namespace['background_HSE_{}'.format(bn)]          = background_HSE = gradP0_div_rho0 - g
+        namespace['linear_gradP_div_rho_{}'.format(bn)]    = linear_gradP_div_rho    = gamma*pom0*(grad_ln_rho1 + grad_s1/Cp) + g*pom1_over_pom0
+        namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = gamma*pom_fluc*(grad_ln_rho1 + grad_s1/Cp) + g*pom2_over_pom0
+#        namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = d3.grad(P_full)/rho_full - linear_gradP_div_rho - gradP0_div_rho0
 
         #Thermal diffusion
-        namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom1 + grad_pom_fluc)/R_gas)
+        namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom1 + grad_pom2)/R_gas)
         namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/P_full) * (d3.div(rho_full*chi_rad*Cp*grad_pom_1_fluc/R_gas)) - div_rad_flux_L
-#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/(pom_full)) * (d3.div(chi_rad*Cp*grad_pom_1_fluc/R_gas) + (chi_rad*Cp*grad_pom_1_fluc/R_gas)@(grad_ln_rho_full) ) - div_rad_flux_L
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (R_gas/P_full) * (d3.div(rho_full*chi_rad*Cp*grad_pom_fluc/R_gas)) - div_rad_flux_L
 
         # Rotation and damping terms
         if do_rotation:
@@ -269,19 +272,17 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['F_enth_{}'.format(bn)] = F_enth = momentum * (gamma/(gamma-1)) * pom_full
         namespace['F_visc_{}'.format(bn)] = F_visc = -nu_diff*d3.dot(momentum, sigma)
 
-        namespace['momentum_VC_{}'.format(bn)] = momentum_VC = momentum @ (visc_div_stress_L + visc_div_stress_R)
-        namespace['energy_VH_{}'.format(bn)] = energy_VH = rho_full * VH
-        namespace['visc_production_{}'.format(bn)] = momentum_VC + energy_VH
+        #Source terms
+        namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L + visc_div_stress_R)
+        namespace['energy_visc_heating_{}'.format(bn)] = energy_visc_heating = rho_full * VH
         namespace['rad_flux_production_{}'.format(bn)] = rad_flux_production = (P_full/R_gas)*(div_rad_flux_L + div_rad_flux_R)
         namespace['Q_production_{}'.format(bn)] = Q_production = namespace['Q_{}'.format(bn)]
-        namespace['momentum_gradP_{}'.format(bn)] = gradP_production = momentum @ (-gamma*pom0*(grad_ln_rho0 + grad_s0/Cp)*ones - linear_HSE - nonlinear_HSE)
-        namespace['momentum_gradP_simple_{}'.format(bn)] = gradP_simple =  momentum @ (-d3.grad(P_full)/rho_full)
+        namespace['momentum_gradP_{}'.format(bn)] = gradP_production = momentum @ (-gradP0_div_rho0*ones - linear_gradP_div_rho - nonlinear_gradP_div_rho) #does not include PE
         namespace['energy_PdivU_{}'.format(bn)] = energy_PdivU = -P_full*div_u
-        momentum_fluxes = - d3.div(u*(KE + PE) - nu_diff*momentum@sigma)
-#        momentum_fluxes = -1 * momentum @ (d3.grad(P_full)/rho_full) #works for = 0
-        namespace['source_KE_{}'.format(bn)] = momentum_VC + momentum @ (-d3.grad(P_full)/rho_full)  + momentum_fluxes
-        extra_IE  = -d3.div(u*IE) - P_full*div_u
-        namespace['source_IE_{}'.format(bn)] = Q_production + rad_flux_production + energy_VH  + extra_IE
+        namespace['momentum_flux_div_{}'.format(bn)] = momentum_fluxes = - d3.div(u*(KE + PE) - nu_diff*momentum@sigma)
+        namespace['energy_flux_div_{}'.format(bn)] = energy_fluxes  = -d3.div(u*IE)
+        namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full)  + momentum_fluxes
+        namespace['source_IE_{}'.format(bn)] = Q_production + rad_flux_production + energy_visc_heating  + energy_PdivU + energy_fluxes
         namespace['tot_source_{}'.format(bn)] = namespace['source_KE_{}'.format(bn)] + namespace['source_IE_{}'.format(bn)]
     return namespace
 
@@ -339,13 +340,6 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
                 namespace['rho0_{}'.format(bn)]['g']       = np.exp(f['ln_rho0_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
 
 
-                print('-grad(g_phi)', d3.grad(namespace['g_phi_B']*namespace['ones_B']).evaluate()['g'][2,0,0,:] + namespace['g_B']['g'][2].ravel())
-
-#                #TODO: do this in star_builder
-#                grad_ln_rho = (d3.grad(namespace['rho_{}'.format(bn)])/namespace['rho_{}'.format(bn)]).evaluate()
-#                if local_vncc_size > 0:
-#                    namespace['grad_ln_rho_{}'.format(bn)]['g'] = grad_ln_rho['g'][:,:1,:1,:]
-
                 if max_dt is None:
                     max_dt = f['max_dt'][()]
 
@@ -364,11 +358,8 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
                 if sponge:
                     f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                     namespace['sponge_{}'.format(bn)]['g'] *= f_brunt
-            for k in vec_nccs + scalar_nccs:
+            for k in vec_nccs + scalar_nccs + ['rho0']:
                 namespace['{}_{}'.format(k, bn)].change_scales((1,1,1))
-
-            for k in ['rho0', 'P0', 'IE0', 'PE0']:
-                namespace['{}_{}'.format(k, bn)] = d3.Grid(namespace['{}_{}'.format(k, bn)]).evaluate()
 
         else:
             raise NotImplementedError("Must supply star file")
@@ -417,14 +408,14 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         # Assumes background is in hse: -(grad T0 + T0 grad ln rho0) + gvec = 0.
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
-            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_HSE_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_HSE_{0} + visc_div_stress_R_{0}".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
             equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
         constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
         constant_s = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0"
-        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = -radial(grad_pom_fluc_{0}(r={2}) - grad_pom_fluc_{1}(r={2}))"
+        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = -radial(grad_pom2_{0}(r={2}) - grad_pom2_{1}(r={2}))"
         constant_ln_rho = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
         constant_momentum_ang = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
 
@@ -436,7 +427,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
@@ -460,7 +451,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom_fluc_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
 
 
     for bn, basis in bases.items():

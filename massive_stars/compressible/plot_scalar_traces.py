@@ -54,34 +54,11 @@ fig2.add_field(0, 'integ(PE1)')
 fig2.add_field(1, 'integ(FlucE)')
 figs.append(fig2)
 
-fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='diff_production')
-fig3.add_field(0, 'integ(visc_production)')
-fig3.add_field(1, 'integ(rad_flux_production)')
-fig3.add_field(2, 'integ(Q_production)')
+fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='mass')
+fig3.add_field(0, 'integ(tot_source)')
+fig3.add_field(1, 'integ(rho_fluc)')
+fig3.add_field(2, 'integ(EOS_goodness)')
 figs.append(fig3)
-
-fig4 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='gradP_production')
-fig4.add_field(0, 'integ(momentum_gradP)')
-fig4.add_field(0, 'integ(momentum_gradP_simple)')
-fig4.add_field(1, 'integ(energy_PdivU)')
-figs.append(fig4)
-
-
-
-fig4 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='source_eqn')
-fig4.add_field(0, 'integ(source_KE)')
-fig4.add_field(1, 'integ(source_IE)')
-fig4.add_field(2, 'integ(tot_source)')
-figs.append(fig4)
-
-
-fig5 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='mass')
-fig5.add_field(0, 'integ(rho_full)')
-fig5.add_field(1, 'integ(rho_fluc)')
-fig5.add_field(2, 'integ(EOS)')
-figs.append(fig5)
-
-
 
 
 

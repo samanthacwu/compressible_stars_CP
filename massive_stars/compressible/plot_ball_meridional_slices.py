@@ -36,7 +36,7 @@ if n_files is not None:
     n_files = int(n_files)
 
 r_inner = 0
-r_outer = 1
+r_outer = 1.05
 
 # Create Plotter object, tell it which fields to plot
 plotter = SlicePlotter(root_dir, data_dir, fig_name, start_file=start_file, n_files=n_files)
