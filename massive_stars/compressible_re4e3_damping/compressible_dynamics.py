@@ -240,7 +240,8 @@ if __name__ == '__main__':
     surface_shell_slices = even_analysis_tasks['wave_shells']
     try:
         while solver.proceed:
-            if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1):
+            effective_iter = solver.iteration - start_iter
+            if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100):
                 #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
                 my_cfl.max_dt = max_dt
                 max_dt_check = False
@@ -264,7 +265,7 @@ if __name__ == '__main__':
 
             solver.step(timestep)
 
-            if solver.iteration % 10 == 0 or solver.iteration <= 10:
+            if solver.iteration % 10 == 0 or effective_iter <= 10:
                 Re_avg = logger_handler.fields['Re_avg_B']
                 Ma_avg = logger_handler.fields['Ma_avg_B']
                 if dist.comm_cart.rank == 0:

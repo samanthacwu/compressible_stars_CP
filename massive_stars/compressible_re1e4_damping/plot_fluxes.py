@@ -75,11 +75,11 @@ def luminosities(ax, dictionary, index):
     conds = []
     for bn in bases_keys:
         rs.append(match_basis(dictionary['s2_avg(KE_lum_r_{})'.format(bn)], 'r'))
-        KEs.append(dictionary['s2_avg(KE_lum_r_{})'.format(bn)][index,2].ravel())
-        enths.append(dictionary['s2_avg(enth_lum_r_{})'.format(bn)][index,2].ravel())
-        viscs.append(dictionary['s2_avg(visc_lum_r_{})'.format(bn)][index,2].ravel())
-        conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index,2].ravel())
-        PEs.append(dictionary['s2_avg(PE_lum_r_{})'.format(bn)][index,2].ravel())
+        KEs.append(dictionary['s2_avg(KE_lum_r_{})'.format(bn)][index].ravel())
+        enths.append(dictionary['s2_avg(enth_lum_r_{})'.format(bn)][index].ravel())
+        viscs.append(dictionary['s2_avg(visc_lum_r_{})'.format(bn)][index].ravel())
+        conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index].ravel())
+        PEs.append(dictionary['s2_avg(PE_lum_r_{})'.format(bn)][index].ravel())
     legend = False
     ax.plot(sim_lum_r.ravel(), sim_lum.ravel(), c='k', lw=3)
     for r, KE, enth, visc, cond, PE in zip(rs, KEs, enths, viscs, conds, PEs):
