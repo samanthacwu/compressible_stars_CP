@@ -239,7 +239,7 @@ if __name__ == '__main__':
     surface_shell_slices = even_analysis_tasks['wave_shells']
     try:
         while solver.proceed:
-            if max_dt_check and timestep < outer_shell_dt:
+            if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1):
                 #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
                 my_cfl.max_dt = max_dt
                 max_dt_check = False

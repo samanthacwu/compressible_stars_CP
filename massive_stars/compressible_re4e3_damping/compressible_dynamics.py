@@ -110,11 +110,15 @@ if __name__ == '__main__':
             logger.info('using timestepper RK222')
             ts = d3.RK222
             timestepper_history = [0, ]
+        elif config.dynamics['timestepper'] == 'RK443':
+            logger.info('using timestepper RK443')
+            ts = d3.RK443
+            timestepper_history = [0, ]
     if ts is None:
         logger.info('using default timestepper SBDF2')
         ts = d3.SBDF2
         timestepper_history = [0, 1,]
-    hermitian_cadence = 100
+
     safety = config.dynamics['safety']
     if 'CFL_max_r' in config.dynamics.keys():
         CFL_max_r = config.dynamics['CFL_max_r']
@@ -143,26 +147,12 @@ if __name__ == '__main__':
     radius = r_outer
     coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
 
-    vec_fields = ['u',]
-    scalar_fields = ['ln_rho1', 'T1', 'H', 'rho0', 'pomega_tilde']
-    vec_taus = ['tau_u']
-    scalar_taus = ['tau_T', 'tau_rho', 'tau_div_u', 'tau_ur']
-    vec_nccs = ['grad_ln_rho0', 'g', 'grad_T0', 'grad_chi_rad']
-    scalar_nccs = ['ln_rho0', 'T0', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
+    variables = make_fields(bases, coords, dist, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
+    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, sponge=sponge, do_rotation=do_rotation)
 
-    variables = make_fields(bases, coords, dist, 
-                            vec_fields=vec_fields, scalar_fields=scalar_fields, 
-                            vec_taus=vec_taus, scalar_taus=scalar_taus, 
-                            vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                            sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
-
-
-    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe,
-                                            vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                                            sponge=sponge, do_rotation=do_rotation)
-
-    for i, bn in enumerate(bases.keys()):
-        variables['sponge_{}'.format(bn)]['g'] *= tau_factor
+    if sponge:
+        for i, bn in enumerate(bases.keys()):
+            variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     t_kep, t_heat, t_rot = timescales
     logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
 
@@ -188,25 +178,35 @@ if __name__ == '__main__':
     timestep = None
     if restart is not None:
         write, timestep = solver.load_state(restart)
+        timestep *= 0.1 #bootstrap safely
         write_mode = 'append'
     else:
         # Initial conditions
         for bk in bases_keys:
-            variables['T1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
-            variables['T1_{}'.format(bk)].low_pass_filter(scales=0.25)
-            variables['T1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
-            variables['T1_{}'.format(bk)]['g'] *= np.cos(np.pi*variables['r1_{}'.format(bk)]/r_outer)
+            variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
+            variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
+            variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
+            variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
+            #make perturbations pressure-neutral.
+            variables['ln_rho1_{}'.format(bk)].change_scales(bases[bk].dealias)
+            variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
 
     ## Logger output Setup
     logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
+    integ_FlucE = 0
+    integ_EOS = 0
     for bn, basis in bases.items():
         re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
-        integ_KE = eval('integ(' + output_tasks['KE'].format(bn) + ')', dict(solver.problem.namespace))
+        ma_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Ma'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_FlucE += eval('integ(' + output_tasks['FlucE'].format(bn) + ')', dict(solver.problem.namespace))
+        integ_EOS += eval('integ(' + output_tasks['EOS_goodness'].format(bn) + ')', dict(solver.problem.namespace))
         logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
-        logger_handler.add_task(integ_KE, name='KE_{}'.format(bn), layout='g')
+        logger_handler.add_task(ma_avg, name='Ma_avg_{}'.format(bn), layout='g')
+    logger_handler.add_task(integ_FlucE, name='FlucE', layout='g')
+    logger_handler.add_task(integ_EOS, name='EOS', layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -235,13 +235,12 @@ if __name__ == '__main__':
     just_wrote    = False
     slice_time = np.inf
     Re0 = 0
-#    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-#    surface_shell_slices = even_analysis_tasks['shells']
-    outer_shell_dt = 0
-    surface_shell_slices = []
+    Ma0 = 0
+    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+    surface_shell_slices = even_analysis_tasks['wave_shells']
     try:
         while solver.proceed:
-            if max_dt_check and timestep < outer_shell_dt:
+            if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1):
                 #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
                 my_cfl.max_dt = max_dt
                 max_dt_check = False
@@ -263,32 +262,20 @@ if __name__ == '__main__':
             if t_future >= slice_time*(1-1e-8):
                slice_process = True
 
-            if solver.iteration % hermitian_cadence in timestepper_history:
-                for f in solver.state:
-                    f.require_grid_space()
-
-#            logger.info('cv: {}'.format(solver.problem.namespace['Cv']['g']))
-#            logger.info('cv: {}'.format((1/solver.problem.namespace['Cv']).evaluate()['g']))
-#            logger.info('VH_B: {}'.format(solver.problem.namespace['VH_B'].evaluate()['g']))
-#            logger.info('VH_S1: {}'.format(solver.problem.namespace['VH_S1'].evaluate()['g']))
-#            logger.info('VH_S2: {}'.format(solver.problem.namespace['VH_S1'].evaluate()['g']))
             solver.step(timestep)
 
             if solver.iteration % 10 == 0 or solver.iteration <= 10:
                 Re_avg = logger_handler.fields['Re_avg_B']
-#                KE_shell = logger_handler.fields['KE_S1']
+                Ma_avg = logger_handler.fields['Ma_avg_B']
                 if dist.comm_cart.rank == 0:
-#                    KE0 = KE_shell['g'].min()
                     Re0 = Re_avg['g'].min()
+                    Ma0 = Ma_avg['g'].min()
+                    this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}, Ma = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0, Ma0)
+                    this_str += ", FlucE = {:.4e}, EOS = {:.4e}".format(logger_handler.fields['FlucE']['g'].min(), logger_handler.fields['EOS']['g'].min())
+                    logger.info(this_str)
                 else:
-#                    KE0 = None
                     Re0 = None
                 Re0 = dist.comm_cart.bcast(Re0, root=0)
-#                KE0 = dist.comm_cart.bcast(KE0, root=0)
-                this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
-#                this_str += ", KE = {:.4e}".format(KE0)
-                logger.info(this_str)
-
 
             if slice_process:
                 slice_process = False

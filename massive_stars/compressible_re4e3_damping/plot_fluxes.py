@@ -81,7 +81,7 @@ def luminosities(ax, dictionary, index):
         conds.append(dictionary['s2_avg(cond_lum_r_{})'.format(bn)][index].ravel())
         PEs.append(dictionary['s2_avg(PE_lum_r_{})'.format(bn)][index].ravel())
     legend = False
-    ax.plot(sim_lum_r, sim_lum, c='k', lw=3)
+    ax.plot(sim_lum_r.ravel(), sim_lum.ravel(), c='k', lw=3)
     for r, KE, enth, visc, cond, PE in zip(rs, KEs, enths, viscs, conds, PEs):
         ax.plot(r, KE, label='KE', c=Dark2_7[0])
         ax.plot(r, enth, label='enth', c=Dark2_7[1])

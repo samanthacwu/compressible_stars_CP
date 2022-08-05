@@ -47,9 +47,11 @@ elif args['--mesa_file'] is not None:
         r_B, r_S1 = f['r_stitch'][()]
         r_outer = f['r_outer'][()]
 else:
-    r_B = 1.1
-    r_S1 = 2.91
-    r_outer = 3.45
+    r_B = 1.05
+    r_S1 = 2.98
+    r_outer = 3.38
+    3.38
+    3.38
     print('WARNING: using default r_B = {}, r_S1 = {} and r_outer = {}'.format(r_B, r_S1, r_outer))
 r_stitches= (r_B, r_S1)
 
@@ -62,7 +64,7 @@ plotter_kwargs = { 'col_inch' : int(args['--col_inch']), 'row_inch' : int(args['
 # divide_x_mean divides the radial mean(abs(T eq)) over the phi direction
 plotter.setup_grid(num_rows=2, num_cols=2, polar=True, **plotter_kwargs)
 kwargs = {'azimuth_basis' : 'phi', 'radial_basis' : 'r', 'r_stitches' : r_stitches, 'r_outer' : r_outer}
-plotter.add_ball_2shells_polar_colormesh(fields=('equator(s1_B)', 'equator(s1_S1)', 'equator(s1_S2)'), remove_x_mean=False, divide_x_mean=False, **kwargs)
+plotter.add_ball_2shells_polar_colormesh(fields=('equator(s1_B)', 'equator(s1_S1)', 'equator(s1_S2)'), remove_x_mean=True, divide_x_mean=True, **kwargs)
 plotter.add_ball_2shells_polar_colormesh(fields=('equator(u_B)',  'equator(u_S1)', 'equator(u_S2)'), vector_ind=0, cmap='PuOr_r', **kwargs)
 plotter.add_ball_2shells_polar_colormesh(fields=('equator(u_B)',  'equator(u_S1)', 'equator(u_S2)'), vector_ind=1, cmap='PuOr_r', **kwargs)
 plotter.add_ball_2shells_polar_colormesh(fields=('equator(u_B)',  'equator(u_S1)', 'equator(u_S2)'), vector_ind=2, cmap='PuOr_r', **kwargs)

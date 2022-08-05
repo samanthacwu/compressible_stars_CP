@@ -8,10 +8,10 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
-star['r_bounds'] = (0, '1.1L', '0.80R', '0.95R')
+star['r_bounds'] = (0, '1.05L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (128,128, 32)
+star['nr'] = (128,192,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -44,23 +44,22 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 64
+dynamics['ntheta'] = 128 
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
-#dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'
-#dynamics['restart'] = 'checkpoint/checkpoint_s1.h5'
+dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e3_damping/checkpoint/checkpoint_s6.h5'
 
 #In nondimensional units
-dynamics['CFL_max_r'] = 1.05
+dynamics['CFL_max_r'] = 1
 
 #Stop conditions
 dynamics['wall_hours'] = 23.5
-dynamics['buoy_end_time'] = 75
+dynamics['buoy_end_time'] = 100
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor
-dynamics['sponge'] = True
+dynamics['sponge'] = True 
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
-dynamics['A0'] = 1e-6
+dynamics['A0'] = 1e-10
 
