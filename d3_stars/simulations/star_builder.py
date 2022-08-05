@@ -691,6 +691,7 @@ def build_nccs(plot_nccs=False):
     plt.figure()
     N2s = []
     HSEs = []
+    EOSs = []
     grad_s0s = []
     grad_ln_rho0s = []
     grad_ln_pom0s = []
@@ -699,18 +700,24 @@ def build_nccs(plot_nccs=False):
         rs.append(dedalus_r[bn].ravel())
         grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
         grad_ln_pom0 = ncc_dict['grad_ln_pom0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        ln_rho0 = ncc_dict['ln_rho0']['field_{}'.format(bn)]
         gvec = ncc_dict['g']['field_{}'.format(bn)]
         grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
+        s0 = ncc_dict['s0']['field_{}'.format(bn)]
         pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
         HSE = (nondim_gamma1*pom0*(grad_ln_rho0 + grad_s0 / nondim_cp) - gvec).evaluate()
+        EOS = s0/nondim_cp - ( (1/nondim_gamma1) * (np.log(pom0) - np.log(nondim_R_gas)) - ((nondim_gamma1-1)/nondim_gamma1) * ln_rho0 )
         N2_val = -gvec['g'][2,:] * grad_s0['g'][2,:] / nondim_cp 
         N2s.append(N2_val)
         HSEs.append(HSE['g'][2,:])
+        EOSs.append(EOS.evaluate()['g'])
         grad_ln_rho0s.append(grad_ln_rho0['g'][2,:])
         grad_ln_pom0s.append(grad_ln_pom0['g'][2,:])
     r_dedalus = np.concatenate(rs, axis=-1)
     N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
     HSE_dedalus = np.concatenate(HSEs, axis=-1).ravel()
+    EOS_dedalus = np.concatenate(EOSs, axis=-1).ravel()
     grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
     grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
     plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa')
@@ -730,6 +737,15 @@ def build_nccs(plot_nccs=False):
     plt.xlabel('r')
     plt.ylabel("HSE")
     plt.savefig('star/HSE_goodness.png')
+
+    plt.figure()
+    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    plt.plot(r_dedalus, np.abs(EOS_dedalus))
+    plt.yscale('log')
+    plt.xlabel('r')
+    plt.ylabel("EOS")
+    plt.savefig('star/EOS_goodness.png')
+
 
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
