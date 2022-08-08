@@ -17,7 +17,8 @@ from scipy.interpolate import interp1d
 import logging
 logger = logging.getLogger(__name__)
 
-from .anelastic_functions import make_bases, make_fields, fill_structure, get_anelastic_variables, set_anelastic_problem
+from dedalus.core import subsystems
+from .compressible_functions import make_bases, make_fields, fill_structure, get_compressible_variables, set_compressible_problem
 from .parser import name_star
 import d3_stars.defaults.config as config
 
@@ -57,43 +58,44 @@ def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
 
 
 def matrix_info(subproblem):
-    if not os.path.exists('evp_matrices'):
-        os.mkdir('evp_matrices')
-
-    sp = subproblem
-    ell = subproblem.group[1]
-    AL = (sp.pre_left.T @ sp.L_min).A
-    BL = - (sp.pre_left.T @ sp.M_min).A
-    plt.imshow(np.log10(np.abs(AL)))
-    plt.colorbar()
-    plt.savefig("evp_matrices/ell_A_%03i.png" %ell, dpi=600)
-    plt.clf()
-    plt.imshow(np.log10(np.abs(BL)))
-    plt.colorbar()
-    plt.savefig("evp_matrices/ell_B_%03i.png" %ell, dpi=600)
-    plt.clf()
-
-    A = (sp.L_min @ sp.pre_right).A
-    B = - (sp.M_min @ sp.pre_right).A
-    plt.imshow(np.log10(np.abs(A)))
-    plt.colorbar()
-    plt.savefig("evp_matrices/cond_ell_A_%03i.png" %ell, dpi=600)
-    plt.clf()
-    plt.imshow(np.log10(np.abs(B)))
-    plt.colorbar()
-    plt.savefig("evp_matrices/cond_ell_B_%03i.png" %ell, dpi=600)
-    plt.clf()
-
-    condition_number_A = np.linalg.cond(A)
-    condition_number_B = np.linalg.cond(B)
-    condition_number_ML = np.linalg.cond(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
-    rank_A = np.linalg.matrix_rank(A)
-    rank_B = np.linalg.matrix_rank(B)
-    rank_ML = np.linalg.matrix_rank(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
-    logger.info("condition numbers A / B = {:.3e} / {:.3e}".format(condition_number_A, condition_number_B))
-    logger.info("rank A = {:.3e} / {:.3e}, rank B = {:.3e} / {:.3e}".format(rank_A, np.max(A.shape), rank_B, np.max(B.shape)))
-    logger.info("condition number M + L= {:.3e}".format(condition_number_ML))
-    logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
+    pass
+#    if not os.path.exists('evp_matrices'):
+#        os.mkdir('evp_matrices')
+#
+#    sp = subproblem
+#    ell = subproblem.group[1]
+#    AL = (sp.pre_left.T @ sp.L_min).A
+#    BL = - (sp.pre_left.T @ sp.M_min).A
+#    plt.imshow(np.log10(np.abs(AL)))
+#    plt.colorbar()
+#    plt.savefig("evp_matrices/ell_A_%03i.png" %ell, dpi=600)
+#    plt.clf()
+#    plt.imshow(np.log10(np.abs(BL)))
+#    plt.colorbar()
+#    plt.savefig("evp_matrices/ell_B_%03i.png" %ell, dpi=600)
+#    plt.clf()
+#
+#    A = (sp.L_min @ sp.pre_right).A
+#    B = - (sp.M_min @ sp.pre_right).A
+#    plt.imshow(np.log10(np.abs(A)))
+#    plt.colorbar()
+#    plt.savefig("evp_matrices/cond_ell_A_%03i.png" %ell, dpi=600)
+#    plt.clf()
+#    plt.imshow(np.log10(np.abs(B)))
+#    plt.colorbar()
+#    plt.savefig("evp_matrices/cond_ell_B_%03i.png" %ell, dpi=600)
+#    plt.clf()
+#
+#    condition_number_A = np.linalg.cond(A)
+#    condition_number_B = np.linalg.cond(B)
+#    condition_number_ML = np.linalg.cond(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
+#    rank_A = np.linalg.matrix_rank(A)
+#    rank_B = np.linalg.matrix_rank(B)
+#    rank_ML = np.linalg.matrix_rank(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A)
+#    logger.info("condition numbers A / B = {:.3e} / {:.3e}".format(condition_number_A, condition_number_B))
+#    logger.info("rank A = {:.3e} / {:.3e}, rank B = {:.3e} / {:.3e}".format(rank_A, np.max(A.shape), rank_B, np.max(B.shape)))
+#    logger.info("condition number M + L= {:.3e}".format(condition_number_ML))
+#    logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
 
 
 def solve_dense(solver, ell, group_index=1, verbose=True):
@@ -397,34 +399,22 @@ class StellarEVP():
         self.coords, self.dist, bases, self.bases_keys = make_bases(resolutions, self.stitch_radii, radius, dealias=dealias, dtype=np.complex128, mesh=None)
 
 
-        vec_fields = ['u', 'F']
-        scalar_fields = ['p', 's1', 'H', 'rho', 'pomega_tilde']
-        vec_taus = ['tau_u']
-        scalar_taus = ['tau_s']
-        vec_nccs = ['grad_ln_rho', 'grad_S0', 'grad_chi_rad', 'g']
-        scalar_nccs = ['ln_rho', 'g_phi', 'chi_rad', 'sponge', 'nu_diff']
-
-        self.namespace = make_fields(bases, self.coords, self.dist, 
-                                vec_fields=vec_fields, scalar_fields=scalar_fields, 
-                                vec_taus=vec_taus, scalar_taus=scalar_taus, 
-                                vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
-                                sponge=sponge, do_rotation=do_rotation)
+        self.namespace = make_fields(bases, self.coords, self.dist, sponge=sponge, do_rotation=do_rotation)
 
         r_scale = config.numerics['N_dealias']/dealias[0]
         if is_hires:
             r_scale /= hires_factor
         self.namespace, timescales = fill_structure(bases, self.dist, self.namespace, self.ncc_file, self.r_outer, Pe, 
-                                                vec_fields=vec_fields, vec_nccs=vec_nccs, scalar_nccs=scalar_nccs,
                                                 sponge=sponge, do_rotation=do_rotation, scales=(1,1,r_scale))
 
         self.namespace.update(locals())
         omega = self.dist.Field(name='omega')
         self.namespace['dt'] = lambda A: -1j * omega * A
 
-        prob_variables = get_anelastic_variables(bases, self.bases_keys, self.namespace)
+        prob_variables = get_compressible_variables(bases, self.bases_keys, self.namespace)
 
         self.problem = d3.EVP(prob_variables, eigenvalue=omega, namespace=self.namespace)
-        self.problem = set_anelastic_problem(self.problem, bases, self.bases_keys, stitch_radii=self.stitch_radii)
+        self.problem = set_compressible_problem(self.problem, bases, self.bases_keys, stitch_radii=self.stitch_radii)
         logger.info('problem built')
 
         logger.info('using ncc cutoff {:.2e}'.format(ncc_cutoff))
@@ -449,6 +439,7 @@ class StellarEVP():
                 break
 
     def setup_sparse_solve(self, ell):
+        logger.info('setting up sparse solve for ell = {}'.format(ell))
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
             if ss_ell == ell and ss_m == 1:
@@ -463,6 +454,8 @@ class StellarEVP():
             sp = subproblem
 
             ell = subproblem.group[1]
+
+            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
             matrix_info(sp)
 
             self.A = (sp.L_min @ sp.pre_right).A
@@ -470,7 +463,7 @@ class StellarEVP():
             self.solver.eigenvalue_subproblem = sp
             break
 
-    def solve_sparse(self, eigenvalues):
+    def solve_sparse(self, ell, eigenvalues):
         """
         Perform targeted sparse eigenvalue search for selected pencil.
         Parameters
@@ -486,18 +479,32 @@ class StellarEVP():
             Flag to rebuild cached coefficient matrices (default: False)
         Other keyword options passed to scipy.sparse.linalg.eigs.
         """
+        self.ell = ell
         N = 1
         full_evals = []
         full_evecs = []
         start_time = time.time()
+        for subproblem in self.solver.subproblems:
+            this_ell = subproblem.group[1]
+            if this_ell != self.ell:
+                continue
+
+            sp = subproblem
+            break
+
         for i, target in enumerate(eigenvalues):
+#            self.solver.solve_sparse(sp, N, target)
+#            full_evals.append(np.copy(self.solver.eigenvalues))
+#            full_evecs.append(np.copy(self.solver.eigenvectors))
             evalue, evec = scipy_sparse_eigs(A=self.A, B=self.B, N=N, target=target, matsolver=self.solver.matsolver)
-            full_evals.append(evalue.ravel())
-            full_evecs.append(evec.ravel())
+            full_evals.append(evalue)
+            full_evecs.append(evec)
         end_time = time.time()
         logger.info('sparse solve done in {:.2f} sec'.format(end_time - start_time))
         self.solver.eigenvalues = np.array(full_evals)
+#        self.solver.eigenvectors = np.array(full_evecs)
         self.solver.eigenvectors = np.swapaxes(np.array(full_evecs), 0, 1)
+        self.solver.eigenvectors = self.solver.eigenvectors.reshape(self.solver.eigenvectors.shape[:2])
         logger.info('shapes: {} / {}'.format(self.solver.eigenvalues.shape, self.solver.eigenvectors.shape))
 
         return self.solver
@@ -523,7 +530,7 @@ class StellarEVP():
             namespace['cz_envelope_{}'.format(bn)]['g'] = one_to_zero(namespace['r_{}'.format(bn)], r_cz, width=cz_width)
             namespace['conj_u_{}'.format(bn)] = conj_u = dist.VectorField(coords, bases=basis)
             u = namespace['u_{}'.format(bn)]
-            rho = namespace['rho_{}'.format(bn)]
+            rho = namespace['rho0_{}'.format(bn)]
             
             if tot_KE_op is None:
                 tot_KE_op = d3.integ(rho*conj_u@u/2)
@@ -539,7 +546,7 @@ class StellarEVP():
             if np.abs(v1.real) < np.abs(v1.imag):
                 logger.info('skipping eigenvalue {}; damps very quickly'.format(v1))
                 continue
-            self.hires_EVP.solver = self.hires_EVP.solve_sparse([v1,])
+            self.hires_EVP.solver = self.hires_EVP.solve_sparse(self.ell, [v1,])
             v2 = self.hires_EVP.solver.eigenvalues[0]
             real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
             goodness = np.abs(v1 - v2)/np.abs(v1).min()
@@ -608,10 +615,10 @@ class StellarEVP():
         rho_fields = []
         s1_surf = None
         for i, bn in enumerate(self.bases_keys):
-            p, u = [self.namespace['{}_{}'.format(f, bn)] for f in ['p', 'u']]
-            self.namespace['pressure_{}'.format(bn)] = p + self.namespace['pomega_tilde_{}'.format(bn)]
+#            p, u = [self.namespace['{}_{}'.format(f, bn)] for f in ['p', 'u']]
+#            self.namespace['pressure_{}'.format(bn)] = p + self.namespace['pomega_tilde_{}'.format(bn)]
             self.namespace['KE_{}'.format(bn)] = self.dist.Field(bases=self.bases[bn], name='KE_{}'.format(bn))
-            rho_fields.append(self.namespace['rho_{}'.format(bn)]['g'][0,0,:])
+            rho_fields.append(self.namespace['rho0_{}'.format(bn)]['g'][0,0,:])
 
             if integ_energy_op is None:
                 integ_energy_op = d3.integ(self.namespace['KE_{}'.format(bn)])
@@ -627,31 +634,31 @@ class StellarEVP():
         velocity_eigenfunctions = []
         velocity_eigenfunctions_pieces = []
         entropy_eigenfunctions = []
-        pressure_eigenfunctions = []
+        ln_rho_eigenfunctions = []
         full_velocity_eigenfunctions = []
         full_velocity_eigenfunctions_pieces = []
         full_entropy_eigenfunctions = []
-        full_pressure_eigenfunctions = []
+        full_ln_rho_eigenfunctions = []
 
         for i, e in enumerate(self.solver.eigenvalues):
             print('doing {}'.format(e))
             self.solver.set_state(i, self.subsystem)
 
-            #Get eigenvectors
-            for j, bn in enumerate(self.bases_keys):
-                self.namespace['pressure_field_{}'.format(bn)] = self.namespace['pressure_{}'.format(bn)].evaluate()
+#            #Get eigenvectors
+#            for j, bn in enumerate(self.bases_keys):
+#                self.namespace['pressure_field_{}'.format(bn)] = self.namespace['pressure_{}'.format(bn)].evaluate()
 
             ef_u, ef_u_pieces = clean_eigvecs('u', self.bases_keys, self.namespace, shift=False)
             ef_s1, ef_s1_pieces = clean_eigvecs('s1', self.bases_keys, self.namespace, shift=False)
-            ef_pom, ef_pom_pieces = clean_eigvecs('pressure_field', self.bases_keys, self.namespace, shift=False)
+            ef_ln_rho1, ef_ln_rho1_pieces = clean_eigvecs('ln_rho1', self.bases_keys, self.namespace, shift=False)
 
             #normalize & store eigenvectors
             
             ix = np.unravel_index(np.argmax(np.abs(ef_u[2,:])), ef_u[2,:].shape)
             shift = ef_u[2,:][ix]
-            for data in [ef_u, ef_s1, ef_pom]:
+            for data in [ef_u, ef_s1, ef_ln_rho1]:
                 data[:] /= shift
-            for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_pom_pieces]:
+            for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_ln_rho1_pieces]:
                 for data in piece_tuple:
                     data['g'][:] /= shift
 
@@ -661,15 +668,15 @@ class StellarEVP():
             velocity_eigenfunctions.append(ef_u[vec_slices].squeeze())
             velocity_eigenfunctions_pieces.append([p['g'][vec_slices].squeeze() for p in ef_u_pieces])
             entropy_eigenfunctions.append(ef_s1[scalar_slices].squeeze())
-            pressure_eigenfunctions.append(ef_pom[scalar_slices].squeeze())
+            ln_rho_eigenfunctions.append(ef_ln_rho1[scalar_slices].squeeze())
             full_velocity_eigenfunctions.append(ef_u)
             full_velocity_eigenfunctions_pieces.append([np.copy(p['g']) for p in ef_u_pieces])
             full_entropy_eigenfunctions.append(ef_s1)
-            full_pressure_eigenfunctions.append(ef_pom)
+            full_ln_rho_eigenfunctions.append(ef_ln_rho1)
 
 #            #Kinetic energy
             for j, bn in enumerate(self.bases_keys):
-                rho = self.namespace['rho_{}'.format(bn)]
+                rho = self.namespace['rho0_{}'.format(bn)]
                 u_squared = np.sum(ef_u_pieces[j]['g']*np.conj(ef_u_pieces[j]['g']), axis=0)
                 self.namespace['KE_{}'.format(bn)]['g'] = (rho['g']*u_squared.real/2)
             integ_energy = integ_energy_op.evaluate()
@@ -685,7 +692,7 @@ class StellarEVP():
         bruntN2 = []
         for bn in self.bases_keys:
             r.append(self.namespace['r1_{}'.format(bn)])
-            bruntN2.append(-self.namespace['g_{}'.format(bn)]['g'][2,0,0,:]*self.namespace['grad_S0_{}'.format(bn)]['g'][2,0,0,:])
+            bruntN2.append(-self.namespace['g_{}'.format(bn)]['g'][2,0,0,:]*self.namespace['grad_s0_{}'.format(bn)]['g'][2,0,0,:]/self.namespace['Cp']['g'])
         r = np.concatenate(r, axis=-1)
         bruntN2 = np.concatenate(bruntN2, axis=-1)
 
@@ -698,13 +705,13 @@ class StellarEVP():
             f['integ_energies'] = integ_energies
             f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
             f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
-            f['pressure_eigenfunctions'] = np.array(pressure_eigenfunctions)
+            f['ln_rho_eigenfunctions'] = np.array(ln_rho_eigenfunctions)
             f['full_velocity_eigenfunctions'] = np.array(full_velocity_eigenfunctions)
             f['full_entropy_eigenfunctions'] = np.array(full_entropy_eigenfunctions)
-            f['full_pressure_eigenfunctions'] = np.array(full_pressure_eigenfunctions)
+            f['full_ln_rho_eigenfunctions'] = np.array(full_ln_rho_eigenfunctions)
             for i, bn in enumerate(self.bases_keys):
                 f['r_{}'.format(bn)] = self.namespace['r1_{}'.format(bn)]
-                f['rho_{}'.format(bn)] = self.namespace['rho_{}'.format(bn)]['g']
+                f['rho_{}'.format(bn)] = self.namespace['rho0_{}'.format(bn)]['g']
                 for j in range(len(self.solver.eigenvalues)):
                     f['velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
                     f['full_velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = full_velocity_eigenfunctions_pieces[j][i]
@@ -750,9 +757,9 @@ class StellarEVP():
             work_fields.append(dist.VectorField(self.coords, bases=basis))
             conj_work_fields.append(dist.VectorField(self.coords, bases=basis))
             if int_field is None:
-                int_field = d3.integ(self.namespace['rho_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
+                int_field = d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
             else:
-                int_field += d3.integ(self.namespace['rho_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
+                int_field += d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
 
         def IP(velocity_list1, velocity_list2):
             """ Integrate the bra-ket of two eigenfunctions of velocity. """
