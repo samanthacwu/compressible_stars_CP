@@ -150,89 +150,39 @@ if not args['--no_ft']:
                 wf['freqs'] = freqs 
                 wf['freqs_inv_day'] = freqs/tau
 
-#Get spectrum = (real(ur*conj(p)))
-with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
-    if 'wave_luminosity(r={})'.format(radii[0]) not in wf.keys():
+with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as wf:
+    with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'w') as pf:
         raw_freqs = wf['freqs'][()]
         raw_freqs_invDay = wf['freqs_inv_day'][()]
-        for i, radius_str in enumerate(radii):
-            if 'R' in radius_str:
-                radius = float(radius_str.replace('R', ''))*r_outer
-            else:
-                radius = float(radius_str)
-
-            for k in wf.keys():
-                if 'r={}'.format(radius_str) in k:
-                    if 'u_' in k:
-                        print('ur key, {}, r={}'.format(k, radius_str))
-                        ur = wf[k][:,2,:]
-                    if 'enthalpy_fluc_' in k:
-                        print('enthalpy key, {}, r={}'.format(k, radius_str))
-                        p = wf[k][()] #has rho in it. Is (Cp/R) * P.
-            spectrum = 4*np.pi*radius**2*(ur*np.conj(p)).real
-            # Collapse negative frequencies
-            for f in raw_freqs:
-                if f < 0:
-                    spectrum[raw_freqs == -f] += spectrum[raw_freqs == f]
-            # Sum over m's.
-            spectrum = spectrum[raw_freqs >= 0,:]
-            spectrum = np.sum(spectrum, axis=2)
-            print('saving {}'.format(radius_str))
-            wf['wave_luminosity(r={})'.format(radius_str)] = spectrum
-            if i == 0:
-                wf['real_freqs'] = raw_freqs[raw_freqs >= 0]
-                wf['real_freqs_inv_day'] = raw_freqs_invDay[raw_freqs_invDay >= 0]
-    with h5py.File('{}/wave_luminosity.h5'.format(full_out_dir), 'w') as of:
-        save_radius = 1.5
-        print('saving wave luminosity at r=1.5')
-        of['wave_luminosity'] = wf['wave_luminosity(r=1.5)'][()]
-        of['real_freqs'] = wf['real_freqs'][()]
-        of['real_freqs_inv_day'] = wf['real_freqs_inv_day'][()]
-        of['ells'] = wf['ells'][()]
-        
+        pf['real_freqs'] = wf['freqs'][raw_freqs >= 0]
+        pf['real_freqs_inv_day'] = wf['freqs_inv_day'][raw_freqs >= 0]
+        pf['ells'] = wf['ells'][()]
+        for i, f in enumerate(fields):
+            transform = wf['{}_cft'.format(f)]
+            power = (np.conj(transform)*transform).real
+            for fq in raw_freqs:
+                if fq < 0:
+                    power[raw_freqs == -fq] += power[raw_freqs == fq]
+            power = power[raw_freqs >= 0,:]
+            power = np.sum(power, axis=-1) #sum over m
+            pf['{}'.format(f)] = power
+       
 
 fig = plt.figure()
 for ell in range(11):
     if ell == 0: continue
-    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
-        freqs = rf['real_freqs'][()]
-        for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            if ell == 3 and i == 1:
-                this_ell = 3
-                shift_ind = np.argmax(wave_luminosity)
-                shift_freq = freqs[shift_ind]
-                shift = (wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-                wave_luminosity_power = lambda f, ell: shift*(f/shift_freq)**(-10)*(ell/this_ell)**4
-                wave_luminosity_str = r'{:.2e}'.format(shift/shift_freq**(-10) / this_ell**4) + r'$f^{-10}\ell^4$'
-                break
-
-for ell in range(11):
-    if ell == 0: continue
     print('plotting ell = {}'.format(ell))
-    with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+    with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as rf:
 
         freqs = rf['real_freqs'][()]
-        for i, radius_str in enumerate(radii):
-            if 'R' in radius_str:
-                radius = float(radius_str.replace('R', ''))*r_outer
-            else:
-                radius = float(radius_str)
-
-            if radius < 1: continue
-            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
-#                shift_ind = np.argmax(wave_luminosity*freqs)
-#                shift_freq = freqs[shift_ind]
-#                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
-    plt.loglog(freqs, wave_luminosity_power(freqs, ell), c='k', label=wave_luminosity_str)
-    plt.legend(loc='best')
+        power = rf['shell(enthalpy_fluc_S2,r=R)'][:,ell]
+        plt.loglog(freqs, power)
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
-    plt.ylabel(r'|wave luminosity|')
+    plt.ylabel(r'|enthalpy surface power|')
 
     plt.axvline(np.sqrt(N2plateau_simunit)/(2*np.pi))
-    plt.ylim(1e-33, 1e-17)
+    plt.ylim(1e-40, 1e-25)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
     
@@ -240,27 +190,19 @@ for ell in range(11):
 
 
 
-freqs_for_dfdell = [1e-2, 5e-2, 8e-2]
-with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
+freqs_for_dfdell = [8e-2, 2e-1, 5e-1]
+with h5py.File('{}/power_spectra.h5'.format(full_out_dir), 'r') as rf:
     freqs = rf['real_freqs'][()]
     ells = rf['ells'][()].flatten()
     for f in freqs_for_dfdell:
         print('plotting f = {}'.format(f))
         f_ind = np.argmin(np.abs(freqs - f))
-        for i, radius_str in enumerate(radii):
-            if 'R' in radius_str:
-                radius = float(radius_str.replace('R', ''))*r_outer
-            else:
-                radius = float(radius_str)
-            if radius < 1: continue
-            wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][f_ind, :])
-            plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
-        plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
-        plt.legend(loc='best')
+        power = rf['shell(enthalpy_fluc_S2,r=R)'][f_ind,:]
+        plt.loglog(ells, power)
         plt.title('f = {} 1/day'.format(f))
         plt.xlabel(r'$\ell$')
-        plt.ylabel(r'|wave luminosity|')
-        plt.ylim(1e-33, 1e-17)
+        plt.ylabel(r'|enthalpy surface power|')
+        plt.ylim(1e-40, 1e-25)
         plt.xlim(1, ells.max())
         fig.savefig('{}/ell_spectrum_freq{}.png'.format(full_out_dir, f), dpi=300, bbox_inches='tight')
         plt.clf()
