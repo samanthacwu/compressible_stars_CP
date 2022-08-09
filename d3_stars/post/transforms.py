@@ -7,20 +7,25 @@ class SHTransformer():
 
     def __init__(self, nphi, ntheta, dtype=np.float64, dealias=1, radius=1):
         resolution = (nphi, ntheta)
+        self.dtype = dtype
+        if self.dtype not in (np.float64, np.complex128):
+            raise ValueError("Invalid dtype")
 
         # Parameters
         c = d3.SphericalCoordinates('phi', 'theta', 'r')
         dealias_tuple = (dealias, dealias)
         Lmax = resolution[1]-1
         sphere_area = 4*np.pi*radius**2
+        
         dist = d3.Distributor((c,), mesh=None, comm=MPI.COMM_SELF, dtype=dtype)
         basis = d3.SphereBasis(c.S2coordsys, resolution, radius=radius, dtype=dtype, dealias=dealias_tuple)
-        phig, thetag = basis.global_grids(basis.dealias)
+        self.phi, self.theta = basis.global_grids(basis.dealias)
 
         self.scalar_field = dist.Field(bases=basis)
         self.vector_field = dist.VectorField(bases=basis, coordsys=c)
-        self.power_scalar_op = d3.Average(self.scalar_field**2)
-        self.power_vector_op = d3.Average(self.vector_field@self.vector_field)
+        self.conj_vector_field = dist.VectorField(bases=basis, coordsys=c)
+        self.power_scalar_op = d3.Average(self.scalar_field*np.conj(self.scalar_field))
+        self.power_vector_op = d3.Average(self.conj_vector_field@self.vector_field)
 
         self.ell_values = []
         self.m_values = []
@@ -44,8 +49,11 @@ class SHTransformer():
                     self.m_values.append(m)
         self.ell_values = np.sort(self.ell_values)[:,None]
         self.m_values = np.sort(self.m_values)[None,:]
+        self.out_field = None
+        self.vector = False
 
     def transform_scalar_field(self, grid_data, normalization=1/2):
+        self.vector = False
         self.scalar_field['g'] = grid_data
         power_grid = self.power_scalar_op.evaluate()['g'].ravel()[0]
 
@@ -54,21 +62,29 @@ class SHTransformer():
             for j, m in enumerate(self.m_values.ravel()):
                 sl_key = '{},{}'.format(ell,m)
                 if sl_key in self.slices.keys():
-                    cosmphi, sinmphi = self.slices[sl_key]
-                    out_field[i,j] = self.scalar_field['c'][cosmphi].ravel()[0] \
-                                    + 1j*self.scalar_field['c'][sinmphi].ravel()[0]
-                    out_field[i,j] *= normalization
-                    if m == 0:
-                        out_field[i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(scalar_field**2)
+                    if self.dtype is np.complex128:
+                        out_field[i,j] = self.scalar_field['c'][self.slices[sl_key][0]].ravel()
+                        out_field[i,j] *= np.sqrt(2)*normalization
+                    else:
+                        cosmphi, sinmphi = self.slices[sl_key]
+                        out_field[i,j] = self.scalar_field['c'][cosmphi].ravel()[0] \
+                                        + 1j*self.scalar_field['c'][sinmphi].ravel()[0]
+                        out_field[i,j] *= normalization
+                        if m == 0:
+                            out_field[i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(scalar_field**2)
         #check power
         power_transform = np.sum(out_field * np.conj(out_field)).real
         if (np.allclose(power_transform, 0) and np.allclose(power_grid, 0)) or np.allclose(power_transform/power_grid, 1): 
+            self.out_field = out_field
             return out_field
         else:
+            self.out_field = None
             raise ValueError("Scalar Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
     def transform_vector_field(self, grid_data, normalization=1/2):
+        self.vector = True
         self.vector_field['g'] = grid_data
+        self.conj_vector_field['g'] = np.conj(self.vector_field['g'])
         power_grid = self.power_vector_op.evaluate()['g'].ravel()[0]
 
         out_field = np.zeros((grid_data.shape[0], self.ell_values.size, self.m_values.size), dtype=np.complex128)
@@ -77,18 +93,35 @@ class SHTransformer():
                 sl_key = '{},{}'.format(ell,m)
                 if sl_key in self.slices.keys():
                     for v  in range(grid_data.shape[0]):
-                        cosmphi, sinmphi = self.slices[sl_key]
-                        cosmphi = (slice(v, v+1, 1), *cosmphi)
-                        sinmphi = (slice(v, v+1, 1), *sinmphi)
-                        out_field[v,i,j] = self.vector_field['c'][cosmphi].ravel()[0] \
-                                        + 1j*self.vector_field['c'][sinmphi].ravel()[0]
-                        out_field[v,i,j] *= normalization
-                        if m == 0:
-                            out_field[v,i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(vector_field**2)
+                        if self.dtype is np.complex128:
+                            index = (slice(v, v+1, 1), *self.slices[sl_key][0])
+                            out_field[v,i,j] = self.vector_field['c'][index].ravel()
+                            out_field[v,i,j] *= np.sqrt(2)*normalization
+                        else:
+                            cosmphi, sinmphi = self.slices[sl_key]
+                            cosmphi = (slice(v, v+1, 1), *cosmphi)
+                            sinmphi = (slice(v, v+1, 1), *sinmphi)
+                            out_field[v,i,j] = self.vector_field['c'][cosmphi].ravel()[0] \
+                                             + 1j*self.vector_field['c'][sinmphi].ravel()[0]
+                            out_field[v,i,j] *= normalization
+                            if m == 0:
+                                out_field[v,i,j] *= np.sqrt(2) #normalize so that sum(coeff*conj(coeffs)) == 4*s2_avg(vector_field**2)
         #check power
         power_transform = np.sum(out_field * np.conj(out_field)).real
         if (np.allclose(power_transform, 0) and np.allclose(power_grid, 0)) or np.allclose(power_transform/power_grid, 1): 
+            self.out_field = out_field
             return out_field
         else:
+            self.out_field = None
             raise ValueError("Vector Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
+
+    def get_ell_m_value(self, ell, m):
+        if self.out_field is None:
+            raise ValueError("Must transform field before finding ell,m value")
+
+        index = (self.ell_values == ell)*(self.m_values == m)
+        if self.vector:
+            return self.out_field[:,index]
+        else:
+            return self.out_field[index]
 
