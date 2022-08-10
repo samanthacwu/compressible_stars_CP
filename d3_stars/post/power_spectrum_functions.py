@@ -3,19 +3,29 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
 hann_power_normalizer = 8/3
-real_hann_power_normalizer = 2 * 8/3
 hann_amp_normalizer = 2
 
 
 class FourierTransformer:
 
-    def __init__(self, times, signal):
+    def __init__(self, times, signal, window=np.hanning):
         self.times = times
         self.signal = np.array(signal)
         self.N = self.times.shape[0]
-        self.window = np.hanning(self.N)
+        if window is None:
+            self.window = np.ones(self.N)
+        else:
+            self.window = window(self.N)
         while len(self.window.shape) < len(self.signal.shape):
             self.window = np.expand_dims(self.window, axis=-1)
+        
+        self.power_norm = 1
+        self.amp_norm = 1
+        if np.hanning == window:
+            print('using hann window')
+            self.power_norm = hann_power_normalizer
+            self.amp_norm = hann_amp_normalizer
+
        
         if self.signal.dtype == np.float64:
             self.complex = False
@@ -43,7 +53,7 @@ class FourierTransformer:
     def clean_rfft(self):
         self.freqs = np.fft.rfftfreq(self.times.shape[0], d=np.median(np.gradient(self.times.flatten()))) 
         self.ft = np.fft.rfft(self.window*self.signal, axis=0, norm="forward")
-        self.power = (self.ft*np.conj(self.ft)).real * self.N/(self.N-2)
+        self.power = self.normalize_rfft_power()
         self.power_freqs = self.freqs
         return self.freqs, self.ft
 
@@ -55,10 +65,7 @@ class FourierTransformer:
 
     def get_power(self):
         """ returns power spectrum, accounting for window normalization so that parseval's theorem is satisfied"""
-        if self.complex:
-            return self.power * hann_power_normalizer
-        else:
-            return self.power * real_hann_power_normalizer
+        return self.power * self.power_norm
 
     def get_power_freqs(self):
         """ returns power spectrum, accounting for window normalization so that parseval's theorem is satisfied"""
@@ -66,7 +73,7 @@ class FourierTransformer:
 
     def get_peak_power(self, freq):
         """ returns the power at a given frequency, normalized so that the window does not mess with its value if it's a peak"""
-        return self.power_interp(freq) * hann_amp_normalizer
+        return self.power_interp(freq) * self.amp_norm
 
     def normalize_cfft_power(self):
         """
@@ -77,8 +84,23 @@ class FourierTransformer:
         self.power = np.zeros((self.power_freqs.size,*tuple(power.shape[1:])))
         for i, f in enumerate(self.power_freqs):
             good = np.logical_or(self.freqs == f, self.freqs == -f)
-            self.power[i] = np.sum(power[good], axis=0) * self.N/(self.N-2)
+            self.power[i] = np.sum(power[good], axis=0)
         return self.power
+
+    def normalize_rfft_power(self):
+        """
+        Calculates the power spectrum of a real fourier transform accounting for its hermitian-ness
+        """
+        power = (self.ft*np.conj(self.ft)).real
+        self.power_freqs = np.unique(np.abs(self.freqs))
+        self.power = np.zeros((self.power_freqs.size,*tuple(power.shape[1:])))
+        for i, f in enumerate(self.power_freqs):
+            if f != 0:
+                self.power[i] = 2*power[i] #account for negative frequencies which are conj(positive freqs)
+            else:
+                self.power[i] = power[i]
+        return self.power
+
 
 
 if __name__ == "__main__":
