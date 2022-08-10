@@ -25,7 +25,7 @@ numerics['equations'] = 'FC_HD' #anelastic hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
-numerics['reynolds_target'] = 1e3
+numerics['reynolds_target'] = 4e3
 
 numerics['prandtl'] = 1
 

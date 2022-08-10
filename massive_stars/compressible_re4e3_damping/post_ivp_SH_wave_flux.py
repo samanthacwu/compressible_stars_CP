@@ -5,7 +5,7 @@ Usage:
     post_ivp_SH_wave_flux.py [options]
 
 Options:
-    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_shells]
+    --data_dir=<dir>                    Name of data handler directory [default: SH_transform_wave_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
     --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 40]
     --n_files=<num_files>               Total number of files to plot
@@ -39,10 +39,9 @@ import matplotlib.pyplot as plt
 import logging
 logger = logging.getLogger(__name__)
 
-from dedalus.tools.config import config
-
-from d3_stars.simulations.parser import parse_std_config
+from d3_stars.defaults import config
 from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
+from d3_stars.simulations.parser import name_star
 
 args = docopt(__doc__)
 res = re.compile('(.*),r=(.*)')
@@ -62,14 +61,14 @@ n_files     = args['--n_files']
 if n_files is not None: 
     n_files = int(n_files)
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
+out_dir, star_file = name_star()
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]
     rS2 = f['r_S2'][()]
-    rhoB = np.exp(f['ln_rho_B'][()])
-    rhoS1 = np.exp(f['ln_rho_S1'][()])
-    rhoS2 = np.exp(f['ln_rho_S2'][()])
+    rhoB = np.exp(f['ln_rho0_B'][()])
+    rhoS1 = np.exp(f['ln_rho0_S1'][()])
+    rhoS2 = np.exp(f['ln_rho0_S2'][()])
     r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
     rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
     rho_func = interp1d(r,rho)
@@ -79,6 +78,7 @@ with h5py.File(star_file, 'r') as f:
     #Entropy units are erg/K/g
     s_c = f['s_nd'][()]
     N2plateau = f['N2plateau'][()] * (60*60*24)**2
+    N2plateau_simunit = N2plateau * tau**2
 
 # Create Plotter object, tell it which fields to plot
 out_dir = 'SH_wave_flux_spectra'.format(data_dir)
@@ -97,7 +97,7 @@ if not args['--no_ft']:
     print('getting times...')
     first = True
     while reader.writes_remain():
-        dsets, ni = reader.get_dsets([])
+        dsets, ni = reader.get_dsets([], verbose=False)
         times.append(reader.current_file_handle['time'][ni])
         if first:
             ells = reader.current_file_handle['ells'][()]
@@ -113,23 +113,34 @@ if not args['--no_ft']:
     #TODO: only load in one ell and m at a time, that'll save memory.
     for i, f in enumerate(fields):
         print('reading field {}'.format(f))
-        data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
 
         print('filling datacube...')
         writes = 0
         while reader.writes_remain():
-            dsets, ni = reader.get_dsets([])
+            dsets, ni = reader.get_dsets([], verbose=False)
             rf = reader.current_file_handle
-            data_cube[writes,:] = rf['tasks'][f][ni,:].squeeze()
+            this_task = rf['tasks'][f][ni,:].squeeze()
+            if writes == 0: 
+                if this_task.shape[0] == 3 and len(this_task.shape) == 3:
+                    #vector
+                    data_cube = np.zeros((times.shape[0], 3, ells.shape[1], ms.shape[2]), dtype=np.complex128)
+                else:
+                    data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
+            data_cube[writes,:] = this_task
             writes += 1
 
         print('taking transform')
         transform = np.zeros(data_cube.shape, dtype=np.complex128)
-        for ell in range(data_cube.shape[1]):
-            print('taking transforms {}/{}'.format(ell+1, data_cube.shape[1]))
-            for m in range(data_cube.shape[2]):
+        for ell in range(data_cube.shape[-2]):
+            print('taking transforms {}/{}'.format(ell+1, data_cube.shape[-2]))
+            for m in range(data_cube.shape[-1]):
                 if m > ell: continue
-                freqs, transform[:,ell,m] = clean_cfft(times, data_cube[:,ell,m])
+                if len(data_cube.shape) == 3:
+                    input_data = data_cube[:,ell,m]
+                    freqs, transform[:,ell,m] = clean_cfft(times, input_data)
+                else:
+                    input_data = data_cube[:,:,ell,m]
+                    freqs, transform[:,:,ell,m] = clean_cfft(times, input_data)
         del data_cube
         gc.collect()
 
@@ -139,7 +150,7 @@ if not args['--no_ft']:
                 wf['freqs'] = freqs 
                 wf['freqs_inv_day'] = freqs/tau
 
-#Get spectrum = rho*(real(ur*conj(p)))
+#Get spectrum = (real(ur*conj(p)))
 with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
     if 'wave_luminosity(r={})'.format(radii[0]) not in wf.keys():
         raw_freqs = wf['freqs'][()]
@@ -152,13 +163,13 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r+') as wf:
 
             for k in wf.keys():
                 if 'r={}'.format(radius_str) in k:
-                    if 'ur_' in k:
+                    if 'u_' in k:
                         print('ur key, {}, r={}'.format(k, radius_str))
-                        ur = wf[k][()]
-                    if 'pomega_' in k:
-                        print('pomega key, {}, r={}'.format(k, radius_str))
-                        p = wf[k][()]
-            spectrum = 4*np.pi*radius**2*rho_func(radius)*(ur*np.conj(p)).real
+                        ur = wf[k][:,2,:]
+                    if 'enthalpy_fluc_' in k:
+                        print('enthalpy key, {}, r={}'.format(k, radius_str))
+                        p = wf[k][()] #has rho in it. Is (Cp/R) * P.
+            spectrum = 4*np.pi*radius**2*(ur*np.conj(p)).real
             # Collapse negative frequencies
             for f in raw_freqs:
                 if f < 0:
@@ -210,7 +221,7 @@ for ell in range(11):
 
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][:,ell])
-            plt.loglog(freqs, radius**4*wave_luminosity, label='r={}'.format(radius_str))
+            plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
 #                shift_ind = np.argmax(wave_luminosity*freqs)
 #                shift_freq = freqs[shift_ind]
 #                shift = (freqs*wave_luminosity)[shift_ind]#freqs > 1e-2][0]
@@ -219,6 +230,8 @@ for ell in range(11):
     plt.title('ell={}'.format(ell))
     plt.xlabel('freqs (sim units)')
     plt.ylabel(r'|wave luminosity|')
+
+    plt.axvline(np.sqrt(N2plateau_simunit)/(2*np.pi))
     plt.ylim(1e-33, 1e-17)
     fig.savefig('{}/freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
     plt.clf()
@@ -241,7 +254,7 @@ with h5py.File('{}/transforms.h5'.format(full_out_dir), 'r') as rf:
                 radius = float(radius_str)
             if radius < 1: continue
             wave_luminosity = np.abs(rf['wave_luminosity(r={})'.format(radius_str)][f_ind, :])
-            plt.loglog(ells, radius**4*wave_luminosity, label='r={}'.format(radius_str))
+            plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
         plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')
         plt.title('f = {} 1/day'.format(f))
