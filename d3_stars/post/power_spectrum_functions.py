@@ -22,10 +22,8 @@ class FourierTransformer:
         self.power_norm = 1
         self.amp_norm = 1
         if np.hanning == window:
-            print('using hann window')
             self.power_norm = hann_power_normalizer
             self.amp_norm = hann_amp_normalizer
-
        
         if self.signal.dtype == np.float64:
             self.complex = False
@@ -72,8 +70,19 @@ class FourierTransformer:
         return self.power_freqs
 
     def get_peak_power(self, freq):
-        """ returns the power at a given frequency, normalized so that the window does not mess with its value if it's a peak"""
-        return self.power_interp(freq) * self.amp_norm
+        """ 
+        returns the power of a peak at the given frequency as if that peak corresponded to a sine wave.
+        So if your signal has a sine wave, A * sin(omega * t), we expect a peak at f = +/- omega/(2pi).
+        Each peak will have amplitude (A/2), so the total power will be 2(A^2/4) = A^2/2.
+
+        In the complex case, you can have a real and imaginary wave component with total amplitude A^2.
+        So the complex case has a cos^2 + sin^2 ~ 1 thing going for it.
+        The real case only has cos^2 ~ 1/2 and needs the extra factor of 2.
+        """
+        if self.complex:
+            return self.power_interp(freq) * self.amp_norm**2 * (self.N/(self.N-2))
+        else:
+            return 2*self.power_interp(freq) * self.amp_norm**2 * (self.N/(self.N-2))
 
     def normalize_cfft_power(self):
         """
@@ -101,72 +110,3 @@ class FourierTransformer:
                 self.power[i] = power[i]
         return self.power
 
-
-
-if __name__ == "__main__":
-    N = 10000
-    t_start = 0
-    t_final = 200
-    t_tot   = t_final - t_start
-    time = np.linspace(t_start, t_final, N)
-    dt = np.gradient(time)
-
-    #Properly normalized real FT
-    data = np.ones_like(time)
-    for f in np.arange(10):
-        data += 5*np.cos(2*np.pi*0.05*(f+1)*time)
-    time_series_power = np.sum((data)**2*dt)/np.sum(dt)
-
-    freqs, ft = clean_rfft(time, data)
-    power_spectrum = (ft*np.conj(ft)).real
-    fft_power = np.sum(power_spectrum)
-
-    print('real', time_series_power, fft_power, time_series_power - fft_power, (time_series_power - fft_power)/time_series_power)
-
-
-    #Properly normalized complex FT
-    data = np.ones_like(time, dtype=np.complex128)
-    for f in np.arange(10):
-        data += 5*np.cos(2*np.pi*0.05*(f+1)*time) * ((f+1) % 2 +  1j*(f % 2))
-    time_series_power = np.sum(data*np.conj(data)*dt)/np.sum(dt)
-
-    freqs, ft = clean_cfft(time, data)
-    freqs, power = normalize_cfft_power(freqs, ft)
-    fft_power = np.sum(power)
-
-    print('complex', time_series_power, fft_power, (time_series_power - fft_power).real/time_series_power.real)
-
-
-    ##Now we test multiple dimensions.
-    Nx = 100
-    x = np.linspace(0, 10, Nx).reshape(1, Nx)
-    dx = np.gradient(x.flatten()).reshape(1, Nx)
-    time = time.reshape(N, 1)
-    dt = dt.reshape(N, 1)
-
-    #Properly normalized real FT (multi-D)
-    data = np.ones((N, Nx))
-    for f in np.arange(10):
-        for kx in np.arange(5):
-            data += 5*np.cos(2*np.pi*0.05*(f+1)*time)*np.cos(kx*x)
-    time_series_power = np.sum((data)**2*dt*dx)/np.sum(dt)
-
-    freqs, ft = clean_rfft(time, data)
-    power_spectrum = (ft*np.conj(ft)).real
-    fft_power = np.sum(dx*power_spectrum)
-
-    print('real', time_series_power, fft_power, time_series_power - fft_power, (time_series_power - fft_power)/time_series_power)
-
-
-    #Properly normalized complex FT
-    data = np.ones((N, Nx), dtype=np.complex128)
-    for f in np.arange(10):
-        for kx in np.arange(5):
-            data += 5*np.cos(2*np.pi*0.05*(f+1)*time)*np.cos(kx*x) * ((f+1) % 2 +  1j*(f % 2))
-    time_series_power = np.sum(data*np.conj(data)*dt*dx)/np.sum(dt)
-
-    freqs, ft = clean_cfft(time, data)
-    freqs, power = normalize_cfft_power(freqs, ft)
-    fft_power = np.sum(power*dx)
-
-    print('complex', time_series_power, fft_power, (time_series_power - fft_power).real/time_series_power.real)
