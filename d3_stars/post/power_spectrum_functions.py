@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -9,6 +10,7 @@ hann_amp_normalizer = 2
 class FourierTransformer:
 
     def __init__(self, times, signal, window=np.hanning):
+        #TODO: define f_nyq and f_sample
         self.times = times
         self.signal = np.array(signal)
         self.N = self.times.shape[0]
@@ -110,3 +112,57 @@ class FourierTransformer:
                 self.power[i] = power[i]
         return self.power
 
+
+class ShortTimeFourierTransformer():
+
+    def __init__(self, times, signal, min_freq, **kwargs):
+        self.min_freq = min_freq
+        self.stft_period = 1/min_freq
+        self.times = times
+        self.signal = np.array(signal)
+        self.tot_N = self.times.size
+
+        self.dt = np.median(np.diff(self.times))
+        self.stft_N = int(self.stft_period/self.dt)
+        if self.stft_N % 2 == 1:
+            self.stft_N += 1 #make sure N is even.
+        self.num_chunks = int(np.floor(self.tot_N/self.stft_N))
+        slices = []
+        for i in range(self.num_chunks):
+            slices.append(slice(i*self.stft_N, (i+1)*self.stft_N, 1))
+        print(self.stft_N)
+
+
+        self.time_chunks = []
+        self.signal_chunks = []
+        self.FT_list = []
+        for sl in slices:
+            self.time_chunks.append(self.times[sl])
+            self.signal_chunks.append(self.signal[sl])
+            self.FT_list.append(FourierTransformer(self.time_chunks[-1], self.signal_chunks[-1], **kwargs))
+
+        self.freq_chunks = None
+        self.transform_chunks = None
+
+    def take_transforms(self):
+        self.freq_chunks = []
+        self.transform_chunks = []
+        for FT in self.FT_list:
+            freqs, transform = FT.take_transform()
+            self.freq_chunks.append(freqs)
+            self.transform_chunks.append(transform)
+
+    def get_peak_evolution(self, freqs):
+        """ Given a list of frequencies, return the evolution of the power in the peak at that frequency """
+        self.evolution_times = []
+        self.evolution_freqs = OrderedDict()
+        for f in freqs:
+            self.evolution_freqs[f] = []
+        for FT in self.FT_list:
+            for f in freqs:
+                self.evolution_freqs[f].append(FT.get_peak_power(f))
+            self.evolution_times.append(np.mean(FT.times))
+        self.evolution_times = np.array(self.evolution_times)
+        for f in freqs:
+            self.evolution_freqs[f] = np.array(self.evolution_freqs[f])
+        return self.evolution_times, self.evolution_freqs
