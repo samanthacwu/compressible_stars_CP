@@ -14,6 +14,7 @@ class FourierTransformer:
         self.times = times
         self.signal = np.array(signal)
         self.N = self.times.shape[0]
+        self.dt = np.median(np.diff(self.times))
         if window is None:
             self.window = np.ones(self.N)
         else:
@@ -24,8 +25,8 @@ class FourierTransformer:
         self.power_norm = 1
         self.amp_norm = 1
         if np.hanning == window:
-            self.power_norm = hann_power_normalizer
-            self.amp_norm = hann_amp_normalizer
+            self.power_norm = hann_power_normalizer * (self.N/(self.N-1))
+            self.amp_norm = hann_amp_normalizer * (self.N/(self.N-1))
        
         if self.signal.dtype == np.float64:
             self.complex = False
@@ -82,9 +83,9 @@ class FourierTransformer:
         The real case only has cos^2 ~ 1/2 and needs the extra factor of 2.
         """
         if self.complex:
-            return self.power_interp(freq) * self.amp_norm**2 * (self.N/(self.N-2))
+            return self.power_interp(freq) * self.amp_norm**2
         else:
-            return 2*self.power_interp(freq) * self.amp_norm**2 * (self.N/(self.N-2))
+            return 2*self.power_interp(freq) * self.amp_norm**2
 
     def normalize_cfft_power(self):
         """

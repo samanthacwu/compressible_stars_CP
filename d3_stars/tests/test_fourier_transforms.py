@@ -11,7 +11,7 @@ from d3_stars.post.power_spectrum_functions import FourierTransformer, ShortTime
 
 @pytest.mark.parametrize('N', [1000, 10000])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('modes', [1, 2, 5])
+@pytest.mark.parametrize('modes', [1, 2, 3])
 @pytest.mark.parametrize('window', [None, np.hanning])
 def test_power(N, dtype, modes, window):
     t_final = 200
@@ -31,7 +31,7 @@ def test_power(N, dtype, modes, window):
     power = transformer.get_power()
     transformed_power = np.sum(power)
 
-    assert np.allclose(transformed_power, time_series_power, rtol=10/N)
+    assert np.allclose(transformed_power, time_series_power, rtol=2/N)
 
 @pytest.mark.parametrize('N', [1000, 10000])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
@@ -92,9 +92,9 @@ def test_stft_setup(N, dtype, modes, window, min_factor):
         assert np.allclose(min_freq, fc[fc > 0].min())
 
 @pytest.mark.parametrize('N', [1000, 10000])
-@pytest.mark.parametrize('min_factor', [1/10, 1/20, 1/50])
+@pytest.mark.parametrize('min_factor', [1/20, 1/50])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('modes', [1,])
+@pytest.mark.parametrize('modes', [1,2])
 @pytest.mark.parametrize('window', [np.hanning])
 def test_stft_peak_power_evolution(N, dtype, modes, window, min_factor):
     t_final = 200
@@ -108,18 +108,19 @@ def test_stft_peak_power_evolution(N, dtype, modes, window, min_factor):
     data = np.zeros_like(time, dtype=dtype)
     freqs = []
     for i in np.arange(modes):
-        freq = f_nyq/2 - min_freq*(i+1)*2
+        freq = f_nyq/2 - min_freq*(i+1)*4
         omega = 2*np.pi*freq
         freqs.append(freq)
-        data += np.array(time*np.exp(1j*omega*time), dtype=dtype)
+        data += np.array(((freq/f_nyq)*(time+dt)/t_final)*np.exp(1j*omega*time), dtype=dtype)
 
     transformer = ShortTimeFourierTransformer(time, data, min_freq, window=window)
     transformer.take_transforms()
     times, pows = transformer.get_peak_evolution(freqs)
-    analytic_power = times**2
 
     for f in freqs:
+        analytic_power = ((f/f_nyq)*(times+dt)/t_final)**2
         p = pows[f]
-        assert np.allclose(p, analytic_power)
+        print(p/analytic_power)
+        assert np.allclose(p, analytic_power, rtol=2/transformer.stft_N)
 
 
