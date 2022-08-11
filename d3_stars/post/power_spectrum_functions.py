@@ -167,3 +167,13 @@ class ShortTimeFourierTransformer():
         for f in freqs:
             self.evolution_freqs[f] = np.array(self.evolution_freqs[f])
         return self.evolution_times, self.evolution_freqs
+
+    def get_power_evolution(self):
+        """ Return the evolution of the summed power"""
+        self.evolution_times = []
+        self.evolution_power = []
+        for FT in self.FT_list:
+            self.evolution_power.append(FT.get_power())
+            self.evolution_times.append(np.mean(FT.times))
+        self.evolution_times = np.array(self.evolution_times)
+        return self.evolution_times, self.evolution_power

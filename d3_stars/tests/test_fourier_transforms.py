@@ -120,7 +120,43 @@ def test_stft_peak_power_evolution(N, dtype, modes, window, min_factor):
     for f in freqs:
         analytic_power = ((f/f_nyq)*(times+dt)/t_final)**2
         p = pows[f]
-        print(p/analytic_power)
-        assert np.allclose(p, analytic_power, rtol=2/transformer.stft_N)
+        assert np.allclose(p[0], analytic_power[0], rtol=2/transformer.stft_N)
+        assert np.allclose(p[1:], analytic_power[1:], rtol=1/transformer.stft_N)
+
+@pytest.mark.parametrize('N', [1000, 10000])
+@pytest.mark.parametrize('min_factor', [1/20, 1/50])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('modes', [1,2])
+@pytest.mark.parametrize('window', [np.hanning])
+def test_stft_power_evolution(N, dtype, modes, window, min_factor):
+    t_final = 200
+    time = np.linspace(0, t_final, N, endpoint=False)
+    dt = (time.max()-time.min())/(N-1)
+    f_nyq = 1/(2*dt)
+    f_min = 1/t_final
+    min_freq = min_factor*f_nyq
+
+    data = np.zeros_like(time, dtype=dtype)
+    freqs = []
+    for i in np.arange(modes):
+        freq = f_nyq/2 - min_freq*(i+1)*4
+        omega = 2*np.pi*freq
+        freqs.append(freq)
+        data += np.array(((freq/f_nyq)*(time*1.1)/t_final)*np.exp(1j*omega*time), dtype=dtype)
+
+    transformer = ShortTimeFourierTransformer(time, data, min_freq, window=window)
+    transformer.take_transforms()
+    times, pows = transformer.get_power_evolution()
+    p = []
+    for spec in pows:
+        p.append(np.sum(spec))
+
+    analytic_power = np.zeros_like(times)
+    for f in freqs:
+        analytic_power += ((f/f_nyq)*(times*1.1)/t_final)**2
+    if dtype == np.float64:
+        analytic_power *= 0.5
+    assert np.allclose(p[0], analytic_power[0], rtol=10/transformer.stft_N)
+    assert np.allclose(p[1:], analytic_power[1:], rtol=1/transformer.stft_N)
 
 
