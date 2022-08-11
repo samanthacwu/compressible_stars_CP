@@ -40,7 +40,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from d3_stars.defaults import config
-from d3_stars.post.power_spectrum_functions import clean_cfft, normalize_cfft_power
+from d3_stars.post.power_spectrum_functions import FourierTransformer 
 from d3_stars.simulations.parser import name_star
 
 args = docopt(__doc__)
@@ -130,17 +130,31 @@ if not args['--no_ft']:
             writes += 1
 
         print('taking transform')
-        transform = np.zeros(data_cube.shape, dtype=np.complex128)
-        for ell in range(data_cube.shape[-2]):
-            print('taking transforms {}/{}'.format(ell+1, data_cube.shape[-2]))
-            for m in range(data_cube.shape[-1]):
-                if m > ell: continue
-                if len(data_cube.shape) == 3:
-                    input_data = data_cube[:,ell,m]
-                    freqs, transform[:,ell,m] = clean_cfft(times, input_data)
-                else:
-                    input_data = data_cube[:,:,ell,m]
-                    freqs, transform[:,:,ell,m] = clean_cfft(times, input_data)
+        #TODO: add 'memory modes'?
+        FT = FourierTransformer(times, data_cube)
+        freqs, transform = FT.take_transform()
+
+#        transform = np.zeros(data_cube.shape, dtype=np.complex128)
+#        for ell in range(data_cube.shape[-2]):
+#            print('taking transforms {}/{}'.format(ell+1, data_cube.shape[-2]))
+#            if len(data_cube.shape) == 3:
+#                input_data = data_cube[:,ell,:]
+#                FT = FourierTransformer(times, input_data)
+#                freqs, transform[:,ell,:] = FT.take_transform()
+#            else:
+#                input_data = data_cube[:,:,ell,:]
+#                FT = FourierTransformer(times, input_data)
+#                freqs, transform[:,:,ell,:] = FT.take_transform()
+
+#            for m in range(data_cube.shape[-1]):
+#                if len(data_cube.shape) == 3:
+#                    input_data = data_cube[:,ell,m]
+#                    FT = FourierTransformer(times, input_data)
+#                    freqs, transform[:,ell,m] = FT.take_transform()
+#                else:
+#                    input_data = data_cube[:,:,ell,m]
+#                    FT = FourierTransformer(times, input_data)
+#                    freqs, transform[:,:,ell,m] = FT.take_transform()
         del data_cube
         gc.collect()
 

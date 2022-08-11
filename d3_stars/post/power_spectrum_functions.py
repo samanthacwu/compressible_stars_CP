@@ -48,7 +48,7 @@ class FourierTransformer:
             self.clean_cfft()
         else:
             self.clean_rfft()
-        self.power_interp = interp1d(self.power_freqs, self.power)
+        self.power_interp = interp1d(self.power_freqs, self.power, axis=0)
         return self.freqs, self.ft
 
     def clean_rfft(self):
