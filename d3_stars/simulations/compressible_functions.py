@@ -185,9 +185,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         #Stress matrices & viscous terms
         namespace['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
         namespace['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*eye)
-        namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + d3.dot(sigma, grad_ln_rho0)) + d3.dot(sigma, grad_nu_diff)
-        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = nu_diff*(d3.dot(sigma, grad_ln_rho1))
-        namespace['VH_{}'.format(bn)] = VH = 2*(nu_diff)*(d3.trace(d3.dot(E, E)) - (1/3)*div_u*div_u)
+        namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
+        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = nu_diff*(sigma@grad_ln_rho1)
+        namespace['VH_{}'.format(bn)] = VH = 2*(nu_diff)*(d3.trace(E@E) - (1/3)*div_u*div_u)
 
         #Thermodynamics: rho, pressure, s 
         namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
@@ -253,9 +253,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         er = namespace['er']
         namespace['r_vals_{}'.format(bn)] = r_vals = (er@(ones*rvec)).evaluate()
-        namespace['ur_{}'.format(bn)] = d3.dot(er, u)
+        namespace['ur_{}'.format(bn)] = er@u
         namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
-        namespace['u_squared_{}'.format(bn)] = u_squared = d3.dot(u,u)
+        namespace['u_squared_{}'.format(bn)] = u_squared = u@u
         namespace['KE_{}'.format(bn)] = KE = 0.5 * rho_full * u_squared
         namespace['PE_{}'.format(bn)] = PE = rho_full * g_phi
         namespace['IE_{}'.format(bn)] = IE = (P_full)*(Cv/R_gas)
@@ -273,7 +273,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['F_KE_{}'.format(bn)] = F_KE = u * KE
         namespace['F_PE_{}'.format(bn)] = F_PE = u * PE
         namespace['F_enth_{}'.format(bn)] = F_enth = momentum * (gamma/(gamma-1)) * pom_full
-        namespace['F_visc_{}'.format(bn)] = F_visc = -nu_diff*d3.dot(momentum, sigma)
+        namespace['F_visc_{}'.format(bn)] = F_visc = -nu_diff*momentum@sigma
 
         #Waves
         namespace['N2_{}'.format(bn)] = N2 = -g@grad_s_full/Cp
