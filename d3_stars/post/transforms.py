@@ -189,11 +189,11 @@ class DedalusShellSHTransformer():
                             shape[2] = self.transformer.m_values.shape[1]
                         if ni == 0:
                             of.create_dataset(name='tasks/'+f, shape=[len(sim_times),]+shape, dtype=np.complex128)
-                            if vector:
-                                out_field = self.transformer.transform_vector_field(task_data)
-                            else:
-                                out_field = self.transformer.transform_scalar_field(task_data)
-                            of['tasks/'+f][ni,:] =  out_field
+                        if vector:
+                            out_field = self.transformer.transform_vector_field(task_data)
+                        else:
+                            out_field = self.transformer.transform_scalar_field(task_data)
+                        of['tasks/'+f][ni,:] =  np.copy(out_field)
 
 
 
