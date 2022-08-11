@@ -1,5 +1,9 @@
+from collections import OrderedDict
+
 import numpy as np
+import h5py
 from mpi4py import MPI
+
 import dedalus.public as d3
 
 
@@ -136,6 +140,7 @@ class DedalusShellSHTransformer():
         from plotpal.file_reader import SingleTypeReader as SR
         self.nphi = nphi
         self.ntheta = ntheta
+        self.root_dir = root_dir
         self.out_dir = 'SH_transform_{}'.format(data_dir)
         self.reader = SR(root_dir, data_dir, self.out_dir, distribution='even-file', **kwargs)
 
@@ -148,8 +153,6 @@ class DedalusShellSHTransformer():
         else:
             self.fields = None
 
-
-
     def write_transforms(self):
         if not self.reader.idle:
             while self.reader.writes_remain():
@@ -160,16 +163,16 @@ class DedalusShellSHTransformer():
                     file_mode = 'w'
                 else:
                     file_mode = 'a'
-                output_file_name = '{}/{}/{}_s{}.h5'.format(self.reader.root_dir, self.out_dir, self.out_dir, file_num)
+                output_file_name = '{}/{}/{}_s{}.h5'.format(self.root_dir, self.out_dir, self.out_dir, file_num)
 
                 with h5py.File(output_file_name, file_mode) as of:
-                    sim_times = reader.current_file_handle['scales/sim_time'][()]
+                    sim_times = self.reader.current_file_handle['scales/sim_time'][()]
                     if ni == 0:
-                        of['ells'] = ell_values[None,:,:,None]
-                        of['ms']   = m_values[None,:,:,None]
+                        of['ells'] = self.transformer.ell_values[None,:,:,None]
+                        of['ms']   = self.transformer.m_values[None,:,:,None]
                         of['time'] = sim_times[()]
                         for attr in ['writes', 'set_number', 'handler_name']:
-                            of.attrs[attr] = reader.current_file_handle.attrs[attr]
+                            of.attrs[attr] = self.reader.current_file_handle.attrs[attr]
 
                     outputs = OrderedDict()
                     for f in self.fields:
@@ -178,12 +181,12 @@ class DedalusShellSHTransformer():
                         size = task_data.size
                         shape = list(task_data.squeeze().shape)
                         if task_data.size == self.transformer.scalar_field['g'].size:
-                            shape[0] = transformer.ell_values.shape[0]
-                            shape[1] = transformer.m_values.shape[1]
+                            shape[0] = self.transformer.ell_values.shape[0]
+                            shape[1] = self.transformer.m_values.shape[1]
                         elif task_data.size == self.transformer.vector_field['g'].size:
                             vector = True
-                            shape[1] = transformer.ell_values.shape[0]
-                            shape[2] = transformer.m_values.shape[1]
+                            shape[1] = self.transformer.ell_values.shape[0]
+                            shape[2] = self.transformer.m_values.shape[1]
                         if ni == 0:
                             of.create_dataset(name='tasks/'+f, shape=[len(sim_times),]+shape, dtype=np.complex128)
                             if vector:
