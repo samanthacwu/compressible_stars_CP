@@ -1,4 +1,7 @@
+import gc
 from collections import OrderedDict
+
+import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -131,8 +134,6 @@ class ShortTimeFourierTransformer():
         slices = []
         for i in range(self.num_chunks):
             slices.append(slice(i*self.stft_N, (i+1)*self.stft_N, 1))
-        print(self.stft_N)
-
 
         self.time_chunks = []
         self.signal_chunks = []
@@ -152,6 +153,7 @@ class ShortTimeFourierTransformer():
             freqs, transform = FT.take_transform()
             self.freq_chunks.append(freqs)
             self.transform_chunks.append(transform)
+        return self.freq_chunks, self.transform_chunks
 
     def get_peak_evolution(self, freqs):
         """ Given a list of frequencies, return the evolution of the power in the peak at that frequency """
@@ -177,3 +179,89 @@ class ShortTimeFourierTransformer():
             self.evolution_times.append(np.mean(FT.times))
         self.evolution_times = np.array(self.evolution_times)
         return self.evolution_times, self.evolution_power
+
+
+class HarmonicTimeToFreq:
+    """ 
+    Transforms data from a DedalusShellSHTransformer (time, ell, m) into frequency space (freq, ell, m)
+    Takes advantage of STFT logic.
+
+    Relies on plotpal for file reading.
+    """
+    def __init__(self, root_dir, data_dir, **kwargs):
+        from plotpal.file_reader import SingleTypeReader as SR
+        self.root_dir = root_dir
+        self.out_dir = 'FT_{}'.format(data_dir)
+        self.reader = SR(root_dir, data_dir, self.out_dir, distribution='single', **kwargs)
+
+        with h5py.File(self.reader.files[0], 'r') as f:
+            self.fields = list(f['tasks'].keys())
+
+    def write_transforms(self, min_freq=None):
+        times = []
+        print('getting times...')
+        first = True
+        while self.reader.writes_remain():
+            dsets, ni = self.reader.get_dsets([], verbose=False)
+            times.append(self.reader.current_file_handle['time'][ni])
+            if first:
+                ells = self.reader.current_file_handle['ells'][()]
+                ms = self.reader.current_file_handle['ms'][()]
+                first = False
+
+        times = np.array(times)
+
+        with h5py.File('{}/transforms.h5'.format(self.out_dir), 'w') as wf: 
+            wf['ells']  = ells
+            wf['ms']  = ms
+
+        for i, f in enumerate(self.fields):
+            print('reading field {}'.format(f))
+
+            print('filling datacube...')
+            writes = 0 
+            while self.reader.writes_remain():
+                dsets, ni = self.reader.get_dsets([], verbose=False)
+                rf = self.reader.current_file_handle
+                this_task = rf['tasks'][f][ni,:].squeeze()
+                if writes == 0:  
+                    if this_task.shape[0] == 3 and len(this_task.shape) == 3:
+                        #vector
+                        data_cube = np.zeros((times.shape[0], 3, ells.shape[1], ms.shape[2]), dtype=np.complex128)
+                    else:
+                        data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
+                data_cube[writes,:] = this_task
+                writes += 1
+
+            if min_freq is None:
+                FT = FourierTransformer(times, data_cube)
+                freqs, transform = FT.take_transform()
+                #Logic for a single ell,m
+                #        transform = np.zeros(data_cube.shape, dtype=np.complex128)
+                #        for ell in range(data_cube.shape[-2]):
+                #            for m in range(data_cube.shape[-1]):
+                #                if len(data_cube.shape) == 3:
+                #                    input_data = data_cube[:,ell,m]
+                #                    FT = FourierTransformer(times, input_data)
+                #                    freqs, transform[:,ell,m] = FT.take_transform()
+                #                else:
+                #                    input_data = data_cube[:,:,ell,m]
+                #                    FT = FourierTransformer(times, input_data)
+                #                    freqs, transform[:,:,ell,m] = FT.take_transform()
+
+            else:
+                FT = ShortTimeFourierTransformer(times, data_cube, min_freq)
+                freqs_chunks, transform_chunks = FT.take_transforms()
+
+            del data_cube
+            gc.collect()
+
+            with h5py.File('{}/transforms.h5'.format(self.out_dir), 'r+') as wf:
+                if min_freq is None:
+                    wf['{}_cft'.format(f)] = np.copy(transform)
+                    if i == 0:
+                        wf['freqs'] = np.copy(freqs)
+                else:
+                    wf['{}_cft_chunks'.format(f)] = np.copy(transform_chunks)
+                    if i == 0:
+                        wf['freqs_chunks'] = np.copy(freqs_chunks)
