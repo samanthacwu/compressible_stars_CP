@@ -1,0 +1,6 @@
+Usage:
+
+1.) Run compressible_dynamics.py (make sure to create folder output_profs/ first)
+2.) run python3 parallel_prof.py process output_profs/
+3.) run python3 parallel_prof.py plot
+4.) Profit.
