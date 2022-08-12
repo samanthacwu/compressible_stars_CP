@@ -45,6 +45,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
     namespace = OrderedDict()
     namespace['exp'] = np.exp
     namespace['log'] = np.log
+    namespace['Grid'] = d3.Grid
     for basis_number, bn in enumerate(bases.keys()):
         basis = bases[bn]
         phi, theta, r = basis.local_grids(basis.dealias)
@@ -186,21 +187,21 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
         namespace['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*eye)
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
-        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = nu_diff*(sigma@grad_ln_rho1)
-        namespace['VH_{}'.format(bn)] = VH = 2*(nu_diff)*(d3.trace(E@E) - (1/3)*div_u*div_u)
+        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = d3.Grid(nu_diff)*(sigma@grad_ln_rho1)
+        namespace['VH_{}'.format(bn)] = VH = 2*(d3.Grid(nu_diff))*(d3.trace(E@E) - (1/3)*div_u*div_u)
 
         #Thermodynamics: rho, pressure, s 
         namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
-        namespace['rho_full_{}'.format(bn)] = rho_full = rho0*np.exp(ln_rho1)
-        namespace['rho_fluc_{}'.format(bn)] = rho_fluc = rho0*(np.exp(ln_rho1) - 1)
-        namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (ones*ln_rho0 + ln_rho1)
-        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = (ones*grad_ln_rho0 + grad_ln_rho1)
+        namespace['rho_full_{}'.format(bn)] = rho_full = d3.Grid(rho0)*np.exp(ln_rho1)
+        namespace['rho_fluc_{}'.format(bn)] = rho_fluc = d3.Grid(rho0)*(np.exp(ln_rho1) - 1)
+        namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (d3.Grid(ones*ln_rho0) + ln_rho1)
+        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = (d3.Grid(ones*grad_ln_rho0) + grad_ln_rho1)
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
-        namespace['P_full_{}'.format(bn)] = P_full = np.exp(np.log(R_gas) + gamma*((s0*ones+s1)/Cp + ln_rho0*ones + ln_rho1*ones))
-        namespace['s_full_{}'.format(bn)] = s_full = ones*s0 + s1
-        namespace['grad_s_full_{}'.format(bn)] = grad_s_full = ones*grad_s0 + grad_s1
+        namespace['P_full_{}'.format(bn)] = P_full = np.exp(np.log(R_gas) + gamma*((d3.Grid(s0*ones)+s1)/Cp + d3.Grid(ln_rho0*ones) + ln_rho1))
+        namespace['s_full_{}'.format(bn)] = s_full = d3.Grid(ones*s0) + s1
+        namespace['grad_s_full_{}'.format(bn)] = grad_s_full = d3.Grid(ones*grad_s0) + grad_s1
         namespace['enthalpy_{}'.format(bn)] = enthalpy = (Cp/R_gas)*P_full
-        namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - (Cp/R_gas)*P0*ones
+        namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid((Cp/R_gas)*P0*ones)
 
         #Linear Pomega = R * T
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
@@ -415,7 +416,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -u_{0}@grad(ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -u_{0}@grad(u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -u_{0}@grad_s1_{0} + div_rad_flux_R_{0} + (R_gas/P_full_{0})*(Grid(Q_{0}) + rho_full_{0}*VH_{0})".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
