@@ -23,14 +23,14 @@ for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
 
 #angular momentum components
-output_tasks['Lx'] = 'ex_{0}@L_{0}'
-output_tasks['Ly'] = 'ey_{0}@L_{0}'
-output_tasks['Lz'] = 'ez_{0}@L_{0}'
-output_tasks['L_squared'] = 'L_{0}@L_{0}'
+output_tasks['Lx'] = 'dot(ex_{0},L_{0})'
+output_tasks['Ly'] = 'dot(ey_{0},L_{0})'
+output_tasks['Lz'] = 'dot(ez_{0},L_{0})'
+output_tasks['L_squared'] = 'dot(L_{0}, L_{0})'
 
 for t in flux_tags:
     output_tasks['{}_lum'.format(t)] = '(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
-    output_tasks['{}_lum_r'.format(t)] = 'er@' + output_tasks['{}_lum'.format(t)]
+    output_tasks['{}_lum_r'.format(t)] = 'dot(er, ' + output_tasks['{}_lum'.format(t)] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales
