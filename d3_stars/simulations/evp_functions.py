@@ -123,7 +123,7 @@ def clean_eigvecs(fieldname, bases_keys, namespace, scales=None, shift=True):
 
     pieces = []
     for bn in bases_keys:
-        field = namespace['{}_{}'.format(fieldname, bn)]
+        field = namespace['{}_{}'.format(fieldname, bn)].evaluate()
         if len(field.tensorsig) == 1:
             vector = True
         else:
@@ -471,7 +471,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-2, r_cz=1, cz_width=0.05):
+    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -601,10 +601,12 @@ class StellarEVP():
         velocity_eigenfunctions_pieces = []
         entropy_eigenfunctions = []
         ln_rho_eigenfunctions = []
+        enthalpy_eigenfunctions = []
         full_velocity_eigenfunctions = []
         full_velocity_eigenfunctions_pieces = []
         full_entropy_eigenfunctions = []
         full_ln_rho_eigenfunctions = []
+        full_enthalpy_eigenfunctions = []
 
         for i, e in enumerate(self.solver.eigenvalues):
             print('doing {}'.format(e))
@@ -617,14 +619,15 @@ class StellarEVP():
             ef_u, ef_u_pieces = clean_eigvecs('u', self.bases_keys, self.namespace, shift=False)
             ef_s1, ef_s1_pieces = clean_eigvecs('s1', self.bases_keys, self.namespace, shift=False)
             ef_ln_rho1, ef_ln_rho1_pieces = clean_eigvecs('ln_rho1', self.bases_keys, self.namespace, shift=False)
+            ef_enth_fluc, ef_enth_fluc_pieces = clean_eigvecs('enthalpy_fluc', self.bases_keys, self.namespace, shift=False)
 
             #normalize & store eigenvectors
             
             ix = np.unravel_index(np.argmax(np.abs(ef_u[2,:])), ef_u[2,:].shape)
             shift = ef_u[2,:][ix]
-            for data in [ef_u, ef_s1, ef_ln_rho1]:
+            for data in [ef_u, ef_s1, ef_ln_rho1, ef_enth_fluc]:
                 data[:] /= shift
-            for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_ln_rho1_pieces]:
+            for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_ln_rho1_pieces, ef_enth_fluc_pieces]:
                 for data in piece_tuple:
                     data['g'][:] /= shift
 
@@ -635,10 +638,12 @@ class StellarEVP():
             velocity_eigenfunctions_pieces.append([p['g'][vec_slices].squeeze() for p in ef_u_pieces])
             entropy_eigenfunctions.append(ef_s1[scalar_slices].squeeze())
             ln_rho_eigenfunctions.append(ef_ln_rho1[scalar_slices].squeeze())
+            enthalpy_eigenfunctions.append(ef_enth_fluc[scalar_slices].squeeze())
             full_velocity_eigenfunctions.append(ef_u)
             full_velocity_eigenfunctions_pieces.append([np.copy(p['g']) for p in ef_u_pieces])
             full_entropy_eigenfunctions.append(ef_s1)
             full_ln_rho_eigenfunctions.append(ef_ln_rho1)
+            full_enthalpy_eigenfunctions.append(ef_enth_fluc)
 
 #            #Kinetic energy
             for j, bn in enumerate(self.bases_keys):
@@ -672,9 +677,11 @@ class StellarEVP():
             f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
             f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
             f['ln_rho_eigenfunctions'] = np.array(ln_rho_eigenfunctions)
+            f['enthalpy_fluc_eigenfunctions'] = np.array(enthalpy_eigenfunctions)
             f['full_velocity_eigenfunctions'] = np.array(full_velocity_eigenfunctions)
             f['full_entropy_eigenfunctions'] = np.array(full_entropy_eigenfunctions)
             f['full_ln_rho_eigenfunctions'] = np.array(full_ln_rho_eigenfunctions)
+            f['full_enthalpy_fluc_eigenfunctions'] = np.array(full_enthalpy_eigenfunctions)
             for i, bn in enumerate(self.bases_keys):
                 f['r_{}'.format(bn)] = self.namespace['r1_{}'.format(bn)]
                 f['rho_{}'.format(bn)] = self.namespace['rho0_{}'.format(bn)]['g']
