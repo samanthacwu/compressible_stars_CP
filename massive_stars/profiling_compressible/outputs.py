@@ -10,11 +10,11 @@ handler_defaults['even_outputs'] = False
 handler_defaults['tasks'] = list()
 
 handlers = OrderedDict()
-for hname in ['slices', 'shells', 'scalars', 'profiles', 'checkpoint', 'wave_shells']:
-    handlers[hname] = OrderedDict()
-    for k, val in handler_defaults.items():
-        handlers[hname][k] = deepcopy(val)
-
+#for hname in ['slices', 'shells', 'scalars', 'profiles', 'checkpoint', 'wave_shells']:
+#    handlers[hname] = OrderedDict()
+#    for k, val in handler_defaults.items():
+#        handlers[hname][k] = deepcopy(val)
+#
 ### Dynamical Slices
 ##Equatorial slices
 #eq_tasks = OrderedDict()

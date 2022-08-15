@@ -195,18 +195,10 @@ if __name__ == '__main__':
     logger.info('outputs initialized')
 
     ## Logger output Setup
-    logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
-    integ_FlucE = 0
-    integ_EOS = 0
+    logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
     for bn, basis in bases.items():
         re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
-        ma_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Ma'].format(bn) + ')', dict(solver.problem.namespace))
-        integ_FlucE += eval('integ(' + output_tasks['FlucE'].format(bn) + ')', dict(solver.problem.namespace))
-        integ_EOS += eval('integ(' + output_tasks['EOS_goodness'].format(bn) + ')', dict(solver.problem.namespace))
         logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
-        logger_handler.add_task(ma_avg, name='Ma_avg_{}'.format(bn), layout='g')
-    logger_handler.add_task(integ_FlucE, name='FlucE', layout='g')
-    logger_handler.add_task(integ_EOS, name='EOS', layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -232,8 +224,8 @@ if __name__ == '__main__':
     start_time = time.time()
     start_iter = solver.iteration
     Re0 = 0
-    Ma0 = 0
     effective_iter = solver.iteration - start_iter
+
 
     #do first 10 iterations
     while solver.proceed and effective_iter <= 20:
@@ -242,16 +234,14 @@ if __name__ == '__main__':
         solver.step(timestep)
 
         Re_avg = logger_handler.fields['Re_avg_B']
-        Ma_avg = logger_handler.fields['Ma_avg_B']
         if dist.comm_cart.rank == 0:
             Re0 = Re_avg['g'].min()
-            Ma0 = Ma_avg['g'].min()
-            this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}, Ma = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0, Ma0)
-            this_str += ", FlucE = {:.4e}, EOS = {:.4e}".format(logger_handler.fields['FlucE']['g'].min(), logger_handler.fields['EOS']['g'].min())
+            this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
             logger.info(this_str)
         else:
             Re0 = None
         Re0 = dist.comm_cart.bcast(Re0, root=0)
+    first_timestep = timestep
 
 
     def main_loop():
@@ -262,7 +252,7 @@ if __name__ == '__main__':
         slice_time = np.inf
         outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
         surface_shell_slices = None#even_analysis_tasks['wave_shells']
-        timestep=my_cfl.compute_timestep()
+        timestep=first_timestep
         Re0 = 0
         try:
             while solver.proceed:
@@ -291,14 +281,11 @@ if __name__ == '__main__':
 
                 solver.step(timestep)
 
-                if solver.iteration % 10 == 0 or effective_iter <= 10:
+                if solver.iteration % 1 == 0:
                     Re_avg = logger_handler.fields['Re_avg_B']
-                    Ma_avg = logger_handler.fields['Ma_avg_B']
                     if dist.comm_cart.rank == 0:
                         Re0 = Re_avg['g'].min()
-                        Ma0 = Ma_avg['g'].min()
-                        this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}, Ma = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0, Ma0)
-                        this_str += ", FlucE = {:.4e}, EOS = {:.4e}".format(logger_handler.fields['FlucE']['g'].min(), logger_handler.fields['EOS']['g'].min())
+                        this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
                         logger.info(this_str)
                     else:
                         Re0 = None
