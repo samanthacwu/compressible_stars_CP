@@ -226,7 +226,7 @@ if __name__ == '__main__':
 
     logger.info('cfl constructed') 
 
-    solver.stop_iteration = solver.iteration + 110
+    solver.stop_iteration = solver.iteration + 120
 
     # Main loop
     start_time = time.time()
@@ -236,7 +236,7 @@ if __name__ == '__main__':
     effective_iter = solver.iteration - start_iter
 
     #do first 10 iterations
-    while solver.proceed and effective_iter < 10:
+    while solver.proceed and effective_iter <= 20:
         effective_iter = solver.iteration - start_iter
         timestep = my_cfl.compute_timestep()
         solver.step(timestep)
@@ -260,13 +260,14 @@ if __name__ == '__main__':
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
-        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-        surface_shell_slices = even_analysis_tasks['wave_shells']
+        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
+        surface_shell_slices = None#even_analysis_tasks['wave_shells']
         timestep=my_cfl.compute_timestep()
+        Re0 = 0
         try:
             while solver.proceed:
                 effective_iter = solver.iteration - start_iter
-                if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100):
+                if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
                     #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
                     my_cfl.max_dt = max_dt
                     max_dt_check = False
