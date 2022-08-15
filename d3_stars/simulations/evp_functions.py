@@ -18,44 +18,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 from dedalus.core import subsystems
+from dedalus.tools.array import csr_matvec, scipy_sparse_eigs
 from .compressible_functions import make_bases, make_fields, fill_structure, get_compressible_variables, set_compressible_problem
 from .parser import name_star
 import d3_stars.defaults.config as config
 
+
 from scipy.sparse import linalg as spla
 from scipy import sparse
-def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
-    """
-    Perform targeted eigenmode search using the scipy/ARPACK sparse solver
-    for the reformulated generalized eigenvalue problem
-        A.x = λ B.x  ==>  (A - σB)^I B.x = (1/(λ-σ)) x
-    for eigenvalues λ near the target σ.
-    Parameters
-    ----------
-    A, B : scipy sparse matrices
-        Sparse matrices for generalized eigenvalue problem
-    N : int
-        Number of eigenmodes to return
-    target : complex
-        Target σ for eigenvalue search
-    matsolver : matrix solver class
-        Class implementing solve method for solving sparse systems.
-    Other keyword options passed to scipy.sparse.linalg.eigs.
-
-    Taken from dedalus' d3-s2-ncc branch on apr 1, 2022
-    """
-    # Build sparse linear operator representing (A - σB)^I B = C^I B = D
-    C = sparse.csr_matrix(A - target * B)
-    solver = matsolver(C)
-    def matvec(x):
-        return solver.solve(B.dot(x))
-    D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec)
-    # Solve using scipy sparse algorithm
-    evals, evecs = spla.eigs(D, k=N, which='LM', sigma=None, **kw)
-    # Rectify eigenvalues
-    evals = 1 / evals + target
-    return evals, evecs
-
 
 def matrix_info(subproblem):
     pass
@@ -223,7 +193,7 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None):
             IP_check[i,j] = IP(vel_duals_pieces, vel_efs_pieces)
     I_matrix = np.eye(IP_matrix.shape[0])
 
-    if np.allclose(I_matrix.real, IP_check.real, rtol=1e-5, atol=1e-5):
+    if np.allclose(I_matrix.real, IP_check.real, rtol=1e-3, atol=1e-3):
         logger.info('velocity duals properly calculated')
     else:
         logger.info('something went wrong in velocity dual calc; IP_check info:')
@@ -455,11 +425,11 @@ class StellarEVP():
 
             ell = subproblem.group[1]
 
-            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
+            subsystems.build_subproblem_matrices(self.solver, [sp], ['M', 'L'])
             matrix_info(sp)
 
-            self.A = (sp.L_min @ sp.pre_right).A
-            self.B = - (sp.M_min @ sp.pre_right).A
+            self.A =  (sp.L_min @ sp.pre_right)
+            self.B = -  (sp.M_min @ sp.pre_right)
             self.solver.eigenvalue_subproblem = sp
             break
 
@@ -484,28 +454,20 @@ class StellarEVP():
         full_evals = []
         full_evecs = []
         start_time = time.time()
-        for subproblem in self.solver.subproblems:
-            this_ell = subproblem.group[1]
-            if this_ell != self.ell:
-                continue
 
-            sp = subproblem
-            break
+        sp = self.solver.eigenvalue_subproblem
 
         for i, target in enumerate(eigenvalues):
-#            self.solver.solve_sparse(sp, N, target)
-#            full_evals.append(np.copy(self.solver.eigenvalues))
-#            full_evecs.append(np.copy(self.solver.eigenvectors))
             evalue, evec = scipy_sparse_eigs(A=self.A, B=self.B, N=N, target=target, matsolver=self.solver.matsolver)
-            full_evals.append(evalue)
-            full_evecs.append(evec)
+
+            for j in range((sp.pre_right @ evec).shape[-1]):
+                full_evals.append(evalue.ravel()[j])
+                full_evecs.append((sp.pre_right @ evec)[:,j].ravel())
         end_time = time.time()
-        logger.info('sparse solve done in {:.2f} sec'.format(end_time - start_time))
+        logger.debug('sparse solve done in {:.2f} sec'.format(end_time - start_time))
         self.solver.eigenvalues = np.array(full_evals)
-#        self.solver.eigenvectors = np.array(full_evecs)
         self.solver.eigenvectors = np.swapaxes(np.array(full_evecs), 0, 1)
-        self.solver.eigenvectors = self.solver.eigenvectors.reshape(self.solver.eigenvectors.shape[:2])
-        logger.info('shapes: {} / {}'.format(self.solver.eigenvalues.shape, self.solver.eigenvectors.shape))
+        logger.debug('shapes: {} / {}'.format(self.solver.eigenvalues.shape, self.solver.eigenvectors.shape))
 
         return self.solver
 
@@ -528,8 +490,9 @@ class StellarEVP():
         for bn, basis in self.hires_EVP.bases.items():
             namespace['cz_envelope_{}'.format(bn)] = cz_envelope = dist.Field(bases=basis)
             namespace['cz_envelope_{}'.format(bn)]['g'] = one_to_zero(namespace['r_{}'.format(bn)], r_cz, width=cz_width)
+            namespace['evp_u_{}'.format(bn)] = u = dist.VectorField(coords, bases=basis)
             namespace['conj_u_{}'.format(bn)] = conj_u = dist.VectorField(coords, bases=basis)
-            u = namespace['u_{}'.format(bn)]
+            
             rho = namespace['rho0_{}'.format(bn)]
             
             if tot_KE_op is None:
@@ -544,53 +507,56 @@ class StellarEVP():
         good_values = []
         for i, v1 in enumerate(self.solver.eigenvalues):
             if np.abs(v1.real) < np.abs(v1.imag):
-                logger.info('skipping eigenvalue {}; damps very quickly'.format(v1))
+                logger.debug('skipping eigenvalue {}; damps very quickly'.format(v1))
                 continue
+            if v1.imag > 0:
+                logger.debug('skipping eigenvalue {}; spurious growth mode'.format(v1))
+                continue
+
+            #Check if Evalue is spurious or fully in the CZ:
+            self.solver.set_state(i, self.subsystem)
+            ef_u1, ef_u1_pieces = clean_eigvecs('u', self.bases_keys, self.namespace, scales=scales)
+            for j, basis in enumerate(self.hires_EVP.bases):
+                bn = self.bases_keys[j]
+                u = namespace['evp_u_{}'.format(bn)]
+                conj_u = namespace['conj_u_{}'.format(bn)]
+                u['g'] = ef_u1_pieces[j]['g']
+                conj_u['g'] = np.conj(u['g']) 
+            mode_KE1 = tot_KE_op.evaluate()['g'].ravel()[0].real
+            cz_KE1 = cz_KE_op.evaluate()['g'].ravel()[0].real
+            cz_KE_frac = cz_KE1/mode_KE1
+            if cz_KE_frac.real > 0.5:
+                logger.debug('skipping eigenvalue {}; located in CZ'.format(v1))
+                continue
+            elif cz_KE_frac.real < 1e-4:
+                logger.debug('skipping eigenvalue {}; spurious mode without evanescent tail'.format(v1))
+                continue
+
+            #solve hires EVP and compare
             self.hires_EVP.solver = self.hires_EVP.solve_sparse(self.ell, [v1,])
             v2 = self.hires_EVP.solver.eigenvalues[0]
             real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
             goodness = np.abs(v1 - v2)/np.abs(v1).min()
 
-#            logger.info('{}, {}, {}'.format(v1, v2, goodness))
             if goodness < cutoff:
-                
-                self.solver.set_state(i, self.subsystem)
                 self.hires_EVP.solver.set_state(0, self.hires_EVP.subsystem)
-
-                ef_u1, ef_u1_pieces = clean_eigvecs('u', self.bases_keys, self.namespace, scales=scales)
                 ef_u2, ef_u2_pieces = clean_eigvecs('u', self.hires_EVP.bases_keys, self.hires_EVP.namespace)
-
                 for j, basis in enumerate(self.hires_EVP.bases):
                     bn = self.bases_keys[j]
+                    evp_u = namespace['evp_u_{}'.format(bn)]
                     u = namespace['u_{}'.format(bn)]
                     conj_u = namespace['conj_u_{}'.format(bn)]
-                    u['g'] = ef_u1_pieces[j]['g']
-                    conj_u['g'] = np.conj(ef_u1_pieces[j]['g'])
-                mode_KE1 = tot_KE_op.evaluate()['g'].ravel()[0].real
-                cz_KE1 = cz_KE_op.evaluate()['g'].ravel()[0].real
-
-                for j, basis in enumerate(self.hires_EVP.bases):
-                    bn = self.bases_keys[j]
-                    u = namespace['u_{}'.format(bn)]
-                    conj_u = namespace['conj_u_{}'.format(bn)]
-                    u['g'] = ef_u2_pieces[j]['g']
-                    conj_u['g'] = np.conj(ef_u2_pieces[j]['g'])
+                    evp_u['g'] = u['g']
+                    conj_u['g'] = np.conj(u['g']) 
                 mode_KE2 = tot_KE_op.evaluate()['g'].ravel()[0].real
-                cz_KE2 = cz_KE_op.evaluate()['g'].ravel()[0].real
-
-                cz_KE_frac = cz_KE1/mode_KE1
 
                 vector_diff = np.max(np.abs(mode_KE1/mode_KE2 - 1))
                 if vector_diff < np.sqrt(cutoff):
                     logger.info('good evalue {} w/ vdiff {} and czfrac {}'.format(v1, vector_diff, cz_KE_frac.real))
-                    if cz_KE_frac.real > 0.5:
-                        logger.info('evalue is in the CZ, skipping')
-                    elif cz_KE_frac.real < 1e-4:
-                        logger.info('evalue is spurious, skipping')
-                    else:
-                        good_values.append(i)
+                    good_values.append(i)
                 else:
-                    logger.info('vector diff: {}, skipping'.format(vector_diff))
+                    logger.debug('skipping eigenvalue {}; vector diff is {}'.format(v1, vector_diff))
+                    continue
 
         self.solver.eigenvalues  = self.solver.eigenvalues[good_values]
         self.solver.eigenvectors = self.solver.eigenvectors[:, good_values]
