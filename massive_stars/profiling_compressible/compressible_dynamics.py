@@ -250,8 +250,10 @@ if __name__ == '__main__':
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
-        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
-        surface_shell_slices = None#even_analysis_tasks['wave_shells']
+#        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
+#        surface_shell_slices = None#even_analysis_tasks['wave_shells']
+        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+        surface_shell_slices = even_analysis_tasks['wave_shells']
         timestep=first_timestep
         Re0 = 0
         try:
