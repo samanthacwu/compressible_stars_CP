@@ -184,11 +184,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
 
         #Stress matrices & viscous terms
-        namespace['E_{}'.format(bn)] = E = 0.5*(grad_u + d3.trans(grad_u))
-        namespace['sigma_{}'.format(bn)] = sigma = 2*(E - (1/3)*div_u*eye)
-        namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = 2*(E - (1/3)*div_u*d3.Grid(eye))
+        namespace['E_{}'.format(bn)] = E = grad_u/2 + d3.trans(grad_u/2)
+        namespace['sigma_{}'.format(bn)] = sigma = (E - div_u*eye/3)*2
+        namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (grad_u + d3.trans(grad_u) - div_u*d3.Grid(eye)*(2/3))
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
-        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = d3.Grid(nu_diff)*(sigma_RHS@grad_ln_rho1)
+        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = d3.Grid(nu_diff)*(grad_u@grad_ln_rho1 - div_u*d3.Grid(eye)*(2/3)@grad_ln_rho1) + d3.trans(d3.Grid(nu_diff)*grad_u)@grad_ln_rho1 
+#        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = d3.Grid(nu_diff)*(sigma_RHS@grad_ln_rho1)
         namespace['VH_{}'.format(bn)] = VH = 2*(d3.Grid(nu_diff))*(d3.trace(E@E) - (1/3)*div_u**2)
 
         #Thermodynamics: rho, pressure, s 
@@ -422,8 +423,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
 #            equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -(u_{0}@grad_ln_rho1_{0})".format(bn)
 #            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = 0".format(bn)
-            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -(grad(u_squared_{0}/2) - cross(u_{0}, curl(u_{0}))) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
-#            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -(grad(u_squared_{0}/2) - cross(u_{0}, curl(u_{0}))) - nonlinear_gradP_div_rho_{0}".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -(u_{0}@grad_u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
 #            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = 0".format(bn)
             equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -(u_{0}@grad_s1_{0}) + div_rad_flux_R_{0} + (R_gas/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})".format(bn)
         else:
