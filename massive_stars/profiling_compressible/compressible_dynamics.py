@@ -195,10 +195,14 @@ if __name__ == '__main__':
     logger.info('outputs initialized')
 
     ## Logger output Setup
-    logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
+    from dedalus.extras.flow_tools import GlobalFlowProperty
+    flow = GlobalFlowProperty(solver, cadence=1)
+#    logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
     for bn, basis in bases.items():
-        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
-        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
+        re = eval(output_tasks['Re'].format(bn), dict(solver.problem.namespace))
+        flow.add_property(re, name='Re_{}'.format(bn))
+#        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
+#        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
 
     #CFL setup
     heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
@@ -213,12 +217,12 @@ if __name__ == '__main__':
         max_dt /= 2
     if timestep is None:
         timestep = initial_max_dt
-    my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
-    my_cfl.add_velocity(heaviside_cfl*u_B)
+#    my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
+#    my_cfl.add_velocity(heaviside_cfl*u_B)
+#
+#    logger.info('cfl constructed') 
 
-    logger.info('cfl constructed') 
-
-    solver.stop_iteration = solver.iteration + 120
+    solver.stop_iteration = solver.iteration + 122
 
     # Main loop
     start_time = time.time()
@@ -230,52 +234,54 @@ if __name__ == '__main__':
     #do first 10 iterations
     while solver.proceed and effective_iter <= 20:
         effective_iter = solver.iteration - start_iter
-        timestep = my_cfl.compute_timestep()
+#        timestep = my_cfl.compute_timestep()
         solver.step(timestep)
+        Re0 = flow.max('Re_B')
 
-        Re_avg = logger_handler.fields['Re_avg_B']
+#        Re_avg = logger_handler.fields['Re_avg_B']
         if dist.comm_cart.rank == 0:
-            Re0 = Re_avg['g'].min()
+#            Re0 = Re_avg['g'].min()
             this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
             logger.info(this_str)
-        else:
-            Re0 = None
-        Re0 = dist.comm_cart.bcast(Re0, root=0)
+#        else:
+#            Re0 = None
+#        Re0 = dist.comm_cart.bcast(Re0, root=0)
     first_timestep = timestep
 
 
     def main_loop():
         max_dt_check = True
-        current_max_dt = my_cfl.max_dt
+        current_max_dt = max_dt #my_cfl.max_dt
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
-#        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
-#        surface_shell_slices = None#even_analysis_tasks['wave_shells']
-        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-        surface_shell_slices = even_analysis_tasks['wave_shells']
+        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
+        surface_shell_slices = None#even_analysis_tasks['wave_shells']
+#        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+#        surface_shell_slices = even_analysis_tasks['wave_shells']
         timestep=first_timestep
+        solver.enforce_real_cadence = np.inf
         Re0 = 0
         try:
             while solver.proceed:
                 effective_iter = solver.iteration - start_iter
                 if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
                     #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
-                    my_cfl.max_dt = max_dt
+#                    my_cfl.max_dt = max_dt
                     max_dt_check = False
                     just_wrote = True
                     slice_time = solver.sim_time + outer_shell_dt
 
-                timestep = my_cfl.compute_timestep()
+#                timestep = my_cfl.compute_timestep()
 
                 if just_wrote:
                     just_wrote = False
                     num_steps = np.ceil(outer_shell_dt / timestep)
-                    timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
+#                    timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
                 elif max_dt_check:
                     timestep = np.min((timestep, current_max_dt))
-                else:
-                    my_cfl.stored_dt = timestep = current_max_dt
+#                else:
+#                    my_cfl.stored_dt = timestep = current_max_dt
 
                 t_future = solver.sim_time + timestep
                 if t_future >= slice_time*(1-1e-8):
@@ -284,14 +290,16 @@ if __name__ == '__main__':
                 solver.step(timestep)
 
                 if solver.iteration % 1 == 0:
-                    Re_avg = logger_handler.fields['Re_avg_B']
+                    Re0 = flow.max('Re_B')
+#                    Re_avg = logger_handler.fields['Re_avg_B']
                     if dist.comm_cart.rank == 0:
-                        Re0 = Re_avg['g'].min()
+#                        Re0 = Re_avg['g'].min()
                         this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
                         logger.info(this_str)
-                    else:
-                        Re0 = None
-                    Re0 = dist.comm_cart.bcast(Re0, root=0)
+#                    else:
+#                        Re0 = None
+#                    Re0 = dist.comm_cart.bcast(Re0, root=0)
+
 
                 if slice_process:
                     slice_process = False
