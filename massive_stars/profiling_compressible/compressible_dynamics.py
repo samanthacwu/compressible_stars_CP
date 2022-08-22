@@ -217,10 +217,10 @@ if __name__ == '__main__':
         max_dt /= 2
     if timestep is None:
         timestep = initial_max_dt
-#    my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
-#    my_cfl.add_velocity(heaviside_cfl*u_B)
-#
-#    logger.info('cfl constructed') 
+    my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
+    my_cfl.add_velocity(heaviside_cfl*u_B)
+
+    logger.info('cfl constructed') 
 
     solver.stop_iteration = solver.iteration + 122
 
@@ -234,7 +234,7 @@ if __name__ == '__main__':
     #do first 10 iterations
     while solver.proceed and effective_iter <= 20:
         effective_iter = solver.iteration - start_iter
-#        timestep = my_cfl.compute_timestep()
+        timestep = my_cfl.compute_timestep()
         solver.step(timestep)
         Re0 = flow.max('Re_B')
 
@@ -251,7 +251,7 @@ if __name__ == '__main__':
 
     def main_loop():
         max_dt_check = True
-        current_max_dt = max_dt #my_cfl.max_dt
+        current_max_dt = my_cfl.max_dt
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
@@ -267,21 +267,21 @@ if __name__ == '__main__':
                 effective_iter = solver.iteration - start_iter
                 if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
                     #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
-#                    my_cfl.max_dt = max_dt
+                    my_cfl.max_dt = max_dt
                     max_dt_check = False
                     just_wrote = True
                     slice_time = solver.sim_time + outer_shell_dt
 
-#                timestep = my_cfl.compute_timestep()
+                timestep = my_cfl.compute_timestep()
 
                 if just_wrote:
                     just_wrote = False
                     num_steps = np.ceil(outer_shell_dt / timestep)
-#                    timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
+                    timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
                 elif max_dt_check:
                     timestep = np.min((timestep, current_max_dt))
-#                else:
-#                    my_cfl.stored_dt = timestep = current_max_dt
+                else:
+                    my_cfl.stored_dt = timestep = current_max_dt
 
                 t_future = solver.sim_time + timestep
                 if t_future >= slice_time*(1-1e-8):
