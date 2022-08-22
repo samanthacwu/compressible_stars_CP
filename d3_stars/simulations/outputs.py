@@ -91,7 +91,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         else:
             if this_dict['even_outputs']:
                 even_analysis_tasks['output_dts'].append(sim_dt)
-                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, max_writes=max_writes)
+                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, iter=int(1e8), max_writes=max_writes)
             else:
                 this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
 

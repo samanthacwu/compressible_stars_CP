@@ -203,7 +203,6 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['E_RHS_{}'.format(bn)] = E_RHS = (grad_u + d3.trans(one*grad_u))/2
         namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - div_u*d3.Grid(eye)/3)*2
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
-#        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = d3.Grid(nu_diff)*(grad_u@grad_ln_rho1 - div_u*d3.Grid(eye)*(2/3)@grad_ln_rho1) + d3.trans(d3.Grid(nu_diff)*grad_u)@grad_ln_rho1 
         namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = grid_nu_diff*(sigma_RHS@grad_ln_rho1)
         namespace['VH_{}'.format(bn)] = VH = (grid_nu_diff)*(d3.trace(E_RHS@E_RHS) - (1/3)*div_u**2)*2
 
@@ -256,9 +255,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         #Thermal diffusion
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom_fluc)/R_gas)
-        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = gamma * chi_rad * d3.lap(s1) #run 7
-        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(gamma * chi_rad) * d3.lap(s1) # run 7
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (grid_R/(P_full)) * (d3.div(d3.Grid(chi_rad*Cp/R_gas)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
+        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0)
+        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(chi_rad * Cp) * d3.div(grad_pom1_over_pom0)
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
 
         # Rotation and damping terms
         if do_rotation:
@@ -436,19 +435,15 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         #Standard Equations
         # Assumes background is in hse: -(grad T0 + T0 grad ln rho0) + gvec = 0.
         if config.numerics['equations'] == 'FC_HD':
-#            equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = 0".format(bn)
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -(u_{0}@grad_ln_rho1_{0})".format(bn)
-#            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = 0".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -(u_{0}@grad_u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
-#            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = 0".format(bn)
             equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -(u_{0}@grad_s1_{0}) + div_rad_flux_R_{0} + (Grid(R_gas)/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
         constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
         constant_s = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0"
-        constant_gradT = "radial(grad_s1_{0}(r={2}) - grad_s1_{1}(r={2})) = 0"
-#        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = -radial(grad_pom2_{0}(r={2}) - grad_pom2_{1}(r={2}))"
+        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = 0"
 #        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = -radial(grad_pom2_{0}(r={2}) - grad_pom2_{1}(r={2}))"
         constant_ln_rho = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
         constant_momentum_ang = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
@@ -461,7 +456,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, 'radius')
 #                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
             else:
                 shell_name = bases_keys[basis_number+1] 
@@ -486,7 +481,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_s1_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, 'radius')
 #                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
 
 
