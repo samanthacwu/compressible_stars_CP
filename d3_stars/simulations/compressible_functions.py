@@ -224,8 +224,10 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
         namespace['grad_pom1_over_pom0_RHS_{}'.format(bn)] = grad_pom1_over_pom0_RHS = grid_gamma*(grad_s1*grid_inv_cp + grid_R_div_cp*grad_ln_rho1)
+        namespace['div_grad_pom1_over_pom0_RHS_{}'.format(bn)] = div_grad_pom1_over_pom0_RHS = grid_gamma*(d3.div(grad_s1)*grid_inv_cp + grid_R_div_cp*d3.div(grad_ln_rho1))
         namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
         namespace['grad_pom1_{}'.format(bn)] = grad_pom1 = grad_pom0*pom1_over_pom0 + pom0*grad_pom1_over_pom0
+        namespace['grad_pom1_RHS_{}'.format(bn)] = grad_pom1_RHS = d3.Grid(grad_pom0)*pom1_over_pom0_RHS + d3.Grid(pom0)*grad_pom1_over_pom0_RHS
 
         #Full pomega subs
         namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0_RHS) + d3.Grid((-1)*ones)
@@ -255,9 +257,23 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         #Thermal diffusion
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom_fluc)/R_gas)
-        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0)
-        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(chi_rad * Cp) * d3.div(grad_pom1_over_pom0)
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
+#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + (Cp * inv_pom0 * grad_chi_rad)@grad_pom1
+#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad) * d3.div(grad_pom1_over_pom0) + d3.Grid(Cp * inv_pom0 * grad_chi_rad)@grad_pom1_RHS
+#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * inv_pom0 * d3.div(grad_pom1) + (Cp * inv_pom0 * grad_pom1)@(grad_chi_rad + chi_rad*grad_ln_rho0)
+#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad * inv_pom0) * d3.div(grad_pom1) + d3.Grid(Cp * inv_pom0)*(grad_pom1_RHS)@d3.Grid(grad_chi_rad + grad_ln_rho0*chi_rad)
+#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
+
+        #functional but slow
+#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
+#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * inv_pom0) * (d3.Grid(chi_rad) * d3.div(grad_pom1_RHS) + (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) )
+
+        #Does this work?/R
+        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
+        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad) * div_grad_pom1_over_pom0_RHS + d3.Grid(Cp * inv_pom0) * (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) 
+
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (grid_R/pom_full) * (d3.div(d3.Grid(chi_rad*Cp/R_gas)*grad_pom_fluc) + d3.Grid(chi_rad*Cp/R_gas)*grad_pom_fluc@grad_ln_rho_full ) - div_rad_flux_L_RHS
+#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
+
 
         # Rotation and damping terms
         if do_rotation:
@@ -443,7 +459,7 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
 
         constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
         constant_s = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0"
-        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = 0"
+        constant_gradT = "radial(grad_pom1_over_pom0_{0}(r={2}) - grad_pom1_over_pom0_{1}(r={2})) = 0"
 #        constant_gradT = "radial(grad_pom1_{0}(r={2}) - grad_pom1_{1}(r={2})) = -radial(grad_pom2_{0}(r={2}) - grad_pom2_{1}(r={2}))"
         constant_ln_rho = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
         constant_momentum_ang = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
@@ -456,8 +472,8 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, 'radius')
-#                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
+#                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius') #needed for energy conservation
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
@@ -481,8 +497,8 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, 'radius')
-#                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = radial(- grad_pom2_{0}(r={1}))".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
+#                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius')#needed for energy conservation
 
 
     for bn, basis in bases.items():
