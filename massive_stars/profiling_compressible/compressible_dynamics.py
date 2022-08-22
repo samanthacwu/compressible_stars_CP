@@ -238,14 +238,9 @@ if __name__ == '__main__':
         solver.step(timestep)
         Re0 = flow.max('Re_B')
 
-#        Re_avg = logger_handler.fields['Re_avg_B']
-        if dist.comm_cart.rank == 0:
-#            Re0 = Re_avg['g'].min()
-            this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
-            logger.info(this_str)
-#        else:
-#            Re0 = None
-#        Re0 = dist.comm_cart.bcast(Re0, root=0)
+        this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
+        logger.info(this_str)
+
     first_timestep = timestep
 
 
@@ -255,10 +250,10 @@ if __name__ == '__main__':
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
-        outer_shell_dt = np.inf#np.min(even_analysis_tasks['output_dts'])*2
-        surface_shell_slices = None#even_analysis_tasks['wave_shells']
-#        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-#        surface_shell_slices = even_analysis_tasks['wave_shells']
+#        outer_shell_dt = np.inf
+#        surface_shell_slices = None
+        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+        surface_shell_slices = even_analysis_tasks['wave_shells']
         timestep=first_timestep
         solver.enforce_real_cadence = np.inf
         Re0 = 0
@@ -291,20 +286,15 @@ if __name__ == '__main__':
 
                 if solver.iteration % 1 == 0:
                     Re0 = flow.max('Re_B')
-#                    Re_avg = logger_handler.fields['Re_avg_B']
-                    if dist.comm_cart.rank == 0:
-#                        Re0 = Re_avg['g'].min()
-                        this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
-                        logger.info(this_str)
-#                    else:
-#                        Re0 = None
-#                    Re0 = dist.comm_cart.bcast(Re0, root=0)
+                    this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
+                    logger.info(this_str)
 
 
                 if slice_process:
                     slice_process = False
-                    wall_time = time.time() - solver.start_time
-                    solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
+                    surface_shell_slices.last_iter_div=-1
+#                    wall_time = time.time() - solver.start_time
+#                    solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
                     slice_time = solver.sim_time + outer_shell_dt
                     just_wrote = True
 

@@ -57,7 +57,7 @@ handlers['output_tasks']['tasks'].append(prof_tasks)
 handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10
    
-## Hi-cadence shells
+### Hi-cadence shells
 handlers['wave_shells']['max_writes'] = 50
 handlers['wave_shells']['time_unit'] = 'kepler'
 handlers['wave_shells']['dt_factor'] = 1
@@ -69,4 +69,4 @@ wave_shell_tasks['fields'] = ['u', 's1', 'enthalpy_fluc']
 wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
 handlers['wave_shells']['tasks'].append(wave_shell_tasks)
 
-
+#

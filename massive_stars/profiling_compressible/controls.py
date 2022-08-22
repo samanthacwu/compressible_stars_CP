@@ -9,11 +9,14 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
-star['r_bounds'] = (0, '1.05L', '0.82R', '0.93R')
+star['r_bounds'] = (0, '1.1L', '0.80R', '0.95R')
+#star['r_bounds'] = (0, '1.05L',)
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-#star['nr'] = (128,128,64)
-star['nr'] = (256,256,64)
+#star['nr'] = (64,)
+#star['nr'] = (128,)
+star['nr'] = (128,128,64)
+#star['nr'] = (256,256,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -27,7 +30,7 @@ numerics['equations'] = 'FC_HD' #anelastic hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
-numerics['reynolds_target'] = 4e3 
+numerics['reynolds_target'] = 4e3
 
 numerics['prandtl'] = 1
 
@@ -46,8 +49,9 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-#dynamics['ntheta'] = 128
-dynamics['ntheta'] = 256 
+#dynamics['ntheta'] = 4
+dynamics['ntheta'] = 128
+#dynamics['ntheta'] = 256 
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re4e3_damping/final_checkpoint/final_checkpoint_s1.h5'
