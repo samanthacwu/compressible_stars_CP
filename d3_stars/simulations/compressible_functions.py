@@ -203,6 +203,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['E_RHS_{}'.format(bn)] = E_RHS = (grad_u + d3.trans(one*grad_u))/2
         namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - div_u*d3.Grid(eye)/3)*2
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
+        namespace['visc_div_stress_L_RHS_{}'.format(bn)] = visc_div_stress_L_RHS = grid_nu_diff*(d3.div(sigma) + sigma_RHS@d3.Grid(grad_ln_rho0)) + sigma_RHS@d3.Grid(grad_nu_diff)
         namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = grid_nu_diff*(sigma_RHS@grad_ln_rho1)
         namespace['VH_{}'.format(bn)] = VH = (grid_nu_diff)*(d3.trace(E_RHS@E_RHS) - (1/3)*div_u**2)*2
 
@@ -244,10 +245,10 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['grad_pom2_over_pom0_{}'.format(bn)] = grad_pom2_over_pom0 = grad_pom1_over_pom0*pom_fluc_over_pom0
 
         #Equation of state goodness
-        namespace['EOS_{}'.format(bn)]    = EOS = (s_full)/Cp - ( (1/(gamma)) * (np.log(pom_full) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho_full )
-        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = ones*(s0/Cp - ( (1/(gamma)) * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0))
+        namespace['EOS_{}'.format(bn)]    = EOS = (s_full)*grid_inv_cp - ( d3.Grid(1/(gamma)) * (np.log(pom_full) - np.log(grid_R)) - grid_R_div_cp * ln_rho_full )
+        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = d3.Grid(ones*(s0/Cp - ( (1/(gamma)) * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0)))
         namespace['EOS_goodness_{}'.format(bn)]    = EOS_good_ = np.sqrt(EOS**2)
-        namespace['EOS_goodness_bg_{}'.format(bn)] = EOS_good_bg = np.sqrt(EOS_bg**2)
+        namespace['EOS_goodness_bg_{}'.format(bn)] = EOS_good_bg = d3.Grid(np.sqrt(EOS_bg**2))
 
         #Momentum thermo / hydrostatic terms:
         namespace['gradP0_div_rho0_{}'.format(bn)]         = gradP0_div_rho0 = gamma*pom0*(grad_ln_rho0 + grad_s0/Cp)
@@ -290,15 +291,15 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         #output tasks
 
         er = namespace['er']
-        namespace['r_vals_{}'.format(bn)] = r_vals = (er@(ones*rvec)).evaluate()
+        namespace['r_vals_{}'.format(bn)] = r_vals = d3.Grid(er@(ones*rvec)).evaluate()
         namespace['ur_{}'.format(bn)] = er@u
         namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
         namespace['u_squared_{}'.format(bn)] = u_squared = u@u
         namespace['KE_{}'.format(bn)] = KE = rho_full * u_squared / 2
-        namespace['PE_{}'.format(bn)] = PE = rho_full * g_phi
-        namespace['IE_{}'.format(bn)] = IE = (P_full)*(Cv/R_gas)
-        namespace['PE0_{}'.format(bn)] = PE0 = rho0 * g_phi
-        namespace['IE0_{}'.format(bn)] = IE0 = P0*(Cv/R_gas)
+        namespace['PE_{}'.format(bn)] = PE = rho_full * d3.Grid(g_phi)
+        namespace['IE_{}'.format(bn)] = IE = (P_full)*d3.Grid(Cv/R_gas)
+        namespace['PE0_{}'.format(bn)] = PE0 = d3.Grid(rho0 * g_phi)
+        namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(P0*(Cv/R_gas))
         namespace['PE1_{}'.format(bn)] = PE1 = PE + d3.Grid(-PE0*ones)
         namespace['IE1_{}'.format(bn)] = IE1 = IE + d3.Grid(-IE0*ones)
         namespace['TotE_{}'.format(bn)] = KE + PE + IE
@@ -311,19 +312,19 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['F_KE_{}'.format(bn)] = F_KE = u * KE
         namespace['F_PE_{}'.format(bn)] = F_PE = u * PE
         namespace['F_enth_{}'.format(bn)] = F_enth = grid_cp_div_R * momentum * pom_full
-        namespace['F_visc_{}'.format(bn)] = F_visc = d3.Grid(-nu_diff)*momentum@sigma
+        namespace['F_visc_{}'.format(bn)] = F_visc = d3.Grid(-nu_diff)*momentum@sigma_RHS
 
         #Waves
         namespace['N2_{}'.format(bn)] = N2 = grad_s_full@d3.Grid(-g/Cp)
 
         #Source terms
-        namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L + visc_div_stress_R)
+        namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R)
         namespace['energy_visc_heating_{}'.format(bn)] = energy_visc_heating = rho_full * VH
-        namespace['rad_flux_production_{}'.format(bn)] = rad_flux_production = (P_full/R_gas)*(div_rad_flux_L + div_rad_flux_R)
+        namespace['rad_flux_production_{}'.format(bn)] = rad_flux_production = (P_full*d3.Grid(1/R_gas))*(div_rad_flux_L_RHS + div_rad_flux_R)
         namespace['Q_production_{}'.format(bn)] = Q_production = namespace['Q_{}'.format(bn)]
-        namespace['momentum_gradP_{}'.format(bn)] = gradP_production = momentum @ (-gradP0_div_rho0*ones - linear_gradP_div_rho - nonlinear_gradP_div_rho) #does not include PE
+        namespace['momentum_gradP_{}'.format(bn)] = gradP_production = momentum @ (d3.Grid(-gradP0_div_rho0*ones) - linear_gradP_div_rho - nonlinear_gradP_div_rho) #does not include PE
         namespace['energy_PdivU_{}'.format(bn)] = energy_PdivU = -P_full*div_u
-        namespace['momentum_flux_div_{}'.format(bn)] = momentum_fluxes = - d3.div(u*(KE + PE) - nu_diff*momentum@sigma)
+        namespace['momentum_flux_div_{}'.format(bn)] = momentum_fluxes = - d3.div(u*(KE + PE) + grid_nu_diff*momentum@sigma_RHS*-1)
         namespace['energy_flux_div_{}'.format(bn)] = energy_fluxes  = -d3.div(u*IE)
         namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full)  + momentum_fluxes
         namespace['source_IE_{}'.format(bn)] = Q_production + rad_flux_production + energy_visc_heating  + energy_PdivU + energy_fluxes

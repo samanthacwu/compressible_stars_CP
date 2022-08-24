@@ -29,8 +29,8 @@ output_tasks['Lz'] = 'dot(ez_{0},L_{0})'
 output_tasks['L_squared'] = 'dot(L_{0}, L_{0})'
 
 for t in flux_tags:
-    output_tasks['{}_lum'.format(t)] = '(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
-    output_tasks['{}_lum_r'.format(t)] = 'dot(er, ' + output_tasks['{}_lum'.format(t)] + ')'
+    output_tasks['{}_lum'.format(t)] = 'Grid(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
+    output_tasks['{}_lum_r'.format(t)] = 'dot(Grid(er), ' + output_tasks['{}_lum'.format(t)] + ')'
 
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales
@@ -86,14 +86,17 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
             t_unit = 1
         sim_dt = float(this_dict['dt_factor'])*t_unit
         if h_name == 'checkpoint':
-            analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
-            analysis_tasks[h_name].add_tasks(solver.state, layout='g')
+            analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
+            analysis_tasks[h_name].add_tasks(solver.state, layout='c')
+#            for task in solver.state:
+#                tname = str(task)
+#                analysis_tasks[h_name].add_task(d3.Grid(task), name=tname, layout='g') 
         else:
             if this_dict['even_outputs']:
                 even_analysis_tasks['output_dts'].append(sim_dt)
-                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, iter=int(1e8), max_writes=max_writes)
+                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, iter=int(1e8), max_writes=max_writes, parallel=this_dict['parallel'])
             else:
-                this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes)
+                this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
 
         tasks = this_dict['tasks']
         for this_task in tasks:
@@ -103,7 +106,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                     task = None
                     for bn, basis in bases.items():
                         fieldstr = output_tasks[fieldname].format(bn)
-                        tmp_task = eval('integ({})'.format(fieldstr), dict(solver.problem.namespace))
+                        tmp_task = d3.Grid(eval('integ({})'.format(fieldstr), dict(solver.problem.namespace)))
                         if task is None:
                             task = tmp_task
                         else:
@@ -122,7 +125,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                     for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
                         for base_interp in interps:
-                            task = eval('({})(phi={})'.format(fieldstr, base_interp), dict(solver.problem.namespace))
+                            task = d3.Grid(eval('({})(phi={})'.format(fieldstr, base_interp), dict(solver.problem.namespace)))
                             handler.add_task(task, name='meridian({}_{},phi={})'.format(fieldname, bn, base_interp))
                 elif this_task['type'] == 'shell':
                     interps = this_task['interps']
@@ -142,18 +145,18 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                             elif type(basis) == d3.ShellBasis:
                                 if interp <= basis.radii[0] or interp > basis.radii[1] :
                                     continue
-                            task = eval('({})(r={})'.format(fieldstr, interp), dict(solver.problem.namespace))
+                            task = d3.Grid(eval('({})(r={})'.format(fieldstr, interp), dict(solver.problem.namespace)))
                             handler.add_task(task, name='shell({}_{},r={})'.format(fieldname, bn, base_interp))
                 elif this_task['type'] == 'vol_avg':
                     for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
-                        task = eval('vol_avg_{}({})'.format(bn, fieldstr), dict(solver.problem.namespace))
+                        task = d3.Grid(eval('vol_avg_{}({})'.format(bn, fieldstr), dict(solver.problem.namespace)))
                         handler.add_task(task, name='vol_avg({}_{})'.format(fieldname, bn))
                 elif this_task['type'] == 's2_avg':
                     for fieldname in this_task['fields']:
                         fieldstr = output_tasks[fieldname].format(bn)
                         task_str = 's2_avg({})'.format(fieldstr)
-                        task = eval(task_str, dict(solver.problem.namespace))
+                        task = d3.Grid(eval(task_str, dict(solver.problem.namespace)))
                         handler.add_task(task, name='s2_avg({}_{})'.format(fieldname, bn))
 
     return analysis_tasks, even_analysis_tasks
