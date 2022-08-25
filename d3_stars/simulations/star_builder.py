@@ -760,13 +760,18 @@ def build_nccs(plot_nccs=False):
 #    plt.show()
 
 
-        
-
-    C = d3.integ(ncc_dict['Q']['field_B']).evaluate()['g']
-    vol = (4/3)*np.pi * bases['B'].radius**3
+       
+    integral = 0
+    for bn in bases.keys():
+        integral += d3.integ(ncc_dict['Q']['field_{}'.format(bn)])
+    C = integral.evaluate()['g']
+    vol = (4/3) * np.pi * (r_bound_nd[-1])**3
+#    C = d3.integ(ncc_dict['Q']['field_B']).evaluate()['g']
+#    vol = (4/3)*np.pi * bases['B'].radius**3
     adj = C / vol
-    logger.info('adjusting dLdt for energy conservation; subtracting {} from H_B'.format(adj))
-    ncc_dict['Q']['field_B']['g'] -= adj 
+    logger.info('adjusting dLdt for energy conservation; subtracting {} from H'.format(adj))
+    for bn in bases.keys():
+        ncc_dict['Q']['field_{}'.format(bn)]['g'] -= adj 
 
 #    dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
     

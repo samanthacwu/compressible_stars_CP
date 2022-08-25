@@ -5,9 +5,10 @@ from copy import deepcopy
 handler_defaults = OrderedDict()
 handler_defaults['max_writes'] = 40
 handler_defaults['time_unit'] = 'heating' #also avail: kepler
-handler_defaults['dt_factor'] = 0.05
+handler_defaults['dt_factor'] = 0.1
 handler_defaults['even_outputs'] = False
 handler_defaults['tasks'] = list()
+handler_defaults['parallel'] = None
 
 handlers = OrderedDict()
 for hname in ['output_tasks', 'wave_shells', 'checkpoint']:
@@ -15,7 +16,12 @@ for hname in ['output_tasks', 'wave_shells', 'checkpoint']:
     for k, val in handler_defaults.items():
         handlers[hname][k] = deepcopy(val)
 
-## Dynamical Slices
+
+### Checkpoints
+handlers['checkpoint']['max_writes'] = 1
+handlers['checkpoint']['dt_factor'] = 10
+
+### Dynamical Slices
 #Equatorial slices
 eq_tasks = OrderedDict()
 eq_tasks['type'] = 'equator'
@@ -40,11 +46,11 @@ handlers['output_tasks']['tasks'].append(shell_tasks)
 ## Scalars
 energy_tasks = OrderedDict()
 energy_tasks['type'] = 'full_integ'
-energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'tot_source', 'EOS_goodness', 'rho_fluc']
+energy_tasks['fields'] = ['KE', 'PE1', 'IE1', 'FlucE', 'L_squared', 'rho_fluc']
 handlers['output_tasks']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE']
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE']
 handlers['output_tasks']['tasks'].append(scalar_tasks)
 
 ## Profiles
@@ -53,15 +59,13 @@ prof_tasks['type'] = 's2_avg'
 prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_r', 'PE_lum_r', 'N2']
 handlers['output_tasks']['tasks'].append(prof_tasks)
 
-### Checkpoints
-handlers['checkpoint']['max_writes'] = 1
-handlers['checkpoint']['dt_factor'] = 10
    
 ### Hi-cadence shells
 handlers['wave_shells']['max_writes'] = 50
 handlers['wave_shells']['time_unit'] = 'kepler'
 handlers['wave_shells']['dt_factor'] = 1
 handlers['wave_shells']['even_outputs'] = True
+#handlers['wave_shells']['parallel'] = 'virtual'
 
 wave_shell_tasks = OrderedDict()
 wave_shell_tasks['type'] = 'shell'
@@ -69,4 +73,3 @@ wave_shell_tasks['fields'] = ['u', 's1', 'enthalpy_fluc']
 wave_shell_tasks['interps'] = [1.1, 1.5, 1.75, 2.0, '0.95R']
 handlers['wave_shells']['tasks'].append(wave_shell_tasks)
 
-#
