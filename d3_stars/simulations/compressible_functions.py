@@ -221,7 +221,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         grid_pom0 = d3.Grid(ones*pom0)
         grid_grad_pom0 = d3.Grid(ones*grad_pom0)
         grid_g = d3.Grid(g)
-        grid_chi_rad = d3.Grid(chi_rad)
+        grid_chi_rad = d3.Grid(chi_rad*ones)
         grid_grad_chi_rad = d3.Grid(ones*grad_chi_rad)
         namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
         grid_inv_pom0 = d3.Grid(inv_pom0)
@@ -249,7 +249,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = grid_grad_ln_rho0 + grid_grad_ln_rho1
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
         namespace['s_full_{}'.format(bn)] = s_full = grid_s0 + grid_s1
-        namespace['P_full_{}'.format(bn)] = P_full = grid_R*grid_rho0*np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1))
+        namespace['P_full_{}'.format(bn)] = P_full = d3.Grid(grid_R*grid_rho0)*np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1))
         namespace['grad_s_full_{}'.format(bn)] = grad_s_full = grid_grad_s0 + grid_grad_s1
         namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
         namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*P0*ones)
@@ -295,15 +295,16 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = grid_gamma*pom_fluc*(grid_grad_ln_rho1 + grid_grad_s1*grid_inv_cp) + grid_g*pom2_over_pom0
 
         #Thermal diffusion
+        cp_times_chi_rad = d3.Grid(grid_cp * grid_chi_rad)
+        cp_times_grad_chi_rad = d3.Grid(grid_cp * grid_grad_chi_rad)
+        C_grad_ln_rho = d3.Grid(lap_C(grid_grad_ln_rho0)) + d3.Grid(lap_C(grid_grad_ln_rho1))
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom_fluc)/R_gas)
         namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
-        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = grid_cp * grid_chi_rad * lap_pom1_over_pom0_RHS + grid_cp * grid_inv_pom0 * (grad_pom1_RHS)@(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad) 
+        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = cp_times_chi_rad * lap_pom1_over_pom0_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
 
-        namespace['div_rad_flux_R_transforms_{}'.format(bn)] = div_rad_flux_R_transforms = d3.Grid(lap_C(lap_pom_fluc*grid_chi_rad*grid_cp))
-        namespace['full_div_rad_flux_drho_{}'.format(bn)] = full_div_rad_flux_drho =   d3.Grid(lap_C( grid_cp *\
-                                                                               ((grad_pom_fluc@(grid_chi_rad*grad_ln_rho_full+grid_grad_chi_rad) )))) \
-                                                                      + d3.Grid(lap_C(lap_pom_fluc*grid_chi_rad*grid_cp)) 
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = inv_pom_full * full_div_rad_flux_drho - div_rad_flux_L_RHS
+        namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   inv_pom_full*((grad_pom_fluc@(d3.Grid(cp_times_chi_rad*C_grad_ln_rho)+d3.Grid(lap_C(cp_times_grad_chi_rad))) ))
+        namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   lap_pom_fluc*cp_times_chi_rad*inv_pom_full
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = d3.Grid(lap_C(full_div_rad_flux_pt1 - div_rad_flux_L_RHS)) + d3.Grid(lap_C(full_div_rad_flux_pt2))
 
 
         # Rotation and damping terms
@@ -323,12 +324,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
 
         #The sum order matters here based on ball or shell...weird.
-        energy_terms_1 = d3.Grid(lap_C((-(u@grad_s1))) + lap_C((grid_R*d3.Grid(1/P_full))*d3.Grid(Q)) - lap_C(div_rad_flux_L_RHS))
-        energy_terms_2 = d3.Grid(lap_C(inv_pom_full))*(d3.Grid(lap_C(VH)) + full_div_rad_flux_drho)
-        if type(basis) == d3.BallBasis:
-            namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
-        else:
-            namespace['energy_RHS_{}'.format(bn)] = energy_terms_2 + energy_terms_1
+        energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + inv_pom_full*VH - div_rad_flux_L_RHS + full_div_rad_flux_pt1))
+        energy_terms_2 = d3.Grid(lap_C(full_div_rad_flux_pt2))
+        namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
 
         #output tasks
         er = namespace['er']
