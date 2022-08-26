@@ -3,6 +3,7 @@ from collections import OrderedDict
 import h5py
 import numpy as np
 import dedalus.public as d3
+from dedalus.core.operators import convert 
 
 import logging
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
     namespace['exp'] = np.exp
     namespace['log'] = np.log
     namespace['Grid'] = d3.Grid
+    namespace['dt'] = dt =  d3.TimeDerivative
     one = dist.Field(name='one')
     one['g'] = 1
     namespace['one'] = one = d3.Grid(one)
@@ -137,6 +139,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         ln_rho1 = namespace['ln_rho1_{}'.format(bn)]
         s1 = namespace['s1_{}'.format(bn)]
         s0 = namespace['s0_{}'.format(bn)]
+        Q = namespace['Q_{}'.format(bn)]
         eye = namespace['eye']
         grad_ln_rho0 = namespace['grad_ln_rho0_{}'.format(bn)]
         grad_ln_pom0 = namespace['grad_ln_pom0_{}'.format(bn)]
@@ -185,22 +188,24 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         if type(basis) == d3.BallBasis:
             lift_basis = basis.derivative_basis(0)
             namespace['lift_{}'.format(bn)] = lift_fn = lambda A: d3.Lift(A, lift_basis, -1)
-            namespace['taus_lnrho_{}'.format(bn)] = 0
-            namespace['taus_u_{}'.format(bn)] = lift_fn(namespace['tau_u_{}'.format(bn)])
-            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_s_{}'.format(bn)])
+            namespace['taus_lnrho_{}'.format(bn)] = taus_lnrho = 0
+            namespace['taus_u_{}'.format(bn)] = taus_u = lift_fn(namespace['tau_u_{}'.format(bn)])
+            namespace['taus_s_{}'.format(bn)] = taus_s = lift_fn(namespace['tau_s_{}'.format(bn)])
         else:
             lift_basis = basis.derivative_basis(2)
             namespace['lift_{}'.format(bn)] = lift_fn = lambda A, n: d3.Lift(A, lift_basis, n)
-            namespace['taus_lnrho_{}'.format(bn)] = (1/nu_diff)*rvec@lift_fn(namespace['tau_u2_{}'.format(bn)], -1)
-            namespace['taus_u_{}'.format(bn)] = lift_fn(namespace['tau_u1_{}'.format(bn)], -1) + lift_fn(namespace['tau_u2_{}'.format(bn)], -2)
-            namespace['taus_s_{}'.format(bn)] = lift_fn(namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(namespace['tau_s2_{}'.format(bn)], -2)
+            namespace['taus_lnrho_{}'.format(bn)] = taus_lnrho = (1/nu_diff)*rvec@lift_fn(namespace['tau_u2_{}'.format(bn)], -1)
+            namespace['taus_u_{}'.format(bn)] = taus_u = lift_fn(namespace['tau_u1_{}'.format(bn)], -1) + lift_fn(namespace['tau_u2_{}'.format(bn)], -2)
+            namespace['taus_s_{}'.format(bn)] = taus_s = lift_fn(namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(namespace['tau_s2_{}'.format(bn)], -2)
 
 
+        lap_domain = d3.lap(s1).domain
+        namespace['lap_C_{}'.format(bn)] = lap_C = lambda A: convert(A, lap_domain.bases)
 
         #Stress matrices & viscous terms
         namespace['E_{}'.format(bn)] = E = grad_u/2 + d3.trans(grad_u/2)
         namespace['sigma_{}'.format(bn)] = sigma = (E - div_u*eye/3)*2
-        namespace['E_RHS_{}'.format(bn)] = E_RHS = (grad_u + d3.trans(one*grad_u))/2
+        namespace['E_RHS_{}'.format(bn)] = E_RHS = (grad_u + d3.trans(d3.Grid(grad_u)))/2
         namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - div_u*d3.Grid(eye)/3)*2
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
         namespace['visc_div_stress_L_RHS_{}'.format(bn)] = visc_div_stress_L_RHS = grid_nu_diff*(d3.div(sigma) + sigma_RHS@d3.Grid(grad_ln_rho0)) + sigma_RHS@d3.Grid(grad_nu_diff)
@@ -212,7 +217,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['rho_full_{}'.format(bn)] = rho_full = d3.Grid(rho0)*np.exp(ln_rho1)
         namespace['rho_fluc_{}'.format(bn)] = rho_fluc = d3.Grid(rho0)*(np.exp(ln_rho1) - 1)
         namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (d3.Grid(ones*ln_rho0) + ln_rho1)
-        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = (d3.Grid(ones*grad_ln_rho0) + grad_ln_rho1)
+        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = d3.Grid(ones*grad_ln_rho0) + d3.Grid(grad_ln_rho1)
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
         namespace['P_full_{}'.format(bn)] = P_full = grid_R*np.exp(d3.Grid(gamma)*((d3.Grid(s0*ones)+s1)*grid_inv_cp + d3.Grid(ln_rho0*ones) + ln_rho1))
         namespace['s_full_{}'.format(bn)] = s_full = d3.Grid(ones*s0) + s1
@@ -225,7 +230,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
         namespace['grad_pom1_over_pom0_RHS_{}'.format(bn)] = grad_pom1_over_pom0_RHS = grid_gamma*(grad_s1*grid_inv_cp + grid_R_div_cp*grad_ln_rho1)
-        namespace['div_grad_pom1_over_pom0_RHS_{}'.format(bn)] = div_grad_pom1_over_pom0_RHS = grid_gamma*(d3.div(grad_s1)*grid_inv_cp + grid_R_div_cp*d3.div(grad_ln_rho1))
+        namespace['div_grad_pom1_over_pom0_RHS_{}'.format(bn)] = div_grad_pom1_over_pom0_RHS = grid_gamma*(d3.lap(s1)*grid_inv_cp + grid_R_div_cp*d3.lap(ln_rho1))
         namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
         namespace['grad_pom1_{}'.format(bn)] = grad_pom1 = grad_pom0*pom1_over_pom0 + pom0*grad_pom1_over_pom0
         namespace['grad_pom1_RHS_{}'.format(bn)] = grad_pom1_RHS = d3.Grid(grad_pom0)*pom1_over_pom0_RHS + d3.Grid(pom0)*grad_pom1_over_pom0_RHS
@@ -234,6 +239,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0_RHS) + d3.Grid((-1)*ones)
         namespace['pom_fluc_{}'.format(bn)] = pom_fluc = d3.Grid(pom0)*pom_fluc_over_pom0
         namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = d3.Grid(grad_pom0)*pom_fluc_over_pom0 + (pom_fluc_over_pom0 + ones)*d3.Grid(pom0)*grad_pom1_over_pom0_RHS
+        namespace['lap_pom_fluc_{}'.format(bn)] = lap_pom_fluc = d3.lap(pom_fluc)
 
         #Nonlinear Pomega = R*T
         namespace['pom2_over_pom0_{}'.format(bn)] = pom2_over_pom0 = pom_fluc_over_pom0 - pom1_over_pom0_RHS
@@ -268,13 +274,18 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 #        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
 #        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * inv_pom0) * (d3.Grid(chi_rad) * d3.div(grad_pom1_RHS) + (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) )
 
-        #Does this work?/R
+        #Does this work?
         namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
         namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad) * div_grad_pom1_over_pom0_RHS + d3.Grid(Cp * inv_pom0) * (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) 
 
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = (grid_R/pom_full) * (d3.div(d3.Grid(chi_rad*Cp/R_gas)*grad_pom_fluc) + d3.Grid(chi_rad*Cp/R_gas)*grad_pom_fluc@grad_ln_rho_full ) - div_rad_flux_L_RHS
-#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
 
+        #Why is dedalus wrapping all the energy equation terms in conv()? We can get around this by adding operator form of equation instead of string.
+#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = lap_pom_fluc
+        namespace['div_rad_flux_R_transforms_{}'.format(bn)] = div_rad_flux_R_transforms = lap_pom_fluc*d3.Grid(lap_C(d3.Grid(chi_rad*Cp)/pom_full))
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =   d3.Grid(lap_C(- div_rad_flux_L_RHS \
+                                                                      + (grid_R/pom_full) * (d3.Grid(chi_rad*Cp/R_gas)*(grad_pom_fluc@d3.Grid(grad_ln_rho0) + grad_pom_fluc@d3.Grid(grad_ln_rho1)))\
+                                                                      + d3.Grid(d3.Grid(grad_chi_rad*Cp/R_gas)@(grad_pom_fluc) * (grid_R/pom_full)) )) + div_rad_flux_R_transforms
+#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
 
         # Rotation and damping terms
         if do_rotation:
@@ -287,6 +298,9 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['sponge_term_{}'.format(bn)] = u*namespace['sponge_{}'.format(bn)]
         else:
             namespace['sponge_term_{}'.format(bn)] = 0
+
+        sponge_term = namespace['sponge_term_{}'.format(bn)]
+        rotation_term = namespace['rotation_term_{}'.format(bn)]
 
         #output tasks
 
@@ -412,10 +426,6 @@ def fill_structure(bases, dist, namespace, ncc_file, radius, Pe, vec_fields=[], 
         if do_rotation:
             logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
 
-    # Grid-lock some operators / define grad's
-    for field in ['Q']:
-        namespace['{}_{}'.format(field, bn)] = d3.Grid(namespace['{}_{}'.format(field, bn)]).evaluate()
-
     return namespace, (max_dt, t_buoy, t_rot)
 
 def get_compressible_variables(bases, bases_keys, namespace):
@@ -442,7 +452,7 @@ def get_compressible_variables(bases, bases_keys, namespace):
 
     return problem_variables + problem_taus
 
-def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
+def set_compressible_problem(problem, bases, bases_keys, namespace, stitch_radii=[]):
     equations = OrderedDict()
     u_BCs = OrderedDict()
     T_BCs = OrderedDict()
@@ -453,8 +463,8 @@ def set_compressible_problem(problem, bases, bases_keys, stitch_radii=[]):
         # Assumes background is in hse: -(grad T0 + T0 grad ln rho0) + gvec = 0.
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -(u_{0}@grad_ln_rho1_{0})".format(bn)
-            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = -(u_{0}@grad_u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0}".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = -(u_{0}@grad_s1_{0}) + div_rad_flux_R_{0} + (Grid(R_gas)/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})".format(bn)
+            equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = (-(u_{0}@grad_u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0})".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = d3.Grid(lap_C_{0}((-(u_{0}@grad_s1_{0}) + (Grid(R_gas)/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})))) + div_rad_flux_R_{0} ".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
