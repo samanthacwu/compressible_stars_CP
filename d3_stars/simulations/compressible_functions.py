@@ -165,11 +165,13 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['R_gas'] = R_gas = dist.Field(name='R_gas')
             namespace['Cp'] = Cp = dist.Field(name='Cp')
             namespace['Cv'] = Cv = dist.Field(name='Cv')
+            namespace['grid_cp'] = grid_cp = d3.Grid(Cp) 
             namespace['grid_cp_div_R'] = grid_cp_div_R = d3.Grid(Cp/R_gas) #= gamma/(gamma-1)
             namespace['grid_R_div_cp'] = grid_R_div_cp = d3.Grid(R_gas/Cp) #= (gamma-1)/gamma
             namespace['grid_inv_cp'] = grid_inv_cp = d3.Grid(1/Cp)
             namespace['grid_R'] = grid_R = d3.Grid(R_gas)
             namespace['grid_gamma'] = grid_gamma = d3.Grid(gamma)
+            namespace['grid_inv_gamma'] = grid_inv_gamma = d3.Grid(1/gamma)
 
 
 
@@ -199,93 +201,110 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
             namespace['taus_s_{}'.format(bn)] = taus_s = lift_fn(namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(namespace['tau_s2_{}'.format(bn)], -2)
 
 
+        #These fields are coming to the grid:
+        grid_u = d3.Grid(u)
+        grid_ln_rho1 = d3.Grid(ln_rho1)
+        grid_s1 = d3.Grid(s1)
+        grid_grad_u = d3.Grid(grad_u)
+        grid_grad_ln_rho1 = d3.Grid(grad_ln_rho1)
+        grid_grad_s1 = d3.Grid(grad_s1)
+        grid_lap_ln_rho1 = d3.Grid(d3.lap(ln_rho1))
+        grid_lap_s1 = d3.Grid(d3.lap(s1))
+        grid_div_u = d3.Grid(div_u)
+
+        #reused background fields:
+        grid_rho0 = d3.Grid(ones*rho0)
+        grid_ln_rho0 = d3.Grid(ones*ln_rho0)
+        grid_grad_ln_rho0 = d3.Grid(ones*grad_ln_rho0)
+        grid_s0 = d3.Grid(ones*s0)
+        grid_grad_s0 = d3.Grid(ones*grad_s0)
+        grid_pom0 = d3.Grid(ones*pom0)
+        grid_grad_pom0 = d3.Grid(ones*grad_pom0)
+        grid_g = d3.Grid(g)
+        grid_chi_rad = d3.Grid(chi_rad)
+        grid_grad_chi_rad = d3.Grid(ones*grad_chi_rad)
+        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
+        grid_inv_pom0 = d3.Grid(inv_pom0)
+
+        neg_one = d3.Grid(-ones)
+
+
         lap_domain = d3.lap(s1).domain
         namespace['lap_C_{}'.format(bn)] = lap_C = lambda A: convert(A, lap_domain.bases)
 
         #Stress matrices & viscous terms
         namespace['E_{}'.format(bn)] = E = grad_u/2 + d3.trans(grad_u/2)
         namespace['sigma_{}'.format(bn)] = sigma = (E - div_u*eye/3)*2
-        namespace['E_RHS_{}'.format(bn)] = E_RHS = (grad_u + d3.trans(d3.Grid(grad_u)))/2
-        namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - div_u*d3.Grid(eye)/3)*2
+        namespace['E_RHS_{}'.format(bn)] = E_RHS = (grid_grad_u + d3.trans(grid_grad_u))/2
+        namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - grid_div_u*d3.Grid(eye)/3)*2
         namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
-        namespace['visc_div_stress_L_RHS_{}'.format(bn)] = visc_div_stress_L_RHS = grid_nu_diff*(d3.div(sigma) + sigma_RHS@d3.Grid(grad_ln_rho0)) + sigma_RHS@d3.Grid(grad_nu_diff)
-        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = grid_nu_diff*(sigma_RHS@grad_ln_rho1)
-        namespace['VH_{}'.format(bn)] = VH = (grid_nu_diff)*(d3.trace(E_RHS@E_RHS) - (1/3)*div_u**2)*2
+        namespace['visc_div_stress_L_RHS_{}'.format(bn)] = visc_div_stress_L_RHS = grid_nu_diff*(d3.div(sigma) + sigma_RHS@grid_grad_ln_rho0) + sigma_RHS@d3.Grid(grad_nu_diff)
+        namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = grid_nu_diff*(sigma_RHS@grid_grad_ln_rho1)
+        namespace['VH_{}'.format(bn)] = VH = (grid_nu_diff)*(d3.trace(E_RHS@E_RHS) - (1/3)*grid_div_u**2)*2
 
         #Thermodynamics: rho, pressure, s 
-        namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
-        namespace['rho_full_{}'.format(bn)] = rho_full = d3.Grid(rho0)*np.exp(ln_rho1)
-        namespace['rho_fluc_{}'.format(bn)] = rho_fluc = d3.Grid(rho0)*(np.exp(ln_rho1) - 1)
-        namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (d3.Grid(ones*ln_rho0) + ln_rho1)
-        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = d3.Grid(ones*grad_ln_rho0) + d3.Grid(grad_ln_rho1)
+        namespace['rho_full_{}'.format(bn)] = rho_full = grid_rho0*np.exp(ln_rho1)
+        namespace['rho_fluc_{}'.format(bn)] = rho_fluc = rho_full - grid_rho0
+        namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (grid_ln_rho0 + ln_rho1)
+        namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = grid_grad_ln_rho0 + grid_grad_ln_rho1
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
-        namespace['P_full_{}'.format(bn)] = P_full = grid_R*np.exp(d3.Grid(gamma)*((d3.Grid(s0*ones)+s1)*grid_inv_cp + d3.Grid(ln_rho0*ones) + ln_rho1))
-        namespace['s_full_{}'.format(bn)] = s_full = d3.Grid(ones*s0) + s1
-        namespace['grad_s_full_{}'.format(bn)] = grad_s_full = d3.Grid(ones*grad_s0) + grad_s1
+        namespace['s_full_{}'.format(bn)] = s_full = grid_s0 + grid_s1
+        namespace['P_full_{}'.format(bn)] = P_full = grid_R*grid_rho0*np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1))
+        namespace['grad_s_full_{}'.format(bn)] = grad_s_full = grid_grad_s0 + grid_grad_s1
         namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
         namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*P0*ones)
 
         #Linear Pomega = R * T
-        namespace['pom1_over_pom0_RHS_{}'.format(bn)] = pom1_over_pom0_RHS = grid_gamma*(s1*grid_inv_cp + grid_R_div_cp*ln_rho1)
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
-        namespace['grad_pom1_over_pom0_RHS_{}'.format(bn)] = grad_pom1_over_pom0_RHS = grid_gamma*(grad_s1*grid_inv_cp + grid_R_div_cp*grad_ln_rho1)
-        namespace['div_grad_pom1_over_pom0_RHS_{}'.format(bn)] = div_grad_pom1_over_pom0_RHS = grid_gamma*(d3.lap(s1)*grid_inv_cp + grid_R_div_cp*d3.lap(ln_rho1))
         namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
         namespace['grad_pom1_{}'.format(bn)] = grad_pom1 = grad_pom0*pom1_over_pom0 + pom0*grad_pom1_over_pom0
-        namespace['grad_pom1_RHS_{}'.format(bn)] = grad_pom1_RHS = d3.Grid(grad_pom0)*pom1_over_pom0_RHS + d3.Grid(pom0)*grad_pom1_over_pom0_RHS
+
+        #RHS terms
+        namespace['pom1_over_pom0_RHS_{}'.format(bn)] = pom1_over_pom0_RHS = grid_gamma*(grid_s1*grid_inv_cp + grid_R_div_cp*grid_ln_rho1)
+        namespace['grad_pom1_over_pom0_RHS_{}'.format(bn)] = grad_pom1_over_pom0_RHS = grid_gamma*(grad_s1*grid_inv_cp + grid_R_div_cp*grad_ln_rho1)
+        namespace['lap_pom1_over_pom0_RHS_{}'.format(bn)] = lap_pom1_over_pom0_RHS = grid_gamma*(grid_lap_s1*grid_inv_cp + grid_R_div_cp*grid_lap_ln_rho1)
+        namespace['grad_pom1_RHS_{}'.format(bn)] = grad_pom1_RHS = grid_grad_pom0*pom1_over_pom0_RHS + grid_pom0*grad_pom1_over_pom0_RHS
 
         #Full pomega subs
-        namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0_RHS) + d3.Grid((-1)*ones)
-        namespace['pom_fluc_{}'.format(bn)] = pom_fluc = d3.Grid(pom0)*pom_fluc_over_pom0
-        namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = d3.Grid(grad_pom0)*pom_fluc_over_pom0 + (pom_fluc_over_pom0 + ones)*d3.Grid(pom0)*grad_pom1_over_pom0_RHS
+        namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0_RHS) + neg_one 
+        namespace['pom_fluc_{}'.format(bn)] = pom_fluc = grid_pom0*pom_fluc_over_pom0
+        namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = grid_grad_pom0*pom_fluc_over_pom0 + (pom_fluc_over_pom0 + ones)*grid_pom0*grad_pom1_over_pom0_RHS
         namespace['lap_pom_fluc_{}'.format(bn)] = lap_pom_fluc = d3.lap(pom_fluc)
 
         #Nonlinear Pomega = R*T
         namespace['pom2_over_pom0_{}'.format(bn)] = pom2_over_pom0 = pom_fluc_over_pom0 - pom1_over_pom0_RHS
-        namespace['pom2_{}'.format(bn)] = pom2 = d3.Grid(pom0)*pom2_over_pom0
+        namespace['pom2_{}'.format(bn)] = pom2 = grid_pom0*pom2_over_pom0
         namespace['grad_pom2_{}'.format(bn)] = grad_pom2 = d3.grad(pom2)
 
-        namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (d3.Grid(ones*grad_pom0) + grad_pom_fluc)
-        namespace['pom_full_{}'.format(bn)] = pom_full = (d3.Grid(ones*pom0) + pom_fluc)
+        namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (grid_grad_pom0 + grad_pom_fluc)
+        namespace['pom_full_{}'.format(bn)] = pom_full = (grid_pom0 + pom_fluc)
+        namespace['inv_pom_full_{}'.format(bn)] = inv_pom_full = d3.Grid(1/pom_full)
         namespace['grad_pom2_over_pom0_{}'.format(bn)] = grad_pom2_over_pom0 = grad_pom1_over_pom0*pom_fluc_over_pom0
 
         #Equation of state goodness
-        namespace['EOS_{}'.format(bn)]    = EOS = (s_full)*grid_inv_cp - ( d3.Grid(1/(gamma)) * (np.log(pom_full) - np.log(grid_R)) - grid_R_div_cp * ln_rho_full )
-        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = d3.Grid(ones*(s0/Cp - ( (1/(gamma)) * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0)))
+        namespace['EOS_{}'.format(bn)]    = EOS = (s_full)*grid_inv_cp - ( grid_inv_gamma * (np.log(pom_full) - np.log(grid_R)) - grid_R_div_cp * ln_rho_full )
+        namespace['EOS_bg_{}'.format(bn)] = EOS_bg = d3.Grid(ones*(s0/Cp - ( grid_inv_gamma * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0)))
         namespace['EOS_goodness_{}'.format(bn)]    = EOS_good_ = np.sqrt(EOS**2)
         namespace['EOS_goodness_bg_{}'.format(bn)] = EOS_good_bg = d3.Grid(np.sqrt(EOS_bg**2))
 
         #Momentum thermo / hydrostatic terms:
-        namespace['gradP0_div_rho0_{}'.format(bn)]         = gradP0_div_rho0 = gamma*pom0*(grad_ln_rho0 + grad_s0/Cp)
+        namespace['gradP0_div_rho0_{}'.format(bn)]         = gradP0_div_rho0 = gamma*pom0*(grad_ln_rho0 + grad_s0*grid_inv_cp)
         namespace['background_HSE_{}'.format(bn)]          = background_HSE = gradP0_div_rho0 - g
         namespace['linear_gradP_div_rho_{}'.format(bn)]    = linear_gradP_div_rho    = gamma*pom0*(grad_ln_rho1 + grad_s1/Cp) + g*pom1_over_pom0
-        namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = grid_gamma*pom_fluc*(grad_ln_rho1 + grad_s1*grid_inv_cp) + d3.Grid(g)*pom2_over_pom0
+        namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = grid_gamma*pom_fluc*(grid_grad_ln_rho1 + grid_grad_s1*grid_inv_cp) + grid_g*pom2_over_pom0
 
         #Thermal diffusion
         namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom_fluc)/R_gas)
-#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + (Cp * inv_pom0 * grad_chi_rad)@grad_pom1
-#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad) * d3.div(grad_pom1_over_pom0) + d3.Grid(Cp * inv_pom0 * grad_chi_rad)@grad_pom1_RHS
-#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * inv_pom0 * d3.div(grad_pom1) + (Cp * inv_pom0 * grad_pom1)@(grad_chi_rad + chi_rad*grad_ln_rho0)
-#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad * inv_pom0) * d3.div(grad_pom1) + d3.Grid(Cp * inv_pom0)*(grad_pom1_RHS)@d3.Grid(grad_chi_rad + grad_ln_rho0*chi_rad)
-#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
-
-        #functional but slow
-#        namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * (chi_rad * d3.div(grad_pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
-#        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * inv_pom0) * (d3.Grid(chi_rad) * d3.div(grad_pom1_RHS) + (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) )
-
-        #Does this work?
         namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
-        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = d3.Grid(Cp * chi_rad) * div_grad_pom1_over_pom0_RHS + d3.Grid(Cp * inv_pom0) * (grad_pom1_RHS)@d3.Grid(chi_rad * grad_ln_rho0 + grad_chi_rad) 
+        namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = grid_cp * grid_chi_rad * lap_pom1_over_pom0_RHS + grid_cp * grid_inv_pom0 * (grad_pom1_RHS)@(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad) 
 
+        namespace['div_rad_flux_R_transforms_{}'.format(bn)] = div_rad_flux_R_transforms = d3.Grid(lap_C(lap_pom_fluc*grid_chi_rad*grid_cp))
+        namespace['full_div_rad_flux_drho_{}'.format(bn)] = full_div_rad_flux_drho =   d3.Grid(lap_C( grid_cp *\
+                                                                               ((grad_pom_fluc@(grid_chi_rad*grad_ln_rho_full+grid_grad_chi_rad) )))) \
+                                                                      + d3.Grid(lap_C(lap_pom_fluc*grid_chi_rad*grid_cp)) 
+        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = inv_pom_full * full_div_rad_flux_drho - div_rad_flux_L_RHS
 
-        #Why is dedalus wrapping all the energy equation terms in conv()? We can get around this by adding operator form of equation instead of string.
-#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = lap_pom_fluc
-        namespace['div_rad_flux_R_transforms_{}'.format(bn)] = div_rad_flux_R_transforms = lap_pom_fluc*d3.Grid(lap_C(d3.Grid(chi_rad*Cp)/pom_full))
-        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =   d3.Grid(lap_C(- div_rad_flux_L_RHS \
-                                                                      + (grid_R/pom_full) * (d3.Grid(chi_rad*Cp/R_gas)*(grad_pom_fluc@d3.Grid(grad_ln_rho0) + grad_pom_fluc@d3.Grid(grad_ln_rho1)))\
-                                                                      + d3.Grid(d3.Grid(grad_chi_rad*Cp/R_gas)@(grad_pom_fluc) * (grid_R/pom_full)) )) + div_rad_flux_R_transforms
-#        namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R =  (1/P_full) * (d3.div(d3.Grid(chi_rad*Cp)*rho_full*grad_pom_fluc)) - div_rad_flux_L_RHS
 
         # Rotation and damping terms
         if do_rotation:
@@ -302,10 +321,16 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         sponge_term = namespace['sponge_term_{}'.format(bn)]
         rotation_term = namespace['rotation_term_{}'.format(bn)]
 
-        namespace['energy_RHS_{}'.format(bn)] =  d3.Grid(lap_C((-(u@grad_s1))) + lap_C((grid_R*d3.Grid(1/P_full))*d3.Grid(Q)) + lap_C(VH*d3.Grid(1/pom_full))) + div_rad_flux_R
+
+        #The sum order matters here based on ball or shell...weird.
+        energy_terms_1 = d3.Grid(lap_C((-(u@grad_s1))) + lap_C((grid_R*d3.Grid(1/P_full))*d3.Grid(Q)) - lap_C(div_rad_flux_L_RHS))
+        energy_terms_2 = d3.Grid(lap_C(inv_pom_full))*(d3.Grid(lap_C(VH)) + full_div_rad_flux_drho)
+        if type(basis) == d3.BallBasis:
+            namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
+        else:
+            namespace['energy_RHS_{}'.format(bn)] = energy_terms_2 + energy_terms_1
 
         #output tasks
-
         er = namespace['er']
         namespace['r_vals_{}'.format(bn)] = r_vals = d3.Grid(er@(ones*rvec)).evaluate()
         namespace['ur_{}'.format(bn)] = er@u
