@@ -200,7 +200,7 @@ if __name__ == '__main__':
 #    logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
     for bn, basis in bases.items():
         re = eval(output_tasks['Re'].format(bn), dict(solver.problem.namespace))
-        flow.add_property(re, name='Re_{}'.format(bn))
+        flow.add_property(d3.Grid(re), name='Re_{}'.format(bn))
 #        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
 #        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
 
     logger.info('cfl constructed') 
 
-    solver.stop_iteration = solver.iteration + 122
+    solver.stop_iteration = solver.iteration + 522
 
     # Main loop
     start_time = time.time()
@@ -250,10 +250,10 @@ if __name__ == '__main__':
         slice_process = False
         just_wrote    = False
         slice_time = np.inf
-#        outer_shell_dt = np.inf
-#        surface_shell_slices = None
-        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-        surface_shell_slices = even_analysis_tasks['wave_shells']
+        outer_shell_dt = np.inf
+        surface_shell_slices = None
+#        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
+#        surface_shell_slices = even_analysis_tasks['wave_shells']
         timestep=first_timestep
         solver.enforce_real_cadence = np.inf
         Re0 = 0

@@ -302,6 +302,8 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         sponge_term = namespace['sponge_term_{}'.format(bn)]
         rotation_term = namespace['rotation_term_{}'.format(bn)]
 
+        namespace['energy_RHS_{}'.format(bn)] =  d3.Grid(lap_C((-(u@grad_s1))) + lap_C((grid_R*d3.Grid(1/P_full))*d3.Grid(Q)) + lap_C(VH*d3.Grid(1/pom_full))) + div_rad_flux_R
+
         #output tasks
 
         er = namespace['er']
@@ -452,7 +454,7 @@ def get_compressible_variables(bases, bases_keys, namespace):
 
     return problem_variables + problem_taus
 
-def set_compressible_problem(problem, bases, bases_keys, namespace, stitch_radii=[]):
+def set_compressible_problem(problem, bases, bases_keys,  stitch_radii=[]):
     equations = OrderedDict()
     u_BCs = OrderedDict()
     T_BCs = OrderedDict()
@@ -464,7 +466,7 @@ def set_compressible_problem(problem, bases, bases_keys, namespace, stitch_radii
         if config.numerics['equations'] == 'FC_HD':
             equations['continuity_{}'.format(bn)] = "dt(ln_rho1_{0}) + div_u_{0} + u_{0}@grad_ln_rho0_{0} + taus_lnrho_{0} = -(u_{0}@grad_ln_rho1_{0})".format(bn)
             equations['momentum_{}'.format(bn)] = "dt(u_{0}) + linear_gradP_div_rho_{0} - visc_div_stress_L_{0} + sponge_term_{0} + taus_u_{0} = (-(u_{0}@grad_u_{0}) - nonlinear_gradP_div_rho_{0} + visc_div_stress_R_{0})".format(bn)
-            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = d3.Grid(lap_C_{0}((-(u_{0}@grad_s1_{0}) + (Grid(R_gas)/P_full_{0})*(Q_{0} + rho_full_{0}*VH_{0})))) + div_rad_flux_R_{0} ".format(bn)
+            equations['energy_{}'.format(bn)] = "dt(s1_{0}) + u_{0}@grad_s0_{0} - div_rad_flux_L_{0} + taus_s_{0} = energy_RHS_{0}".format(bn)
         else:
             raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
