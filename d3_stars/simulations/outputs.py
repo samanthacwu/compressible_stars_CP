@@ -32,6 +32,76 @@ for t in flux_tags:
     output_tasks['{}_lum'.format(t)] = 'Grid(4*np.pi*r_vals_{0}**2) * ( F_' + t + '_{0} )'
     output_tasks['{}_lum_r'.format(t)] = 'dot(Grid(er), ' + output_tasks['{}_lum'.format(t)] + ')'
 
+
+
+class EvenTaskDict(OrderedDict):
+
+    def __init__(self, solver, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.solver = solver
+        self['output_dts'] = []
+        self.handler_keys = []
+        self.even_dt = np.inf
+        self.slice_time = np.inf
+        self.current_max_dt = np.inf
+        self.start_iter = solver.iteration
+        self.iter = 0
+        self.max_dt_check = True
+        self.just_wrote = False
+        self.evaluate = False
+        self.first = False
+
+    def add_handler(self, name, sim_dt, out_dir='./', **kwargs):
+        self['output_dts'].append(sim_dt)
+        self.handler_keys.append(name)
+        self[name] = self.solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, name), sim_dt=np.inf, iter=int(1e8), **kwargs)
+        self[name].last_iter_div = self[name].last_wall_div = self[name].last_sim_div = np.inf #don't evaluate on first timestep
+        return self[name]
+
+    def compute_timestep(self, cfl):
+        if self.first:
+            if len(self['output_dts']) != 0:
+                self.even_dt = np.min(self['output_dts'])
+            self.first = False
+
+        self.iter = solver.iteration - self.start_iter
+        timestep = cfl.compute_timestep()
+
+        if np.isfinite(self.even_dt):
+            #throttle CFL max_dt once, after the transient.
+            #Also, start outputting even analysis tasks.
+            if self.max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or or effective_iter > 100) and surface_shell_slices is not None:
+                my_cfl.max_dt = max_dt
+                max_dt_check = False
+                self.evaluate = True
+
+            #Flag handler for evaluation
+            if self.evaluate:
+                self.evaluate = False
+                for k in self.handler_keys:
+                    self[k].last_iter_div = -1
+                self.slice_time = self.solver.sim_time + self.even_dt
+                self.just_wrote = True
+
+            #Adjust timestep only between outputs.
+            if self.just_wrote:
+                self.just_wrote = False
+                num_steps = np.ceil(outer_shell_dt / timestep)
+                timestep = self.current_max_dt = cfl.stored_dt = self.even_dt/num_steps
+            elif max_dt_check:
+                timestep = np.min((timestep, self.current_max_dt))
+            else:
+                cfl.stored_dt = timestep = self.current_max_dt
+
+            t_future = solver.sim_time + timestep
+            if t_future >= self.slice_time*(1-1e-8):
+               self.evaluate = True
+ 
+        #just return cfl timestep
+        return timestep
+
+       
+
 def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./'):
     t_kepler, t_heat, t_rot = timescales
     locals().update(namespace)
@@ -56,8 +126,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         r_outer = f['r_outer'][()]
 
     analysis_tasks = OrderedDict()
-    even_analysis_tasks = OrderedDict()
-    even_analysis_tasks['output_dts'] = []
+    even_analysis_tasks = EvenTaskDict(solver)
 
     def vol_avg(A, volume):
         return d3.Integrate(A/volume, coords)
@@ -88,13 +157,9 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         if h_name == 'checkpoint':
             analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
             analysis_tasks[h_name].add_tasks(solver.state, layout='c')
-#            for task in solver.state:
-#                tname = str(task)
-#                analysis_tasks[h_name].add_task(d3.Grid(task), name=tname, layout='g') 
         else:
             if this_dict['even_outputs']:
-                even_analysis_tasks['output_dts'].append(sim_dt)
-                this_dict['handler'] = even_analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=np.inf, iter=int(1e8), max_writes=max_writes, parallel=this_dict['parallel'])
+                this_dict['handler'] = even_analysis_tasks.add_handler(h_name, sim_dt, out_dir=out_dir, max_writes=max_writes, parallel=this_dict['parallel']):
             else:
                 this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
 

@@ -245,58 +245,19 @@ if __name__ == '__main__':
 
 
     def main_loop():
-        max_dt_check = True
-        current_max_dt = my_cfl.max_dt
-        slice_process = False
-        just_wrote    = False
-        slice_time = np.inf
-        outer_shell_dt = np.inf
-        surface_shell_slices = None
-#        outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-#        surface_shell_slices = even_analysis_tasks['wave_shells']
-        timestep=first_timestep
         solver.enforce_real_cadence = np.inf
         Re0 = 0
         try:
             while solver.proceed:
                 effective_iter = solver.iteration - start_iter
-                if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
-                    #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
-                    my_cfl.max_dt = max_dt
-                    max_dt_check = False
-                    just_wrote = True
-                    slice_time = solver.sim_time + outer_shell_dt
-
-                timestep = my_cfl.compute_timestep()
-
-                if just_wrote:
-                    just_wrote = False
-                    num_steps = np.ceil(outer_shell_dt / timestep)
-                    timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
-                elif max_dt_check:
-                    timestep = np.min((timestep, current_max_dt))
-                else:
-                    my_cfl.stored_dt = timestep = current_max_dt
-
-                t_future = solver.sim_time + timestep
-                if t_future >= slice_time*(1-1e-8):
-                   slice_process = True
-
+                timestep = even_analysis_tasks.compute_timestep(my_cfl)
+        
                 solver.step(timestep)
 
                 if solver.iteration % 1 == 0:
                     Re0 = flow.max('Re_B')
                     this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
                     logger.info(this_str)
-
-
-                if slice_process:
-                    slice_process = False
-                    surface_shell_slices.last_iter_div=-1
-#                    wall_time = time.time() - solver.start_time
-#                    solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
-                    slice_time = solver.sim_time + outer_shell_dt
-                    just_wrote = True
 
                 if np.isnan(Re0):
                     logger.info('exiting with NaN')
