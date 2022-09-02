@@ -12,6 +12,9 @@ from configparser import ConfigParser
 from .parser import name_star
 from d3_stars.defaults import config
 
+import logging
+logger = logging.getLogger(__name__)
+
 output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'Ma', 'ln_rho1', \
@@ -49,9 +52,10 @@ class EvenTaskDict(OrderedDict):
         self.max_dt_check = True
         self.just_wrote = False
         self.evaluate = False
-        self.first = False
+        self.first = True
 
     def add_handler(self, name, sim_dt, out_dir='./', **kwargs):
+        logger.info('adding even tasks handler {}'.format(name))
         self['output_dts'].append(sim_dt)
         self.handler_keys.append(name)
         self[name] = self.solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, name), sim_dt=np.inf, iter=int(1e8), **kwargs)
@@ -70,9 +74,8 @@ class EvenTaskDict(OrderedDict):
         if np.isfinite(self.even_dt):
             #throttle CFL max_dt once, after the transient.
             #Also, start outputting even analysis tasks.
-            if self.max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
-                my_cfl.max_dt = max_dt
-                max_dt_check = False
+            if self.max_dt_check and (timestep < cfl.max_dt):
+                self.max_dt_check = False
                 self.evaluate = True
 
             #Flag handler for evaluation
@@ -86,9 +89,9 @@ class EvenTaskDict(OrderedDict):
             #Adjust timestep only between outputs.
             if self.just_wrote:
                 self.just_wrote = False
-                num_steps = np.ceil(outer_shell_dt / timestep)
+                num_steps = np.ceil(self.even_dt / timestep)
                 timestep = self.current_max_dt = cfl.stored_dt = self.even_dt/num_steps
-            elif max_dt_check:
+            elif self.max_dt_check:
                 timestep = np.min((timestep, self.current_max_dt))
             else:
                 cfl.stored_dt = timestep = self.current_max_dt
