@@ -276,7 +276,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (grid_grad_pom0 + grad_pom_fluc)
         namespace['pom_full_{}'.format(bn)] = pom_full = (grid_pom0 + pom_fluc)
         namespace['inv_pom_full_{}'.format(bn)] = inv_pom_full = d3.Grid(1/pom_full)
-        namespace['grad_pom2_over_pom0_{}'.format(bn)] = grad_pom2_over_pom0 = grad_pom1_over_pom0*pom_fluc_over_pom0
+        namespace['grad_pom2_over_pom0_{}'.format(bn)] = grad_pom2_over_pom0 = grad_pom1_over_pom0_RHS*pom_fluc_over_pom0
 
         #Equation of state goodness
         namespace['EOS_{}'.format(bn)]    = EOS = (s_full)*grid_inv_cp - ( grid_inv_gamma * (np.log(pom_full) - np.log(grid_R)) - grid_R_div_cp * ln_rho_full )
@@ -329,7 +329,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
 
         #The sum order matters here based on ball or shell...weird.
-        energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + inv_pom_full*VH - div_rad_flux_L_RHS + full_div_rad_flux_pt1))
+        energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + d3.Grid(grid_R*inv_pom_full)*VH - div_rad_flux_L_RHS + full_div_rad_flux_pt1))
         energy_terms_2 = d3.Grid(lap_C(full_div_rad_flux_pt2))
         namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
 
@@ -372,9 +372,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
 
         namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R)
         namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full) #g term turns into dt(PE) + div(u*PE); do not include here while trying to solve for dt(KE) + div(u*KE).
-#        namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full + g*ones)
-#        namespace['source_IE_{}'.format(bn)] = d3.Grid(Q) + (P_full/grid_R)*(inv_pom_full*VH) - P_full*div_u
-        namespace['source_IE_{}'.format(bn)] = d3.Grid(Q) + (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + inv_pom_full*VH) - P_full*div_u
+        namespace['source_IE_{}'.format(bn)] = d3.Grid(Q) + (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + grid_R*inv_pom_full*VH) - P_full*div_u
         namespace['tot_source_{}'.format(bn)] = namespace['source_KE_{}'.format(bn)] + namespace['source_IE_{}'.format(bn)]
     return namespace
 
@@ -516,8 +514,8 @@ def set_compressible_problem(problem, bases, bases_keys,  stitch_radii=[]):
                 #No shell bases
                 u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
-#                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius') #needed for energy conservation
+#                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius') #needed for energy conservation
             else:
                 shell_name = bases_keys[basis_number+1] 
                 rval = stitch_radii[basis_number]
@@ -541,8 +539,8 @@ def set_compressible_problem(problem, bases, bases_keys,  stitch_radii=[]):
                 #top of domain
                 u_BCs['BC_u2_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, 'radius')
                 u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, 'radius')
-                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
-#                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius')#needed for energy conservation
+#                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
+                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius')#needed for energy conservation
 
 
     for bn, basis in bases.items():
