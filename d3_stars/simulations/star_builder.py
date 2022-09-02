@@ -97,6 +97,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         namespace['ln_pomega_LHS_{}'.format(k)] = ln_pomega_LHS = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho*ones)
         namespace['ln_pomega_{}'.format(k)] = ln_pomega = ln_pomega_LHS + np.log(R)
         namespace['pomega_{}'.format(k)] = pomega = np.exp(ln_pomega)
+        namespace['P_{}'.format(k)] = P = pomega*np.exp(ln_rho)
         namespace['HSE_{}'.format(k)] = HSE = gamma*pomega*(d3.grad(ones*ln_rho) + d3.grad(s)/Cp) - g*ones
         namespace['N2_op_{}'.format(k)] = N2_op = -g@d3.grad(s)/Cp
         namespace['rho_{}'.format(k)] = rho = np.exp(ln_rho*ones)
@@ -107,6 +108,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         namespace['grad_s_{}'.format(k)] = grad_s = d3.grad(s)
         namespace['r_vec_g_{}'.format(k)] = r_vec@g
         namespace['g_op_{}'.format(k)] = gamma * pomega * (grad_s/Cp + grad_ln_rho)
+        namespace['s0_{}'.format(k)] = Cp * ((1/gamma)*(ln_pomega + ln_rho) - ln_rho) #s with an offset so s0 = cp * (1/gamma * lnP - ln_rho)
 
 
 
@@ -192,7 +194,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
 
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
-    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'grad_s', 'g', 'pomega', 'rho', 'ln_rho', 'g_phi', 'r_vec', 'HSE', 'N2_op', 'Q', 's']
+    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'grad_s', 'g', 'pomega', 'rho', 'ln_rho', 'g_phi', 'r_vec', 'HSE', 'N2_op', 'Q', 's0']
     for f in fields:
         stitch_fields[f] = []
     
@@ -222,7 +224,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
     g_phi = stitch_fields['g_phi'].ravel()
     N2 = stitch_fields['N2_op'].ravel()
     Q = stitch_fields['Q'].ravel()
-    s = stitch_fields['s'].ravel()
+    s0 = stitch_fields['s0'].ravel()
 
 
 
@@ -275,7 +277,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
     atmosphere['g_phi'] = interp1d(r, g_phi, **interp_kwargs)
     atmosphere['N2'] = interp1d(r, N2, **interp_kwargs)
     atmosphere['Q'] = interp1d(r, Q, **interp_kwargs)
-    atmosphere['s'] = interp1d(r, s, **interp_kwargs)
+    atmosphere['s0'] = interp1d(r, s0, **interp_kwargs)
     return atmosphere
 
 
@@ -579,7 +581,7 @@ def build_nccs(plot_nccs=False):
     interpolations['g'] = atmo['g']
     interpolations['g_phi'] = atmo['g_phi']
     interpolations['grad_s0'] = atmo['grad_s']
-    interpolations['s0'] = atmo['s']
+    interpolations['s0'] = atmo['s0']
     interpolations['pom0'] = atmo['pomega']
     interpolations['grad_ln_pom0'] = atmo['grad_ln_pomega']
 

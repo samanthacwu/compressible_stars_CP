@@ -249,11 +249,7 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = grid_grad_ln_rho0 + grid_grad_ln_rho1
         namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
         namespace['s_full_{}'.format(bn)] = s_full = grid_s0 + grid_s1
-        namespace['P_full_{}'.format(bn)] = P_full = d3.Grid(grid_R*grid_rho0)*np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1))
         namespace['grad_s_full_{}'.format(bn)] = grad_s_full = grid_grad_s0 + grid_grad_s1
-        namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
-        namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*P0*ones)
-
         #Linear Pomega = R * T
         namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
         namespace['grad_pom1_over_pom0_{}'.format(bn)] = grad_pom1_over_pom0 = gamma*(grad_s1/Cp + ((gamma-1)/gamma)*grad_ln_rho1)
@@ -307,6 +303,15 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = d3.Grid(lap_C(full_div_rad_flux_pt1 - div_rad_flux_L_RHS)) + d3.Grid(lap_C(full_div_rad_flux_pt2))
 
 
+        #Moar thermo
+        namespace['P_full_{}'.format(bn)] = P_full = np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1 + grid_ln_rho0))
+#        namespace['P_full_{}'.format(bn)] = P_full = rho_full*pom_full
+        namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
+        namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*P0*ones)
+
+
+
+
         # Rotation and damping terms
         if do_rotation:
             ez = namespace['ez_{}'.format(bn)]
@@ -357,7 +362,6 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['N2_{}'.format(bn)] = N2 = grad_s_full@d3.Grid(-g/Cp)
 
         #Source terms
-        namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R)
         namespace['energy_visc_heating_{}'.format(bn)] = energy_visc_heating = rho_full * VH
         namespace['rad_flux_production_{}'.format(bn)] = rad_flux_production = (P_full*d3.Grid(1/R_gas))*(div_rad_flux_L_RHS + div_rad_flux_R)
         namespace['Q_production_{}'.format(bn)] = Q_production = namespace['Q_{}'.format(bn)]
@@ -365,8 +369,12 @@ def make_fields(bases, coords, dist, vec_fields=[], scalar_fields=[], vec_nccs=[
         namespace['energy_PdivU_{}'.format(bn)] = energy_PdivU = -P_full*div_u
         namespace['momentum_flux_div_{}'.format(bn)] = momentum_fluxes = - d3.div(u*(KE + PE) + grid_nu_diff*momentum@sigma_RHS*-1)
         namespace['energy_flux_div_{}'.format(bn)] = energy_fluxes  = -d3.div(u*IE)
-        namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full)  + momentum_fluxes
-        namespace['source_IE_{}'.format(bn)] = Q_production + rad_flux_production + energy_visc_heating  + energy_PdivU + energy_fluxes
+
+        namespace['momentum_visc_cooling_{}'.format(bn)] = momentum_visc_cooling = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R)
+        namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full) #g term turns into dt(PE) + div(u*PE); do not include here while trying to solve for dt(KE) + div(u*KE).
+#        namespace['source_KE_{}'.format(bn)] = momentum_visc_cooling + momentum @ (-d3.grad(P_full)/rho_full + g*ones)
+#        namespace['source_IE_{}'.format(bn)] = d3.Grid(Q) + (P_full/grid_R)*(inv_pom_full*VH) - P_full*div_u
+        namespace['source_IE_{}'.format(bn)] = d3.Grid(Q) + (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + inv_pom_full*VH) - P_full*div_u
         namespace['tot_source_{}'.format(bn)] = namespace['source_KE_{}'.format(bn)] + namespace['source_IE_{}'.format(bn)]
     return namespace
 
