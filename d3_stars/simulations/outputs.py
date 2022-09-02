@@ -64,13 +64,13 @@ class EvenTaskDict(OrderedDict):
                 self.even_dt = np.min(self['output_dts'])
             self.first = False
 
-        self.iter = solver.iteration - self.start_iter
+        self.iter = self.solver.iteration - self.start_iter
         timestep = cfl.compute_timestep()
 
         if np.isfinite(self.even_dt):
             #throttle CFL max_dt once, after the transient.
             #Also, start outputting even analysis tasks.
-            if self.max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or or effective_iter > 100) and surface_shell_slices is not None:
+            if self.max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100) and surface_shell_slices is not None:
                 my_cfl.max_dt = max_dt
                 max_dt_check = False
                 self.evaluate = True
@@ -93,7 +93,7 @@ class EvenTaskDict(OrderedDict):
             else:
                 cfl.stored_dt = timestep = self.current_max_dt
 
-            t_future = solver.sim_time + timestep
+            t_future = self.solver.sim_time + timestep
             if t_future >= self.slice_time*(1-1e-8):
                self.evaluate = True
  
@@ -159,7 +159,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
             analysis_tasks[h_name].add_tasks(solver.state, layout='c')
         else:
             if this_dict['even_outputs']:
-                this_dict['handler'] = even_analysis_tasks.add_handler(h_name, sim_dt, out_dir=out_dir, max_writes=max_writes, parallel=this_dict['parallel']):
+                this_dict['handler'] = even_analysis_tasks.add_handler(h_name, sim_dt, out_dir=out_dir, max_writes=max_writes, parallel=this_dict['parallel'])
             else:
                 this_dict['handler'] = analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
 
