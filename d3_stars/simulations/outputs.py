@@ -19,8 +19,10 @@ output_tasks = {}
 flux_tags = ['cond', 'KE', 'PE', 'enth', 'visc']
 defaults = ['u', 'momentum', 'ur', 'u_squared', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Re', 'Ma', 'ln_rho1', \
             'pom1', 'pom2', 'pom_fluc', 'pom_full', 'grad_s1', 'L', 's1', 'rho_full', 'rho_fluc', 'enthalpy_fluc', 'N2', \
-            'momentum_visc_cooling', 'energy_visc_heating', 'rad_flux_production', 'Q_production', 'momentum_gradP', 'energy_PdivU',\
-            'momentum_flux_div', 'energy_flux_div', 'source_KE', 'source_IE', 'tot_source', 'EOS_goodness', 'EOS_goodness_bg']
+            'Q_source', 'visc_source_KE', 'visc_source_IE', 'tot_visc_source',\
+            'divRad_source', 'PdV_source_KE', 'PdV_source_IE', 'tot_PdV_source',\
+            'source_KE', 'source_IE', 'tot_source',\
+            'EOS_goodness', 'EOS_goodness_bg']
 
 for k in defaults + ['F_{}'.format(t) for t in flux_tags]:
     output_tasks[k] = '{}'.format(k) + '_{0}'
