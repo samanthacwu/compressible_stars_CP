@@ -41,6 +41,7 @@ class SphericalCompressibleProblem():
         self.sponge = sponge
         self.do_rotation = do_rotation
         self.sponge_function = sponge_function
+        self.fields_filled = False
 
         coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=dealias, dtype=dtype, mesh=mesh)
         self.coords = coords
@@ -124,9 +125,9 @@ class SphericalCompressibleProblem():
 
             #Define identity matrix
             logger.debug('creating identity matrix')
-            self.namespace['eye'] = self.dist.TensorField(self.coords, name='eye', bases=basis.radial_basis)
+            self.namespace['eye_{}'.format(bn)] = self.dist.TensorField(self.coords, name='eye', bases=basis.radial_basis)
             for i in range(3):
-                self.namespace['eye']['g'][i,i] = 1
+                self.namespace['eye_{}'.format(bn)]['g'][i,i] = 1
 
             if self.sponge:
                 self.namespace['sponge_{}'.format(bn)]['g'] = self.sponge_function(r1)
@@ -168,16 +169,21 @@ class SphericalCompressibleProblem():
         return self.namespace
 
     def set_substitutions(self):
+        """ Sets problem substitutions; must be run after self.fill_fields() """
+
+        if not self.fields_filled:
+            raise ValueError("Must fill fields before setting substitutions")
 
         for basis_number, bn in enumerate(self.bases.keys()):
             basis = self.bases[bn]
 
+            #Grab various important fields
             u = self.namespace['u_{}'.format(bn)]
             ln_rho1 = self.namespace['ln_rho1_{}'.format(bn)]
             s1 = self.namespace['s1_{}'.format(bn)]
             s0 = self.namespace['s0_{}'.format(bn)]
             Q = self.namespace['Q_{}'.format(bn)]
-            eye = self.namespace['eye']
+            eye = self.namespace['eye_{}'.format(bn)]
             grad_ln_rho0 = self.namespace['grad_ln_rho0_{}'.format(bn)]
             grad_ln_pom0 = self.namespace['grad_ln_pom0_{}'.format(bn)]
             grad_pom0 = self.namespace['grad_pom0_{}'.format(bn)]
@@ -191,30 +197,20 @@ class SphericalCompressibleProblem():
             grad_nu_diff = self.namespace['grad_nu_diff_{}'.format(bn)]
             chi_rad = self.namespace['chi_rad_{}'.format(bn)]
             grad_chi_rad = self.namespace['grad_chi_rad_{}'.format(bn)]
-            ones = self.namespace['ones_{}'.format(bn)]
-            ones['g'] = 1
-            self.namespace['ones_{}'.format(bn)] = ones = d3.Grid(ones).evaluate()
-
-            self.namespace['grid_nu_diff_{}'.format(bn)] = grid_nu_diff = d3.Grid(nu_diff)
-
-            if bn == 'B':
-                gamma = self.namespace['gamma']
-                R_gas = self.namespace['R_gas']
-                Cp = self.namespace['Cp']
-                Cv = self.namespace['Cv']
-                self.namespace['grid_cp'] = grid_cp = d3.Grid(Cp) 
-                self.namespace['grid_cp_div_R'] = grid_cp_div_R = d3.Grid(Cp/R_gas) #= gamma/(gamma-1)
-                self.namespace['grid_R_div_cp'] = grid_R_div_cp = d3.Grid(R_gas/Cp) #= (gamma-1)/gamma
-                self.namespace['grid_inv_cp'] = grid_inv_cp = d3.Grid(1/Cp)
-                self.namespace['grid_R'] = grid_R = d3.Grid(R_gas)
-                self.namespace['grid_gamma'] = grid_gamma = d3.Grid(gamma)
-                self.namespace['grid_inv_gamma'] = grid_inv_gamma = d3.Grid(1/gamma)
-
+            self.namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
             g = self.namespace['g_{}'.format(bn)]
             er = self.namespace['er']
             ephi = self.namespace['ephi']
             etheta = self.namespace['etheta']
             rvec = self.namespace['rvec_{}'.format(bn)]
+
+
+            self.namespace['P0_{}'.format(bn)] = P0 = (rho0*pom0)
+
+            #Make a 'ones' field for broadcasting scalars or radial fields to full basis domain
+            ones = self.namespace['ones_{}'.format(bn)]
+            ones['g'] = 1
+            self.namespace['ones_{}'.format(bn)] = ones = d3.Grid(ones).evaluate()
 
             # Lift operators for boundary conditions
             self.namespace['grad_u_{}'.format(bn)] = grad_u = d3.grad(u)
@@ -234,6 +230,7 @@ class SphericalCompressibleProblem():
                 self.namespace['taus_u_{}'.format(bn)] = taus_u = lift_fn(self.namespace['tau_u1_{}'.format(bn)], -1) + lift_fn(self.namespace['tau_u2_{}'.format(bn)], -2)
                 self.namespace['taus_s_{}'.format(bn)] = taus_s = lift_fn(self.namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(self.namespace['tau_s2_{}'.format(bn)], -2)
 
+            #Lock a bunch of fields onto the grid.
 
             #These fields are coming to the grid:
             grid_u = d3.Grid(u)
@@ -246,22 +243,41 @@ class SphericalCompressibleProblem():
             grid_lap_s1 = d3.Grid(d3.lap(s1))
             grid_div_u = d3.Grid(div_u)
 
-            #reused background fields:
-            grid_rho0 = d3.Grid(ones*rho0)
-            grid_ln_rho0 = d3.Grid(ones*ln_rho0)
-            grid_grad_ln_rho0 = d3.Grid(ones*grad_ln_rho0)
-            grid_s0 = d3.Grid(ones*s0)
-            grid_grad_s0 = d3.Grid(ones*grad_s0)
-            grid_pom0 = d3.Grid(ones*pom0)
-            grid_grad_pom0 = d3.Grid(ones*grad_pom0)
-            grid_g = d3.Grid(g)
-            grid_chi_rad = d3.Grid(chi_rad*ones)
-            grid_grad_chi_rad = d3.Grid(ones*grad_chi_rad)
-            self.namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
-            grid_inv_pom0 = d3.Grid(inv_pom0)
+            #radial -> full domain; ***THIS SHOULD BE DONE AFTER FILLING FIELDS***
+            self.namespace['grid_rho0_{}'.format(bn)] = grid_rho0 = d3.Grid(ones*rho0).evaluate()
+            self.namespace['grid_ln_rho0_{}'.format(bn)] = grid_ln_rho0 = d3.Grid(ones*ln_rho0).evaluate()
+            self.namespace['grid_grad_ln_rho0_{}'.format(bn)] = grid_grad_ln_rho0 = d3.Grid(ones*grad_ln_rho0).evaluate()
+            self.namespace['grid_s0_{}'.format(bn)] = grid_s0 = d3.Grid(ones*s0).evaluate()
+            self.namespace['grid_grad_s0_{}'.format(bn)] = grid_grad_s0 = d3.Grid(ones*grad_s0).evaluate()
+            self.namespace['grid_pom0_{}'.format(bn)] = grid_pom0 = d3.Grid(ones*pom0).evaluate()
+            self.namespace['grid_grad_pom0_{}'.format(bn)] = grid_grad_pom0 = d3.Grid(ones*grad_pom0).evaluate()
+            self.namespace['grid_g_{}'.format(bn)] = grid_g = d3.Grid(g).evaluate()
+            self.namespace['grid_chi_rad_{}'.format(bn)] = grid_chi_rad = d3.Grid(chi_rad*ones).evaluate()
+            self.namespace['grid_grad_chi_rad_{}'.format(bn)] = grid_grad_chi_rad = d3.Grid(ones*grad_chi_rad).evaluate()
+            self.namespace['grid_inv_pom0_{}'.format(bn)] = grid_inv_pom0 = d3.Grid(inv_pom0).evaluate()
+            self.namespace['grid_nu_diff_{}'.format(bn)] = grid_nu_diff = d3.Grid(nu_diff).evaluate()
+            self.namespace['grid_neg_one_{}'.format(bn)] = neg_one = d3.Grid(-ones).evaluate()
+            self.namespace['grid_eye_{}'.format(bn)] = grid_eye = d3.Grid(eye).evaluate()
+            self.namespace['grid_P0_{}'.format(bn)] = grid_P0 = d3.Grid(P0*ones).evaluate()
 
-            neg_one = d3.Grid(-ones)
+            for fname in ['rho0', 'ln_rho0', 'grad_ln_rho0', 's0', 'grad_s0', 'pom0', 'grad_pom0', 'g', 'chi_rad', 'grad_chi_rad', 'inv_pom0', 'nu_diff', 'neg_one', 'eye', 'P0']:
+                self.namespace['grid_{}_{}'.format(fname, bn)].name = 'grid_{}_{}'.format(fname, bn)
 
+
+            if bn == 'B':
+                gamma = self.namespace['gamma']
+                R_gas = self.namespace['R_gas']
+                Cp = self.namespace['Cp']
+                Cv = self.namespace['Cv']
+                self.namespace['grid_cp'] = grid_cp = d3.Grid(Cp).evaluate()
+                self.namespace['grid_cp_div_R'] = grid_cp_div_R = d3.Grid(Cp/R_gas).evaluate() #= gamma/(gamma-1)
+                self.namespace['grid_R_div_cp'] = grid_R_div_cp = d3.Grid(R_gas/Cp).evaluate() #= (gamma-1)/gamma
+                self.namespace['grid_inv_cp'] = grid_inv_cp = d3.Grid(1/Cp).evaluate()
+                self.namespace['grid_R'] = grid_R = d3.Grid(R_gas).evaluate()
+                self.namespace['grid_gamma'] = grid_gamma = d3.Grid(gamma).evaluate()
+                self.namespace['grid_inv_gamma'] = grid_inv_gamma = d3.Grid(1/gamma).evaluate()
+                for fname in ['cp', 'cp_div_R', 'R_div_cp', 'inv_cp', 'R', 'gamma', 'inv_gamma']:
+                    self.namespace['grid_{}'.format(fname)].name = 'grid_{}'.format(fname)
 
             lap_domain = d3.lap(s1).domain
             self.namespace['lap_C_{}'.format(bn)] = lap_C = lambda A: convert(A, lap_domain.bases)
@@ -270,7 +286,7 @@ class SphericalCompressibleProblem():
             self.namespace['E_{}'.format(bn)] = E = grad_u/2 + d3.trans(grad_u/2)
             self.namespace['sigma_{}'.format(bn)] = sigma = (E - div_u*eye/3)*2
             self.namespace['E_RHS_{}'.format(bn)] = E_RHS = (grid_grad_u + d3.trans(grid_grad_u))/2
-            self.namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - grid_div_u*d3.Grid(eye)/3)*2
+            self.namespace['sigma_RHS_{}'.format(bn)] = sigma_RHS = (E_RHS - grid_div_u*grid_eye/3)*2
             self.namespace['visc_div_stress_L_{}'.format(bn)] = visc_div_stress_L = nu_diff*(d3.div(sigma) + sigma@grad_ln_rho0) + sigma@grad_nu_diff
             self.namespace['visc_div_stress_L_RHS_{}'.format(bn)] = visc_div_stress_L_RHS = grid_nu_diff*(d3.div(sigma) + sigma_RHS@grid_grad_ln_rho0) + sigma_RHS@d3.Grid(grad_nu_diff)
             self.namespace['visc_div_stress_R_{}'.format(bn)] = visc_div_stress_R = grid_nu_diff*(sigma_RHS@grid_grad_ln_rho1)
@@ -281,13 +297,12 @@ class SphericalCompressibleProblem():
             self.namespace['rho_fluc_{}'.format(bn)] = rho_fluc = rho_full - grid_rho0
             self.namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (grid_ln_rho0 + ln_rho1)
             self.namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = grid_grad_ln_rho0 + grid_grad_ln_rho1
-            self.namespace['P0_{}'.format(bn)] = P0 = rho0*pom0
             self.namespace['s_full_{}'.format(bn)] = s_full = grid_s0 + grid_s1
-            self.namespace['P_full_{}'.format(bn)] = P_full = d3.Grid(P0)*np.exp(grid_gamma*(s1*grid_inv_cp + grid_ln_rho1))
+            self.namespace['P_full_{}'.format(bn)] = P_full = grid_P0*np.exp(grid_gamma*(s1*grid_inv_cp + grid_ln_rho1))
     #        self.namespace['P_full_{}'.format(bn)] = P_full = np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1 + grid_ln_rho0))
             self.namespace['grad_s_full_{}'.format(bn)] = grad_s_full = grid_grad_s0 + grid_grad_s1
             self.namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
-            self.namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*P0*ones)
+            self.namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*grid_P0)
 
 
             #Linear Pomega = R * T
@@ -343,8 +358,6 @@ class SphericalCompressibleProblem():
     #        self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
     #        self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
 
-            grad_pom_fluc = d3.grad(pom_fluc)
-
             self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   inv_pom_full*((grad_pom_fluc@(d3.Grid(cp_times_chi_rad*C_grad_ln_rho)+d3.Grid(lap_C(cp_times_grad_chi_rad))) ))
             self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   lap_pom_fluc*cp_times_chi_rad*inv_pom_full
     #        self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =  d3.Grid(1/P_full)*d3.div(grid_rho0 * grid_cp * grid_chi_rad * grad_pom1_RHS)
@@ -386,7 +399,7 @@ class SphericalCompressibleProblem():
             self.namespace['PE_{}'.format(bn)] = PE = rho_full * d3.Grid(g_phi)
             self.namespace['IE_{}'.format(bn)] = IE = (P_full)*d3.Grid(Cv/R_gas)
             self.namespace['PE0_{}'.format(bn)] = PE0 = d3.Grid(rho0 * g_phi)
-            self.namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(P0*(Cv/R_gas))
+            self.namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(grid_P0*(Cv/R_gas))
             self.namespace['PE1_{}'.format(bn)] = PE1 = PE + d3.Grid(-PE0*ones)
             self.namespace['IE1_{}'.format(bn)] = IE1 = IE + d3.Grid(-IE0*ones)
             self.namespace['TotE_{}'.format(bn)] = KE + PE + IE
@@ -424,6 +437,7 @@ class SphericalCompressibleProblem():
         return self.namespace
 
     def fill_structure(self, scales=None):
+        self.fields_filled = True
         logger.info('using NCC file {}'.format(self.ncc_file))
         max_dt = None
         t_buoy = None
