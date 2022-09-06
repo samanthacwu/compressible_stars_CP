@@ -55,7 +55,7 @@ class SphericalCompressibleProblem():
         self.vec_taus = ['tau_u']
         self.scalar_taus =  ['tau_s']
         self.vec_nccs = ['grad_pom0', 'grad_ln_pom0', 'grad_ln_rho0', 'grad_s0', 'g', 'rvec', 'grad_nu_diff', 'grad_chi_rad']
-        self.scalar_nccs = ['pom0', 'rho0', 'ln_rho0', 'g_phi', 'nu_diff', 'chi_rad', 's0']
+        self.scalar_nccs = ['pom0', 'rho0', 'ln_rho0', 'g_phi', 'nu_diff', 'chi_rad', 's0', 'inv_pom0']
         self.sphere_unit_vectors = ['ephi', 'etheta', 'er']
         self.cartesian_unit_vectors = ['ex', 'ey', 'ez']
 
@@ -197,7 +197,7 @@ class SphericalCompressibleProblem():
             grad_nu_diff = self.namespace['grad_nu_diff_{}'.format(bn)]
             chi_rad = self.namespace['chi_rad_{}'.format(bn)]
             grad_chi_rad = self.namespace['grad_chi_rad_{}'.format(bn)]
-            self.namespace['inv_pom0_{}'.format(bn)] = inv_pom0 = (1/pom0)
+            inv_pom0 = self.namespace['inv_pom0_{}'.format(bn)]
             g = self.namespace['g_{}'.format(bn)]
             er = self.namespace['er']
             ephi = self.namespace['ephi']
@@ -351,21 +351,27 @@ class SphericalCompressibleProblem():
             cp_times_grad_chi_rad = d3.Grid(grid_cp * grid_grad_chi_rad)
             C_grad_ln_rho = d3.Grid(lap_C(grid_grad_ln_rho0)) + d3.Grid(lap_C(grid_grad_ln_rho1))
             self.namespace['F_cond_{}'.format(bn)] = F_cond = -1*chi_rad*rho_full*Cp*((grad_pom_fluc)/R_gas)
-    #        self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.div(grad_pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
-    #        self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = cp_times_chi_rad * lap_pom1_over_pom0_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
-            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * inv_pom0 * d3.lap(pom1) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
-            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = cp_times_chi_rad * inv_pom0_times_lap_pom1_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
-    #        self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
-    #        self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
+
+#            #This formulation is ok. Conserving at ~1%.
+#            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
+#            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = Cp * inv_pom0 * d3.div(chi_rad * grad_s1)
+
+            #This formulation seems pretty good. ~0.1%
+            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = Cp * chi_rad * d3.lap(pom1_over_pom0) + Cp * inv_pom0 * (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) 
+            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = cp_times_chi_rad * lap_pom1_over_pom0_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
+
+            #This formulation is bad (does not conserve energy at ~10%.
+#            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (Cp*inv_pom0)*( chi_rad * d3.lap(pom1) + (grad_pom1)@(chi_rad * grad_ln_rho0 + grad_chi_rad) )
+#            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = cp_times_chi_rad * inv_pom0_times_lap_pom1_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
 
             self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   inv_pom_full*((grad_pom_fluc@(d3.Grid(cp_times_chi_rad*C_grad_ln_rho)+d3.Grid(lap_C(cp_times_grad_chi_rad))) ))
             self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   lap_pom_fluc*cp_times_chi_rad*inv_pom_full
-    #        self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =  d3.Grid(1/P_full)*d3.div(grid_rho0 * grid_cp * grid_chi_rad * grad_pom1_RHS)
-    #        self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 = ones - ones
-    #        self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 = ones - ones
 
-    #        self.namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = d3.Grid(lap_C(full_div_rad_flux_pt1 - div_rad_flux_L_RHS))
-    #        self.namespace['div_rad_flux_R_{}'.format(bn)] = div_rad_flux_R = d3.Grid(lap_C(full_div_rad_flux_pt1 - div_rad_flux_L_RHS)) + d3.Grid(lap_C(full_div_rad_flux_pt2))
+
+            # Another choice here is to formulate on kappa instead of chi, where kappa = kappa(r). So:
+            # div(kappa grad T) = grad(kappa) dot grad(T) + kappa*lap(T).
+            # LHS is (R/P0) * (that) [technically we should make the NCC 1/P0 and make that grad(pomega) and lap(pomega)].
+            # then RHS is (1/P) * (that) - LHS.
 
 
             # Rotation and damping terms

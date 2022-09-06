@@ -6,6 +6,7 @@ defaults['nr_max'] = (60,42,36)
 defaults['vector'] = False
 defaults['grid_only'] = False
 defaults['get_grad'] = False
+defaults['get_inverse'] = False
 defaults['from_grad'] = False
 defaults['grad_name'] = None
 
@@ -44,6 +45,7 @@ nccs['grad_s0']['vector'] = True
 
 nccs['pom0']['get_grad'] = True
 nccs['pom0']['grad_name'] = 'grad_pom0'
+nccs['pom0']['get_inverse'] = True
 
 nccs['grad_ln_pom0']['vector'] = True
 
@@ -58,3 +60,14 @@ for ncc in new_keys:
         nccs[ncc][k] = val
     nccs[ncc]['vector'] = True
     nccs[ncc]['from_grad'] = True
+
+
+new_keys = []
+for ncc in nccs.keys():
+    if nccs[ncc]['get_inverse'] is not False:
+        new_keys.append('inv_{}'.format(ncc))
+for ncc in new_keys:
+    nccs[ncc] = OrderedDict()
+    for k, val in defaults.items():
+        nccs[ncc][k] = val
+

@@ -594,7 +594,6 @@ def build_nccs(plot_nccs=False):
         else:
             ncc_dict[ncc]['interp_func'] = None
 
-    
     for bn, basis in bases.items():
         rvals = dedalus_r[bn]
         for ncc in ncc_dict.keys():
@@ -611,6 +610,12 @@ def build_nccs(plot_nccs=False):
                     grad_field.change_scales(basis.dealias)
                     ncc_dict[name]['field_{}'.format(bn)] = grad_field
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax+1
+                if ncc_dict[ncc]['get_inverse']:
+                    name = 'inv_{}'.format(ncc)
+                    inv_func = lambda r: 1/interp_func(r)
+                    ncc_dict[name]['field_{}'.format(bn)] = make_NCC(basis, c, d, inv_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
+                    ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax
+
 
         if 'neg_g' in ncc_dict.keys():
             if 'g' not in ncc_dict.keys():
