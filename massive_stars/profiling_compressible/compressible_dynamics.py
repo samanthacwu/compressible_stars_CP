@@ -18,7 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from d3_stars.simulations.compressible_functions import make_bases, make_fields, fill_structure, get_compressible_variables, set_compressible_problem
+from d3_stars.simulations.compressible_functions import SphericalCompressibleProblem
 from d3_stars.simulations.outputs import initialize_outputs, output_tasks
 from d3_stars.defaults import config
 from d3_stars.simulations.parser import name_star
@@ -145,13 +145,15 @@ if __name__ == '__main__':
 
     stitch_radii = r_stitch
     radius = r_outer
-    coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
+    compressible = SphericalCompressibleProblem(resolutions, stitch_radii, radius, ncc_file, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
+    compressible.make_fields()
+    variables, timescales = compressible.fill_structure()
+    compressible.set_substitutions()
 
-    variables = make_fields(bases, coords, dist, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
-    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, sponge=sponge, do_rotation=do_rotation)
+    variables = compressible.namespace
 
     if sponge:
-        for i, bn in enumerate(bases.keys()):
+        for i, bn in enumerate(compressible.bases.keys()):
             variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     t_kep, t_heat, t_rot = timescales
     logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
@@ -159,12 +161,10 @@ if __name__ == '__main__':
     # Put nccs and fields into locals()
     locals().update(variables)
 
-
     # Problem
-    prob_variables = get_compressible_variables(bases, bases_keys, variables)
+    prob_variables = compressible.get_compressible_variables()
     problem = d3.IVP(prob_variables, namespace=locals())
-
-    problem = set_compressible_problem(problem, bases, bases_keys, stitch_radii=stitch_radii)
+    problem = compressible.set_compressible_problem(problem)
 
     logger.info("Problem built")
     # Solver
@@ -182,30 +182,30 @@ if __name__ == '__main__':
         write_mode = 'append'
     else:
         # Initial conditions
-        for bk in bases_keys:
+        for bk in compressible.bases_keys:
             variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
             variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
             #make perturbations pressure-neutral.
-            variables['ln_rho1_{}'.format(bk)].change_scales(bases[bk].dealias)
+            variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
             variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
-    analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
+    analysis_tasks, even_analysis_tasks = initialize_outputs(solver, compressible.coords, variables, compressible.bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
 
     ## Logger output Setup
     from dedalus.extras.flow_tools import GlobalFlowProperty
     flow = GlobalFlowProperty(solver, cadence=1)
 #    logger_handler = solver.evaluator.add_dictionary_handler(iter=10)
-    for bn, basis in bases.items():
+    for bn, basis in compressible.bases.items():
         re = eval(output_tasks['Re'].format(bn), dict(solver.problem.namespace))
         flow.add_property(d3.Grid(re), name='Re_{}'.format(bn))
 #        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
 #        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
 
     #CFL setup
-    heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
+    heaviside_cfl = compressible.dist.Field(name='heaviside_cfl', bases=compressible.bases['B'])
     heaviside_cfl['g'] = 1
     if np.sum(r1_B > CFL_max_r) > 0:
         heaviside_cfl['g'][:,:, r1_B.flatten() > CFL_max_r] = 0
@@ -273,4 +273,4 @@ if __name__ == '__main__':
 
     #profile main loop
     import cProfile
-    cProfile.run('main_loop()', filename='output_profs/prof.{:d}'.format(dist.comm_cart.rank))
+    cProfile.run('main_loop()', filename='output_profs/prof.{:d}'.format(compressible.dist.comm_cart.rank))
