@@ -18,7 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from d3_stars.simulations.compressible_functions import make_bases, make_fields, fill_structure, get_compressible_variables, set_compressible_problem
+from d3_stars.simulations.compressible_functions import SphericalCompressibleProblem
 from d3_stars.simulations.outputs import initialize_outputs, output_tasks
 from d3_stars.defaults import config
 from d3_stars.simulations.parser import name_star
@@ -145,13 +145,16 @@ if __name__ == '__main__':
 
     stitch_radii = r_stitch
     radius = r_outer
-    coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh)
+    compressible = SphericalCompressibleProblem(resolutions, stitch_radii, radius, ncc_file, dealias=(L_dealias, L_dealias, N_dealias), dtype=dtype, mesh=mesh, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
+    compressible.make_fields()
+    variables, timescales = compressible.fill_structure()
+    compressible.set_substitutions()
 
-    variables = make_fields(bases, coords, dist, sponge=sponge, do_rotation=do_rotation, sponge_function=sponge_function)
-    variables, timescales = fill_structure(bases, dist, variables, ncc_file, r_outer, Pe, sponge=sponge, do_rotation=do_rotation)
+    variables = compressible.namespace
+
 
     if sponge:
-        for i, bn in enumerate(bases.keys()):
+        for i, bn in enumerate(compressible.bases.keys()):
             variables['sponge_{}'.format(bn)]['g'] *= tau_factor
     t_kep, t_heat, t_rot = timescales
     logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
@@ -159,12 +162,11 @@ if __name__ == '__main__':
     # Put nccs and fields into locals()
     locals().update(variables)
 
-
     # Problem
-    prob_variables = get_compressible_variables(bases, bases_keys, variables)
+    prob_variables = compressible.get_compressible_variables()
     problem = d3.IVP(prob_variables, namespace=locals())
+    problem = compressible.set_compressible_problem(problem)
 
-    problem = set_compressible_problem(problem, bases, bases_keys, stitch_radii=stitch_radii)
 
     logger.info("Problem built")
     # Solver
@@ -182,34 +184,27 @@ if __name__ == '__main__':
         write_mode = 'append'
     else:
         # Initial conditions
-        for bk in bases_keys:
+        for bk in compressible.bases_keys:
             variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
             variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
             #make perturbations pressure-neutral.
-            variables['ln_rho1_{}'.format(bk)].change_scales(bases[bk].dealias)
+            variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
             variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
-    analysis_tasks, even_analysis_tasks = initialize_outputs(solver, coords, variables, bases, timescales, out_dir=out_dir)
+    analysis_tasks, even_analysis_tasks = initialize_outputs(solver, compressible.coords, variables, compressible.bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
 
     ## Logger output Setup
-    logger_handler = solver.evaluator.add_dictionary_handler(iter=1)
-    integ_FlucE = 0
-    integ_EOS = 0
-    for bn, basis in bases.items():
-        re_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Re'].format(bn) + ')', dict(solver.problem.namespace))
-        ma_avg = eval('vol_avg_{}('.format(bn) + output_tasks['Ma'].format(bn) + ')', dict(solver.problem.namespace))
-        integ_FlucE += eval('integ(' + output_tasks['FlucE'].format(bn) + ')', dict(solver.problem.namespace))
-        integ_EOS += eval('integ(' + output_tasks['EOS_goodness'].format(bn) + ')', dict(solver.problem.namespace))
-        logger_handler.add_task(re_avg, name='Re_avg_{}'.format(bn), layout='g')
-        logger_handler.add_task(ma_avg, name='Ma_avg_{}'.format(bn), layout='g')
-    logger_handler.add_task(integ_FlucE, name='FlucE', layout='g')
-    logger_handler.add_task(integ_EOS, name='EOS', layout='g')
+    from dedalus.extras.flow_tools import GlobalFlowProperty
+    flow = GlobalFlowProperty(solver, cadence=1)
+    for bn, basis in compressible.bases.items():
+        re = eval(output_tasks['Re'].format(bn), dict(solver.problem.namespace))
+        flow.add_property(d3.Grid(re), name='Re_{}'.format(bn))
 
     #CFL setup
-    heaviside_cfl = dist.Field(name='heaviside_cfl', bases=bases['B'])
+    heaviside_cfl = compressible.dist.Field(name='heaviside_cfl', bases=compressible.bases['B'])
     heaviside_cfl['g'] = 1
     if np.sum(r1_B > CFL_max_r) > 0:
         heaviside_cfl['g'][:,:, r1_B.flatten() > CFL_max_r] = 0
@@ -227,72 +222,27 @@ if __name__ == '__main__':
     logger.info('cfl constructed') 
 
     # Main loop
-    start_time = time.time()
     start_iter = solver.iteration
-    max_dt_check = True
-    current_max_dt = my_cfl.max_dt
-    slice_process = False
-    just_wrote    = False
-    slice_time = np.inf
     Re0 = 0
-    Ma0 = 0
-    outer_shell_dt = np.min(even_analysis_tasks['output_dts'])*2
-    surface_shell_slices = even_analysis_tasks['wave_shells']
     try:
         while solver.proceed:
             effective_iter = solver.iteration - start_iter
-            if max_dt_check and (timestep < outer_shell_dt or Re0 > 1e1) and (restart is None or effective_iter > 100):
-                #throttle max_dt timestep CFL early in simulation once timestep is below the output cadence.
-                my_cfl.max_dt = max_dt
-                max_dt_check = False
-                just_wrote = True
-                slice_time = solver.sim_time + outer_shell_dt
-
-            timestep = my_cfl.compute_timestep()
-
-            if just_wrote:
-                just_wrote = False
-                num_steps = np.ceil(outer_shell_dt / timestep)
-                timestep = current_max_dt = my_cfl.stored_dt = outer_shell_dt/num_steps
-            elif max_dt_check:
-                timestep = np.min((timestep, current_max_dt))
-            else:
-                my_cfl.stored_dt = timestep = current_max_dt
-
-            t_future = solver.sim_time + timestep
-            if t_future >= slice_time*(1-1e-8):
-               slice_process = True
-
+            timestep = even_analysis_tasks.compute_timestep(my_cfl)
+    
             solver.step(timestep)
 
-            if solver.iteration % 10 == 0 or effective_iter <= 10:
-                Re_avg = logger_handler.fields['Re_avg_B']
-                Ma_avg = logger_handler.fields['Ma_avg_B']
-                if dist.comm_cart.rank == 0:
-                    Re0 = Re_avg['g'].min()
-                    Ma0 = Ma_avg['g'].min()
-                    this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}, Ma = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0, Ma0)
-                    this_str += ", FlucE = {:.4e}, EOS = {:.4e}".format(logger_handler.fields['FlucE']['g'].min(), logger_handler.fields['EOS']['g'].min())
-                    logger.info(this_str)
-                else:
-                    Re0 = None
-                Re0 = dist.comm_cart.bcast(Re0, root=0)
-
-            if slice_process:
-                slice_process = False
-                wall_time = time.time() - solver.start_time
-                solver.evaluator.evaluate_handlers([surface_shell_slices],wall_time=wall_time, sim_time=solver.sim_time, iteration=solver.iteration,world_time = time.time(),timestep=timestep)
-                slice_time = solver.sim_time + outer_shell_dt
-                just_wrote = True
+            if solver.iteration % 10 == 0:
+                Re0 = flow.max('Re_B')
+                this_str = "iteration = {:08d}, t/th = {:f}, timestep = {:f}, Re = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, timestep, Re0)
+                logger.info(this_str)
 
             if np.isnan(Re0):
                 logger.info('exiting with NaN')
                 break
-
     except:
         import traceback
         logger.info('something went wrong in main loop.')
-        print(traceback.format_exc())
+        logger.info(traceback.format_exc())
         raise
     finally:
         solver.log_stats()

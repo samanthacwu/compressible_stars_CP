@@ -8,9 +8,11 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
+#star['r_bounds'] = (0, '1.05L',)
 star['r_bounds'] = (0, '1.05L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
+#star['nr'] = (64,)
 star['nr'] = (64,128,64)
 
 #options for building the star
@@ -44,7 +46,7 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
-dynamics['ntheta'] = 64
+dynamics['ntheta'] = 64 
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
 #dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'
@@ -55,7 +57,7 @@ dynamics['CFL_max_r'] = 1
 
 #Stop conditions
 dynamics['wall_hours'] = 47.5
-dynamics['buoy_end_time'] = 5e2
+dynamics['buoy_end_time'] = 1e3
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor
 dynamics['sponge'] = False
