@@ -22,6 +22,7 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib.ticker import FormatStrFormatter
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp2d
 
 #TODO: Add outer shell, make things prettier!
 def build_s2_vertices(phi, theta):
@@ -42,8 +43,9 @@ def build_spherical_vertices(phi, theta, r, Ri, Ro):
     return phi_vert, theta_vert, r_vert
 
 
-def spherical_to_cartesian(phi, theta, r):
-    phi, theta, r = np.meshgrid(phi, theta, r, indexing='ij')
+def spherical_to_cartesian(phi, theta, r, mesh=True):
+    if mesh:
+        phi, theta, r = np.meshgrid(phi, theta, r, indexing='ij')
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
@@ -93,6 +95,7 @@ if not plotter.idle:
 
     s1_mer_data = OrderedDict()
     s1_shell_data = OrderedDict()
+    s1_eq_data = OrderedDict()
 
     equator_line = OrderedDict()
     near_equator_line = OrderedDict()
@@ -103,8 +106,9 @@ if not plotter.idle:
     colorbar_dict=dict(lenmode='fraction', len=0.75, thickness=20)
     r_arrays = []
 
-    phis = float(phi_vals[0])
-    phie = float(phi_vals[-1])
+    phi_s = float(phi_vals[1])
+    phi_e = float(phi_vals[3])
+    theta_eq = float(np.pi/2)
 
 
     bs = {}
@@ -129,18 +133,14 @@ if not plotter.idle:
             r_outer = r_max
             r_de = r_de[r_de <= r_max]
 
+        phi_vert, theta_vert, r_vert = build_spherical_vertices(phi, theta, r_de, 0, r_outer)
         phi_vert_de, theta_vert_de, r_vert_de = build_spherical_vertices(phi_de, theta_de, r_de, 0, r_outer)
-        phi_vert, theta_vert, r_vert_de = build_spherical_vertices(phi, theta, r_de, 0, r_outer)
-        phi_vert_pick = (phis < phi_vert)*(phi_vert < phie)
-        phi_vert_pick_de = (phis < phi_vert_de)*(phi_vert_de < phie)
-        phi_vert = np.concatenate([[phis], phi_vert[phi_vert_pick], [phie]], axis=0)
-        phi_vert_de = np.concatenate([[phis], phi_vert_de[phi_vert_pick_de], [phie]], axis=0)
 
-
-        shell_frac = 0.995
+        shell_frac = 0.9
         xo, yo, zo = spherical_to_cartesian(phi_vert, theta_vert, [shell_frac*r_outer])[:,:,:,0]
-        xs, ys, zs = spherical_to_cartesian([phis], theta_vert_de, r_vert_de)[:,0,:,:]
-        xe, ye, ze = spherical_to_cartesian([phie], theta_vert_de, r_vert_de)[:,0,:,:]
+        xeq, yeq, zeq = spherical_to_cartesian(phi_vert, [theta_eq], r_vert_de)[:,:,0,:]
+        xs, ys, zs = spherical_to_cartesian([phi_s], theta_vert_de, r_vert_de)[:,0,:,:]
+        xe, ye, ze = spherical_to_cartesian([phi_e], theta_vert_de, r_vert_de)[:,0,:,:]
 
         s1_mer_data['x'] = np.concatenate([xe.T[::-1], xs.T[1:]], axis=0)
         s1_mer_data['y'] = np.concatenate([ye.T[::-1], ys.T[1:]], axis=0)
@@ -149,6 +149,11 @@ if not plotter.idle:
         s1_shell_data['x'] = xo
         s1_shell_data['y'] = yo
         s1_shell_data['z'] = zo
+
+        #aim for a cutout where x > 0.
+        s1_eq_data['x'] = xeq
+        s1_eq_data['y'] = yeq
+        s1_eq_data['z'] = zeq
  
         #Get mean properties as f(radius) // Equatorial data
         mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
@@ -162,51 +167,78 @@ if not plotter.idle:
         radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
         eq_field_s1 /= radial_scaling
         minmax_s1 = 2*np.std(eq_field_s1)
+        s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')
+        eq_nan_bool = s1_eq_data['x'] >= 0
+        s1_eq_data['surfacecolor'] = np.where(eq_nan_bool, s1_eq_data['surfacecolor'], np.nan)
+
+        print(s1_eq_data)
 
         #Get meridional slice data
-        mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[0])][ni] - mean_s1_B).squeeze()
-        mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[-1])][ni] - mean_s1_B).squeeze()
-        mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[0])][ni] - mean_s1_S1).squeeze()
-        mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[-1])][ni] - mean_s1_S1).squeeze()
-        mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[0])][ni] - mean_s1_S2).squeeze()
-        mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[-1])][ni] - mean_s1_S2).squeeze()
+        mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[1])][ni] - mean_s1_B).squeeze()
+        mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[3])][ni] - mean_s1_B).squeeze()
+        mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[1])][ni] - mean_s1_S1).squeeze()
+        mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[3])][ni] - mean_s1_S1).squeeze()
+        mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[1])][ni] - mean_s1_S2).squeeze()
+        mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[3])][ni] - mean_s1_S2).squeeze()
+        #Calculate midpoints meridionally.
+        mer_0_s1_B  = (mer_0_s1_B[1:,:]  + mer_0_s1_B[:-1,:])/2
+        mer_0_s1_S1 = (mer_0_s1_S1[1:,:] + mer_0_s1_S1[:-1,:])/2
+        mer_0_s1_S2 = (mer_0_s1_S2[1:,:] + mer_0_s1_S2[:-1,:])/2
+        mer_1_s1_B  = (mer_1_s1_B[1:,:]  + mer_1_s1_B[:-1,:])/2
+        mer_1_s1_S1 = (mer_1_s1_S1[1:,:] + mer_1_s1_S1[:-1,:])/2
+        mer_1_s1_S2 = (mer_1_s1_S2[1:,:] + mer_1_s1_S2[:-1,:])/2
 
         mer_0_s1 = np.concatenate((mer_0_s1_B, mer_0_s1_S1, mer_0_s1_S2), axis=-1)/radial_scaling
         mer_1_s1 = np.concatenate((mer_1_s1_B, mer_1_s1_S1, mer_1_s1_S2), axis=-1)/radial_scaling
-        mer_0_s1 = mer_0_s1[:, r_de_orig <= r_outer]
-        mer_1_s1 = mer_1_s1[:, r_de_orig <= r_outer]
+        mer_0_s1 = mer_0_s1.squeeze()[:, r_de_orig <= r_outer]
+        mer_1_s1 = mer_1_s1.squeeze()[:, r_de_orig <= r_outer]
+
         mer_s1 = np.concatenate([mer_1_s1.transpose((1,0))[::-1], mer_0_s1.transpose((1,0))], axis=0)
+        mer_s1 = np.pad(mer_s1, ((1, 0), (1, 1)), mode='edge')
         s1_mer_data['surfacecolor'] = mer_s1
+        mer_nan_bool = s1_mer_data['z'] >= 0
+        s1_mer_data['surfacecolor'] = np.where(mer_nan_bool, s1_mer_data['surfacecolor'], np.nan)
 
         #Get shell slice data
         s1_S_r095R = dsets[shell_field][ni] - np.expand_dims(np.mean(np.mean(dsets[shell_field][ni], axis=2), axis=1), axis=[1,2])
-        phi_pick = (phis-dphi_de/2 < phi)*(phi < phie + dphi_de/2)
-        s1_S_r095R = s1_S_r095R[:,:,0][phi_pick]
         shell_s1 = s1_S_r095R.squeeze()
         shell_s1 /= np.sqrt(np.mean(shell_s1**2))
-        s1_shell_data['surfacecolor'] = shell_s1#np.where(shell_bool, shell_s1, 0)
+        shell_s1 = np.pad(shell_s1, ((0, 1), (1, 0)), mode='edge')
+        s1_shell_data['surfacecolor'] = shell_s1
+        shell_nan_bool = np.logical_or((xo < 0), (zo < 0))
+        s1_shell_data['surfacecolor'] = np.where(shell_nan_bool, s1_shell_data['surfacecolor'], np.nan)
 
         cmap = matplotlib.cm.get_cmap('RdBu_r')
         norm = matplotlib.colors.Normalize(vmin=-minmax_s1, vmax=minmax_s1)
+
+        data = OrderedDict()
+        for k in ['x', 'y', 'z', 'surfacecolor']:
+            data[k] = np.concatenate([d[k] for d in [s1_shell_data, s1_mer_data]])
         if first:
-            for i, d in enumerate([s1_mer_data, s1_shell_data]):
-                #I think it looks nicer with z and x axes swapped (rotated 90 degrees)
-                x = d['z']
+            for i, d in enumerate([data, s1_eq_data]):
+#            for i, d in enumerate([s1_shell_data, s1_eq_data, s1_mer_data]):
+#            for i, d in enumerate([s1_shell_data, s1_mer_data, s1_eq_data]):
+#            for i, d in enumerate([s1_mer_data, s1_shell_data, s1_eq_data]):
+                print('plotting data {}'.format(i))
+                x = d['x']
                 y = d['y']
-                z = d['x']
+                z = d['z']
                 sfc = cmap(norm(d['surfacecolor']))
                 surf = ax.plot_surface(x, y, z, facecolors=sfc, cstride=1, rstride=1, linewidth=0, antialiased=False, shade=False)
                 d['surf'] = surf
                 #wireframe doesn't seem to be working
-                ax.plot_wireframe(x, y, z, ccount=1, rcount=1, linewidth=1, color='black')
+#                ax.plot_wireframe(x, y, z, ccount=1, rcount=1, linewidth=1, color='black')
             ax.set_xlim(-0.7*r_outer, 0.7*r_outer)
             ax.set_ylim(-0.7*r_outer, 0.7*r_outer)
             ax.set_zlim(-0.7*r_outer, 0.7*r_outer)
-            ax.view_init(azim=-145, elev=35)
-            ax.axis('off')
+            ax.set_xlabel('x')
+            ax.set_ylabel('y')
+            ax.set_zlabel('z')
+            ax.view_init(azim=-25, elev=25)
+#            ax.axis('off')
             first = False
         else:
-            for i, d in enumerate([s1_mer_data, s1_shell_data]):
+            for i, d in enumerate([s1_shell_data, s1_mer_data]):
                 sfc = cmap(norm(d['surfacecolor']))
                 d['surf'].set_facecolors(sfc.reshape(sfc.size//4,4))
         cbar = matplotlib.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='horizontal', format=FormatStrFormatter('%.1f'))
@@ -223,3 +255,5 @@ if not plotter.idle:
 #        for pax in [cax, line_ax1, line_ax2]:
         for pax in [cax, ]:
            pax.clear()
+        import sys
+        sys.exit()
