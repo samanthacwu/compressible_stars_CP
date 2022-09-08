@@ -556,6 +556,8 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_T0'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
     interpolations['T0'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
+    interpolations['kappa_rad'] = interp1d(r_nd, (rho/rho_nd)*nondim_cp*sim_rad_diff, **interp_kwargs)
+    interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient((rho/rho_nd)*nondim_cp*sim_rad_diff, r_nd), **interp_kwargs)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
@@ -605,6 +607,7 @@ def build_nccs(plot_nccs=False):
                 ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
                 if ncc_dict[ncc]['get_grad']:
                     name = ncc_dict[ncc]['grad_name']
+                    logger.info('getting {}'.format(name))
                     grad_field = d3.grad(ncc_dict[ncc]['field_{}'.format(bn)]).evaluate()
                     grad_field.change_scales((1,1,(Nmax+1)/resolutions[bases_keys == bn][2]))
                     grad_field.change_scales(basis.dealias)
@@ -628,8 +631,8 @@ def build_nccs(plot_nccs=False):
             ncc_dict['g']['from_grad'] = True 
         
     
-        #Evaluate for grad chi rad
-        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
+#        #Evaluate for grad chi rad
+#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
     
 #    #Further post-process work to make grad_s nice in the ball
 #    nr_post = ncc_dict['grad_s0']['nr_post']
@@ -668,7 +671,7 @@ def build_nccs(plot_nccs=False):
                 else:
                     dedalus_yvals.append(np.copy(ncc_dict[ncc]['field_{}'.format(bn)]['g'][0,0,:]))
     
-            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0']:
+            if ncc in ['T', 'grad_T', 'chi_rad', 'grad_chi_rad', 'grad_s0', 'kappa_rad', 'grad_kappa_rad']:
                 log = True
             if ncc == 'grad_s0': 
                 axhline = (s_motions / s_nd)
@@ -683,7 +686,7 @@ def build_nccs(plot_nccs=False):
             elif ncc in ['ln_T0', 'ln_rho0', 'grad_s0']:
                 interp_func = interpolations[ncc]
     
-            if ncc == 'grad_T':
+            if ncc in ['grad_T', 'grad_kappa_rad']:
                 interp_func = lambda r: -ncc_dict[ncc]['interp_func'](r)
                 ylabel='-{}'.format(ncc)
                 for i in range(len(dedalus_yvals)):
