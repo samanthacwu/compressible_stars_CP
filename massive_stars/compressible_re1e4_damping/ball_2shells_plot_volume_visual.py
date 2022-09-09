@@ -94,7 +94,8 @@ if not plotter.idle:
 #    line_ax2 = fig.add_axes([0.68,0.04,0.3, 0.08])
 
     s1_mer_data = OrderedDict()
-    s1_shell_data = OrderedDict()
+    s1_shell1_data = OrderedDict()
+    s1_shell2_data = OrderedDict()
     s1_eq_data = OrderedDict()
 
     equator_line = OrderedDict()
@@ -136,19 +137,30 @@ if not plotter.idle:
         phi_vert, theta_vert, r_vert = build_spherical_vertices(phi, theta, r_de, 0, r_outer)
         phi_vert_de, theta_vert_de, r_vert_de = build_spherical_vertices(phi_de, theta_de, r_de, 0, r_outer)
 
-        shell_frac = 0.9
-        xo, yo, zo = spherical_to_cartesian(phi_vert, theta_vert, [shell_frac*r_outer])[:,:,:,0]
-        xeq, yeq, zeq = spherical_to_cartesian(phi_vert, [theta_eq], r_vert_de)[:,:,0,:]
-        xs, ys, zs = spherical_to_cartesian([phi_s], theta_vert_de, r_vert_de)[:,0,:,:]
-        xe, ye, ze = spherical_to_cartesian([phi_e], theta_vert_de, r_vert_de)[:,0,:,:]
+        print(phi_vert)
+        shell_frac = 0.999
+        shell1_theta_pick = theta_vert >= np.pi/2
+        shell2_theta_pick = np.isfinite(theta_vert)# <= np.pi/2
+        shell1_phi_pick = np.logical_or(phi_vert <= np.pi/2, phi_vert >= 3*np.pi/2 - np.pi/100)
+        shell2_phi_pick = (phi_vert <= 3*np.pi/2)*(phi_vert >= np.pi/2)
+        mer_theta_pick = theta_vert_de <= np.pi/2
+        eq_phi_pick = np.logical_or(phi_vert <= np.pi/2, phi_vert >= 3*np.pi/2)
+        xo, yo, zo = spherical_to_cartesian(phi_vert[shell1_phi_pick], theta_vert[shell1_theta_pick], [shell_frac*r_outer])[:,:,:,0]
+        xo2, yo2, zo2 = spherical_to_cartesian(phi_vert[shell2_phi_pick], theta_vert[shell2_theta_pick], [shell_frac*r_outer])[:,:,:,0]
+        xeq, yeq, zeq = spherical_to_cartesian(phi_vert[eq_phi_pick], [theta_eq], r_vert_de)[:,:,0,:]
+        xs, ys, zs = spherical_to_cartesian([phi_s], theta_vert_de[mer_theta_pick], r_vert_de)[:,0,:,:]
+        xe, ye, ze = spherical_to_cartesian([phi_e], theta_vert_de[mer_theta_pick], r_vert_de)[:,0,:,:]
 
         s1_mer_data['x'] = np.concatenate([xe.T[::-1], xs.T[1:]], axis=0)
         s1_mer_data['y'] = np.concatenate([ye.T[::-1], ys.T[1:]], axis=0)
         s1_mer_data['z'] = np.concatenate([ze.T[::-1], zs.T[1:]], axis=0)
 
-        s1_shell_data['x'] = xo
-        s1_shell_data['y'] = yo
-        s1_shell_data['z'] = zo
+        s1_shell1_data['x'] = xo
+        s1_shell1_data['y'] = yo
+        s1_shell1_data['z'] = zo
+        s1_shell2_data['x'] = xo2
+        s1_shell2_data['y'] = yo2
+        s1_shell2_data['z'] = zo2
 
         #aim for a cutout where x > 0.
         s1_eq_data['x'] = xeq
@@ -167,9 +179,9 @@ if not plotter.idle:
         radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
         eq_field_s1 /= radial_scaling
         minmax_s1 = 2*np.std(eq_field_s1)
-        s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')
-        eq_nan_bool = s1_eq_data['x'] >= 0
-        s1_eq_data['surfacecolor'] = np.where(eq_nan_bool, s1_eq_data['surfacecolor'], np.nan)
+        s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')[eq_phi_pick,:]
+#        eq_nan_bool = s1_eq_data['x'] >= 0
+#        s1_eq_data['surfacecolor'] = np.where(eq_nan_bool, s1_eq_data['surfacecolor'], np.nan)
 
         print(s1_eq_data)
 
@@ -195,27 +207,28 @@ if not plotter.idle:
 
         mer_s1 = np.concatenate([mer_1_s1.transpose((1,0))[::-1], mer_0_s1.transpose((1,0))], axis=0)
         mer_s1 = np.pad(mer_s1, ((1, 0), (1, 1)), mode='edge')
-        s1_mer_data['surfacecolor'] = mer_s1
-        mer_nan_bool = s1_mer_data['z'] >= 0
-        s1_mer_data['surfacecolor'] = np.where(mer_nan_bool, s1_mer_data['surfacecolor'], np.nan)
+        s1_mer_data['surfacecolor'] = mer_s1[:,mer_theta_pick]
+#        mer_nan_bool = s1_mer_data['z'] >= 0
+#        s1_mer_data['surfacecolor'] = np.where(mer_nan_bool, s1_mer_data['surfacecolor'], np.nan)
 
         #Get shell slice data
         s1_S_r095R = dsets[shell_field][ni] - np.expand_dims(np.mean(np.mean(dsets[shell_field][ni], axis=2), axis=1), axis=[1,2])
         shell_s1 = s1_S_r095R.squeeze()
         shell_s1 /= np.sqrt(np.mean(shell_s1**2))
         shell_s1 = np.pad(shell_s1, ((0, 1), (1, 0)), mode='edge')
-        s1_shell_data['surfacecolor'] = shell_s1
-        shell_nan_bool = np.logical_or((xo < 0), (zo < 0))
-        s1_shell_data['surfacecolor'] = np.where(shell_nan_bool, s1_shell_data['surfacecolor'], np.nan)
+        print(shell_s1.shape, shell1_phi_pick.shape, shell1_theta_pick.shape)
+        s1_shell1_data['surfacecolor'] = shell_s1[shell1_phi_pick,:][:,shell1_theta_pick]
+#        shell_nan_bool = np.logical_or((xo < 0), (zo < 0))
+#        s1_shell1_data['surfacecolor'] = np.where(shell_nan_bool, s1_shell_data['surfacecolor'], np.nan)
+        s1_shell2_data['surfacecolor'] = shell_s1[shell2_phi_pick,:][:,shell2_theta_pick]
+#        shell_nan_bool = np.logical_or((xo < 0), (zo < 0))
+#        s1_shell2_data['surfacecolor'] = np.where(shell_nan_bool, s1_shell_data['surfacecolor'], np.nan)
 
         cmap = matplotlib.cm.get_cmap('RdBu_r')
         norm = matplotlib.colors.Normalize(vmin=-minmax_s1, vmax=minmax_s1)
 
-        data = OrderedDict()
-        for k in ['x', 'y', 'z', 'surfacecolor']:
-            data[k] = np.concatenate([d[k] for d in [s1_shell_data, s1_mer_data]])
         if first:
-            for i, d in enumerate([data, s1_eq_data]):
+            for i, d in enumerate([s1_shell1_data, s1_shell2_data, s1_eq_data, s1_mer_data]):
 #            for i, d in enumerate([s1_shell_data, s1_eq_data, s1_mer_data]):
 #            for i, d in enumerate([s1_shell_data, s1_mer_data, s1_eq_data]):
 #            for i, d in enumerate([s1_mer_data, s1_shell_data, s1_eq_data]):
