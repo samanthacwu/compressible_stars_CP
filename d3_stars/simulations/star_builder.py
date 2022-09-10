@@ -556,8 +556,6 @@ def build_nccs(plot_nccs=False):
     interpolations['grad_ln_T0'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
     interpolations['T0'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
-    interpolations['kappa_rad'] = interp1d(r_nd, (rho/rho_nd)*nondim_cp*sim_rad_diff, **interp_kwargs)
-    interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient((rho/rho_nd)*nondim_cp*sim_rad_diff, r_nd), **interp_kwargs)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
@@ -586,6 +584,10 @@ def build_nccs(plot_nccs=False):
     interpolations['s0'] = atmo['s0']
     interpolations['pom0'] = atmo['pomega']
     interpolations['grad_ln_pom0'] = atmo['grad_ln_pomega']
+
+
+    interpolations['kappa_rad'] = interp1d(r_nd, np.exp(interpolations['ln_rho0'](r_nd))*nondim_cp*sim_rad_diff, **interp_kwargs)
+    interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient(interpolations['kappa_rad'](r_nd), r_nd), **interp_kwargs)
 
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
