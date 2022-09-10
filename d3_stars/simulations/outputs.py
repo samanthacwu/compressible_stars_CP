@@ -161,7 +161,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
         sim_dt = float(this_dict['dt_factor'])*t_unit
         if h_name == 'checkpoint':
             analysis_tasks[h_name] = solver.evaluator.add_file_handler('{:s}/{:s}'.format(out_dir, h_name), sim_dt=sim_dt, max_writes=max_writes, parallel=this_dict['parallel'])
-            analysis_tasks[h_name].add_tasks(solver.state, layout='c')
+            analysis_tasks[h_name].add_tasks(solver.state, layout='g')
         else:
             if this_dict['even_outputs']:
                 this_dict['handler'] = even_analysis_tasks.add_handler(h_name, sim_dt, out_dir=out_dir, max_writes=max_writes, parallel=this_dict['parallel'])
@@ -196,7 +196,7 @@ def initialize_outputs(solver, coords, namespace, bases, timescales, out_dir='./
                         fieldstr = output_tasks[fieldname].format(bn)
                         for base_interp in interps:
                             task = d3.Grid(eval('({})(phi={})'.format(fieldstr, base_interp), dict(solver.problem.namespace)))
-                            handler.add_task(task, name='meridian({}_{},phi={})'.format(fieldname, bn, base_interp))
+                            handler.add_task(task, name='meridian({}_{},phi={:.2f})'.format(fieldname, bn, base_interp))
                 elif this_task['type'] == 'shell':
                     interps = this_task['interps']
                     for fieldname in this_task['fields']:
