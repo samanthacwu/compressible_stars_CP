@@ -453,7 +453,7 @@ class SphericalCompressibleProblem():
             self.namespace['F_visc_{}'.format(bn)] = F_visc = d3.Grid(-nu_diff)*momentum@sigma_RHS
 
             #Waves
-            self.namespace['N2_{}'.format(bn)] = N2 = (1/P_full) - (ones/P0)#grad_s_full@d3.Grid(-g/Cp)
+            self.namespace['N2_{}'.format(bn)] = N2 = grad_s_full@d3.Grid(-g/Cp)
 
             #Source terms
             self.namespace['Q_source_{}'.format(bn)] = Q_source = self.namespace['Q_{}'.format(bn)]
