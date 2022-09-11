@@ -141,10 +141,10 @@ if not plotter.idle:
         shell2_theta_pick = np.isfinite(theta_vert)
         shell1_phi_pick = phi_vert <= np.pi*1.05
         shell2_phi_pick = phi_vert > np.pi 
-        eq_phi_pick = phi_vert <= np.pi
+        eq_phi_pick = phi_vert_de <= np.pi
         xo, yo, zo = spherical_to_cartesian(phi_vert[shell1_phi_pick], theta_vert[shell1_theta_pick], [shell_frac*r_outer])[:,:,:,0]
         xo2, yo2, zo2 = spherical_to_cartesian(phi_vert[shell2_phi_pick], theta_vert[shell2_theta_pick], [shell_frac*r_outer])[:,:,:,0]
-        xeq, yeq, zeq = spherical_to_cartesian(phi_vert[eq_phi_pick], [theta_eq], r_vert_de)[:,:,0,:]
+        xeq, yeq, zeq = spherical_to_cartesian(phi_vert_de[eq_phi_pick], [theta_eq], r_vert_de)[:,:,0,:]
 
 
         theta_mer = np.concatenate([-theta_de, theta_de[::-1]])
