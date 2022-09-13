@@ -598,11 +598,12 @@ class SphericalCompressibleProblem():
                 tot_e += " + "
                 tot_e_LHS += " + "
                 tot_s += " + "
-            IE_LHS += "integ(rho0_{0}*Cv*(pom1_{0}/R_gas))".format(bn)
+            IE_LHS += "integ(rho0_{0}*(Cv*pom1_{0}/R_gas + Cv*pom0_{0}*ln_rho1_{0}/R_gas + g_phi_{0}*ln_rho1_{0}))".format(bn)
             tot_e += "integ(FlucE_{0})".format(bn)
 #            tot_e += "integ(div_rad_flux_pt1_{0} + div_rad_flux_pt2_{0})".format(bn)
             tot_e_LHS += "integ(div_rad_flux_pt1_LHS_{0} + div_rad_flux_pt2_LHS_{0})".format(bn)
             tot_s += "integ(s1_{})".format(bn)
+        print(IE_LHS)
         IE_LHS = eval(IE_LHS, dict(problem.namespace))
         tot_e = eval(tot_e, dict(problem.namespace))
         tot_e_LHS = eval(tot_e_LHS, dict(problem.namespace))
