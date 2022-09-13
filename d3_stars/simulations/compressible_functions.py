@@ -389,6 +389,8 @@ class SphericalCompressibleProblem():
 #            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = div_rad_flux_L#cp_times_chi_rad * lap_pom1_over_pom0_RHS + d3.Grid(grid_cp * grid_inv_pom0) * (grad_pom1_RHS)@(d3.Grid(grid_chi_rad * grid_grad_ln_rho0 + grid_grad_chi_rad)) 
 #            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = ones - ones #(1/P0) * (grid_kappa_rad * d3.lap(pom1) + d3.Grid(d3.grad(kappa_rad*ones))@grad_pom1)
 #            self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = div_rad_flux_L
+            self.namespace['div_rad_flux_pt1_LHS_{}'.format(bn)] = div_rad_flux_pt1_LHS = grad_kappa_rad@(grad_pom1)
+            self.namespace['div_rad_flux_pt2_LHS_{}'.format(bn)] = div_rad_flux_pt2_LHS = kappa_rad * d3.lap(pom1)
             self.namespace['div_rad_flux_pt1_{}'.format(bn)] = div_rad_flux_pt1 = grid_grad_kappa_rad@(grad_pom1_RHS)
             self.namespace['div_rad_flux_pt2_{}'.format(bn)] = div_rad_flux_pt2 = grid_kappa_rad * d3.lap(pom1_RHS)
             self.namespace['div_rad_flux_L_RHS_{}'.format(bn)] = div_rad_flux_L_RHS = ones - ones #d3.Grid(1/grid_P0) * (grid_grad_kappa_rad@(grad_pom1_RHS))
@@ -585,16 +587,25 @@ class SphericalCompressibleProblem():
         u_BCs = OrderedDict()
         T_BCs = OrderedDict()
 
+        IE_LHS = ""
         tot_e = ""
+        tot_e_LHS = ""
         tot_s = ""
         grad_s_surf = ""
         for basis_number, bn in enumerate(self.bases_keys):
             if basis_number > 0:
+                IE_LHS += " + "
                 tot_e += " + "
+                tot_e_LHS += " + "
                 tot_s += " + "
-            tot_e += "integ(div_rad_flux_pt1_{0} + div_rad_flux_pt2_{0})".format(bn)
+            IE_LHS += "integ(rho0_{0}*Cv*(pom1_{0}/R_gas))".format(bn)
+            tot_e += "integ(FlucE_{0})".format(bn)
+#            tot_e += "integ(div_rad_flux_pt1_{0} + div_rad_flux_pt2_{0})".format(bn)
+            tot_e_LHS += "integ(div_rad_flux_pt1_LHS_{0} + div_rad_flux_pt2_LHS_{0})".format(bn)
             tot_s += "integ(s1_{})".format(bn)
+        IE_LHS = eval(IE_LHS, dict(problem.namespace))
         tot_e = eval(tot_e, dict(problem.namespace))
+        tot_e_LHS = eval(tot_e_LHS, dict(problem.namespace))
         tot_s = eval(tot_s, dict(problem.namespace))
         for basis_number, bn in enumerate(self.bases_keys):
             basis = self.bases[bn]
@@ -627,7 +638,7 @@ class SphericalCompressibleProblem():
                     T_BCs['BC_T_outer_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, basis.radius) #needed for energy conservation
                     self.namespace['kappa_surf'] = eval("Grid((ones_{0}*kappa_rad_{0})(r={1}))".format(bn, basis.radius), dict(problem.namespace)).evaluate()
 #                    ((self.namespace['ones_{}'.format(bn)]*self.namespace['kappa_rad_{}'.format(bn)]/self.namespace['grid_R'])(r=basis.radius)).evaluate()
-                    grad_s_surf = eval("radial(grad_pom1_{0}(r={1}))".format(bn, basis.radius), dict(problem.namespace))
+                    grad_s_surf = eval("radial((kappa_rad_{0}*pom0_{0}*(gamma/Cp)*grad_s1_{0})(r={1}))".format(bn, basis.radius), dict(problem.namespace))
 #                    T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius') #needed for energy conservation
     #                T_BCs['BC_T_{}'.format(bn)] = "radial((rho0_{0}*grad_pom1_{0})(r={1})) = 0".format(bn, 'radius')
     #                T_BCs['BC_T_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = -radial(((rho_full_{0}/rho0_{0})*grad_pom1_{0} - grad_pom1_{0})(r={1}))".format(bn, 'radius')
@@ -657,7 +668,7 @@ class SphericalCompressibleProblem():
                     u_BCs['BC_u3_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, basis.radii[1])
                     T_BCs['BC_T_outer_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, basis.radii[1])
                     self.namespace['kappa_surf'] = eval("Grid((ones_{0}*kappa_rad_{0})(r={1}))".format(bn, basis.radii[1]), dict(problem.namespace)).evaluate()
-                    grad_s_surf = eval("radial(grad_pom1_{0}(r={1}))".format(bn, basis.radii[1]), dict(problem.namespace))
+                    grad_s_surf = eval("radial((kappa_rad_{0}*pom0_{0}*(gamma/Cp)*grad_s1_{0})(r={1}))".format(bn, basis.radii[1]), dict(problem.namespace))
     #                T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_over_pom0_{0}(r={1})) = 0".format(bn, 'radius')
 #                    T_BCs['BC_T2_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = - radial(grad_pom2_{0}(r={1}))".format(bn, 'radius')#needed for energy conservation
 
@@ -683,7 +694,10 @@ class SphericalCompressibleProblem():
 
         for name, BC in T_BCs.items():
             if 'outer' in name:
-                energy_constraint = (grad_s_surf, -( 1e-3*(tot_e)/self.namespace['kappa_surf'] - grad_s_surf))
+#                energy_constraint = (tot_e_LHS, tot_e)
+#                energy_constraint = (tot_e_LHS, tot_e)
+#                energy_constraint = (tot_s, tot_s - tot_e)
+                energy_constraint = (IE_LHS, IE_LHS - tot_e)
 #                energy_constraint = "{0} = -(({1})/{2} - ({0}))".format(grad_s_surf, tot_e, self.namespace['kappa_surf'])
                 logger.info('adding BC "{}" (ntheta != 0)'.format(BC))
                 logger.info('adding BC "{}" (ntheta == 0)'.format([str(o) for o in energy_constraint]))
