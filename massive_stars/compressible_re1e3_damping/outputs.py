@@ -8,6 +8,7 @@ handler_defaults['time_unit'] = 'heating' #also avail: kepler
 handler_defaults['dt_factor'] = 0.05
 handler_defaults['even_outputs'] = False
 handler_defaults['tasks'] = list()
+handler_defaults['parallel'] = None
 
 handlers = OrderedDict()
 for hname in ['slices', 'shells', 'scalars', 'profiles', 'checkpoint', 'wave_shells']:
@@ -41,11 +42,11 @@ handlers['scalars']['max_writes'] = 400
 
 energy_tasks = OrderedDict()
 energy_tasks['type'] = 'full_integ'
-energy_tasks['fields'] = ['KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE', 'Lx', 'Ly', 'Lz', 'L_squared', 'tot_source', 'EOS_goodness', 'rho_fluc']
+energy_tasks['fields'] = ['KE', 'PE1', 'IE1', 'FlucE', 'L_squared', 'rho_fluc']
 handlers['scalars']['tasks'].append(energy_tasks)
 scalar_tasks = OrderedDict()
 scalar_tasks['type'] = 'vol_avg'
-scalar_tasks['fields'] = ['u_squared', 'Re', 'KE', 'PE', 'IE', 'TotE', 'PE1', 'IE1', 'FlucE']
+scalar_tasks['fields'] = ['u_squared', 'Re', 'KE']
 handlers['scalars']['tasks'].append(scalar_tasks)
 
 ## Profiles
@@ -62,10 +63,11 @@ handlers['checkpoint']['max_writes'] = 1
 handlers['checkpoint']['dt_factor'] = 10
    
 ## Hi-cadence shells
-handlers['wave_shells']['max_writes'] = 50
+handlers['wave_shells']['max_writes'] = 500
 handlers['wave_shells']['time_unit'] = 'kepler'
 handlers['wave_shells']['dt_factor'] = 1
 handlers['wave_shells']['even_outputs'] = True
+handlers['wave_shells']['parallel'] = 'virtual'
 
 wave_shell_tasks = OrderedDict()
 wave_shell_tasks['type'] = 'shell'

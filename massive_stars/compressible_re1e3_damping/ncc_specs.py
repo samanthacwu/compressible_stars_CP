@@ -6,6 +6,7 @@ defaults['nr_max'] = (60,42,36)
 defaults['vector'] = False
 defaults['grid_only'] = False
 defaults['get_grad'] = False
+defaults['get_inverse'] = False
 defaults['from_grad'] = False
 defaults['grad_name'] = None
 
@@ -15,7 +16,7 @@ for k in ['nr_post', 'transition_point', 'width']:
 
 
 nccs = OrderedDict()
-for field in ['ln_rho0', 'Q', 'chi_rad', 'nu_diff', 'g_phi',  'grad_s0', 'pom0', 'grad_ln_pom0', 's0']:
+for field in ['ln_rho0', 'Q', 'chi_rad', 'kappa_rad', 'nu_diff', 'g_phi',  'grad_s0', 'pom0', 'grad_ln_pom0', 's0']:
     nccs[field] = OrderedDict()
     for k, val in defaults.items():
         nccs[field][k] = val
@@ -33,6 +34,11 @@ nccs['chi_rad']['nr_max'] = (1,32,20)
 nccs['chi_rad']['get_grad'] = True
 nccs['chi_rad']['grad_name'] = 'grad_chi_rad'
 
+nccs['kappa_rad']['nr_max'] = (32,32,20)
+nccs['kappa_rad']['get_grad'] = True
+nccs['kappa_rad']['grad_name'] = 'grad_kappa_rad'
+
+
 nccs['nu_diff']['nr_max'] = (1,1,1)
 nccs['nu_diff']['get_grad'] = True
 nccs['nu_diff']['grad_name'] = 'grad_nu_diff'
@@ -44,6 +50,7 @@ nccs['grad_s0']['vector'] = True
 
 nccs['pom0']['get_grad'] = True
 nccs['pom0']['grad_name'] = 'grad_pom0'
+nccs['pom0']['get_inverse'] = True
 
 nccs['grad_ln_pom0']['vector'] = True
 
@@ -58,3 +65,14 @@ for ncc in new_keys:
         nccs[ncc][k] = val
     nccs[ncc]['vector'] = True
     nccs[ncc]['from_grad'] = True
+
+
+new_keys = []
+for ncc in nccs.keys():
+    if nccs[ncc]['get_inverse'] is not False:
+        new_keys.append('inv_{}'.format(ncc))
+for ncc in new_keys:
+    nccs[ncc] = OrderedDict()
+    for k, val in defaults.items():
+        nccs[ncc][k] = val
+
