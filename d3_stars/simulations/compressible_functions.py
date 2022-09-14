@@ -265,6 +265,7 @@ class SphericalCompressibleProblem():
             self.namespace['grid_neg_one_{}'.format(bn)] = neg_one = d3.Grid(-ones).evaluate()
             self.namespace['grid_eye_{}'.format(bn)] = grid_eye = d3.Grid(eye).evaluate()
             self.namespace['grid_P0_{}'.format(bn)] = grid_P0 = d3.Grid(P0*ones).evaluate()
+            self.namespace['grid_g_phi_{}'.format(bn)] = grid_g_phi = d3.Grid(ones*g_phi)
 
             for fname in ['rho0', 'ln_rho0', 'grad_ln_rho0', 's0', 'grad_s0', 'pom0', 'grad_pom0', 'g', 'chi_rad', 'grad_chi_rad', 'kappa_rad', 'grad_kappa_rad', 'inv_pom0', 'nu_diff', 'neg_one', 'eye', 'P0']:
                 self.namespace['grid_{}_{}'.format(fname, bn)].name = 'grid_{}_{}'.format(fname, bn)
@@ -277,6 +278,7 @@ class SphericalCompressibleProblem():
                 Cv = self.namespace['Cv']
                 self.namespace['grid_cp'] = grid_cp = d3.Grid(Cp).evaluate()
                 self.namespace['grid_cp_div_R'] = grid_cp_div_R = d3.Grid(Cp/R_gas).evaluate() #= gamma/(gamma-1)
+                self.namespace['grid_cv_div_R'] = grid_cv_div_R = d3.Grid(Cv/R_gas).evaluate() #= gamma/(gamma-1)
                 self.namespace['grid_R_div_cp'] = grid_R_div_cp = d3.Grid(R_gas/Cp).evaluate() #= (gamma-1)/gamma
                 self.namespace['grid_inv_cp'] = grid_inv_cp = d3.Grid(1/Cp).evaluate()
                 self.namespace['grid_R'] = grid_R = d3.Grid(R_gas).evaluate()
@@ -398,9 +400,9 @@ class SphericalCompressibleProblem():
 
 
 #            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 = ones - ones
-            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full - 1/grid_P0) * (div_rad_flux_pt1)
+            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full + d3.Grid(neg_one/grid_P0)) * (div_rad_flux_pt1)
 #            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   (1/P_full)*d3.div(grid_kappa_rad*grad_pom1)
-            self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full - 1/grid_P0) * (div_rad_flux_pt2)
+            self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full + d3.Grid(neg_one/grid_P0)) * (div_rad_flux_pt2)
 
 
 
@@ -427,7 +429,8 @@ class SphericalCompressibleProblem():
 
 
             #The sum order matters here based on ball or shell...weird.
-            energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + d3.Grid(grid_R*inv_pom_full)*VH - div_rad_flux_L_RHS + full_div_rad_flux_pt1))
+#            energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + d3.Grid(grid_R*inv_pom_full)*VH - div_rad_flux_L_RHS + full_div_rad_flux_pt1))
+            energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + d3.Grid(grid_R*inv_pom_full)*VH + full_div_rad_flux_pt1))
             energy_terms_2 = d3.Grid(lap_C(full_div_rad_flux_pt2))
             self.namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
 
@@ -438,7 +441,7 @@ class SphericalCompressibleProblem():
             self.namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
             self.namespace['u_squared_{}'.format(bn)] = u_squared = u@u
             self.namespace['KE_{}'.format(bn)] = KE = rho_full * u_squared / 2
-            self.namespace['PE_{}'.format(bn)] = PE = rho_full * d3.Grid(g_phi)
+            self.namespace['PE_{}'.format(bn)] = PE = rho_full * grid_g_phi
             self.namespace['IE_{}'.format(bn)] = IE = d3.Grid((P_full)*d3.Grid(Cv/R_gas).evaluate())
             self.namespace['PE0_{}'.format(bn)] = PE0 = d3.Grid(rho0 * g_phi)
             self.namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(grid_P0*(Cv/R_gas))
@@ -446,6 +449,8 @@ class SphericalCompressibleProblem():
             self.namespace['IE1_{}'.format(bn)] = IE1 = IE + d3.Grid(-IE0*ones)
             self.namespace['TotE_{}'.format(bn)] = KE + PE + IE
             self.namespace['FlucE_{}'.format(bn)] = KE + PE1 + IE1
+            self.namespace['FlucE_linear_{}'.format(bn)] = rho0*(Cv*pom1/R_gas + Cv*pom0*ln_rho1/R_gas + g_phi*ln_rho1)
+            self.namespace['FlucE_linear_RHS_{}'.format(bn)] = grid_rho0*(grid_cv_div_R*pom1_RHS + d3.Grid(grid_g_phi + grid_cv_div_R*grid_pom0)*ln_rho1)
             self.namespace['Re_{}'.format(bn)] = np.sqrt(u_squared) * d3.Grid(1/nu_diff)
             self.namespace['Ma_{}'.format(bn)] = np.sqrt(u_squared) / np.sqrt(pom_full) 
             self.namespace['L_{}'.format(bn)] = d3.cross(rvec, momentum)
@@ -587,27 +592,6 @@ class SphericalCompressibleProblem():
         u_BCs = OrderedDict()
         T_BCs = OrderedDict()
 
-        IE_LHS = ""
-        tot_e = ""
-        tot_e_LHS = ""
-        tot_s = ""
-        grad_s_surf = ""
-        for basis_number, bn in enumerate(self.bases_keys):
-            if basis_number > 0:
-                IE_LHS += " + "
-                tot_e += " + "
-                tot_e_LHS += " + "
-                tot_s += " + "
-            IE_LHS += "integ(rho0_{0}*(Cv*pom1_{0}/R_gas + Cv*pom0_{0}*ln_rho1_{0}/R_gas + g_phi_{0}*ln_rho1_{0}))".format(bn)
-            tot_e += "integ(FlucE_{0})".format(bn)
-#            tot_e += "integ(div_rad_flux_pt1_{0} + div_rad_flux_pt2_{0})".format(bn)
-            tot_e_LHS += "integ(div_rad_flux_pt1_LHS_{0} + div_rad_flux_pt2_LHS_{0})".format(bn)
-            tot_s += "integ(s1_{})".format(bn)
-        print(IE_LHS)
-        IE_LHS = eval(IE_LHS, dict(problem.namespace))
-        tot_e = eval(tot_e, dict(problem.namespace))
-        tot_e_LHS = eval(tot_e_LHS, dict(problem.namespace))
-        tot_s = eval(tot_s, dict(problem.namespace))
         for basis_number, bn in enumerate(self.bases_keys):
             basis = self.bases[bn]
 
@@ -693,12 +677,23 @@ class SphericalCompressibleProblem():
             logger.info('adding BC "{}"'.format(BC))
             problem.add_equation(BC)
 
+        FlucE_LHS = ""
+        FlucE_RHS = ""
+        for basis_number, bn in enumerate(self.bases_keys):
+            if basis_number > 0:
+                FlucE_LHS += " + "
+                FlucE_RHS += " + "
+            FlucE_LHS += "integ(FlucE_linear_{0})".format(bn)
+            FlucE_RHS += "integ(FlucE_linear_RHS_{0}  - FlucE_{0})".format(bn)
+        FlucE_LHS = eval(FlucE_LHS, dict(problem.namespace))
+        FlucE_RHS = eval(FlucE_RHS, dict(problem.namespace))
+
         for name, BC in T_BCs.items():
             if 'outer' in name:
 #                energy_constraint = (tot_e_LHS, tot_e)
 #                energy_constraint = (tot_e_LHS, tot_e)
 #                energy_constraint = (tot_s, tot_s - tot_e)
-                energy_constraint = (IE_LHS, IE_LHS - tot_e)
+                energy_constraint = (FlucE_LHS, FlucE_RHS)
 #                energy_constraint = "{0} = -(({1})/{2} - ({0}))".format(grad_s_surf, tot_e, self.namespace['kappa_surf'])
                 logger.info('adding BC "{}" (ntheta != 0)'.format(BC))
                 logger.info('adding BC "{}" (ntheta == 0)'.format([str(o) for o in energy_constraint]))
