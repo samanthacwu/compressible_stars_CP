@@ -355,6 +355,9 @@ class SphericalCompressibleProblem():
 
             #Radiative diffusivity -- we model flux as kappa * grad T1 (not including nonlinear part of T; it's low mach so it's fine.
             self.namespace['F_cond_{}'.format(bn)] = F_cond = -1*kappa_rad*((grad_pom1_RHS)/R_gas)
+          
+            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (1/P0) * d3.div(kappa_rad*d3.grad(pom1))
+
             self.namespace['div_rad_flux_pt1_LHS_{}'.format(bn)] = div_rad_flux_pt1_LHS = grad_kappa_rad@(grad_pom1)
             self.namespace['div_rad_flux_pt2_LHS_{}'.format(bn)] = div_rad_flux_pt2_LHS = kappa_rad * d3.lap(pom1)
             self.namespace['div_rad_flux_pt1_{}'.format(bn)] = div_rad_flux_pt1 = grid_grad_kappa_rad@(grad_pom1_RHS)
@@ -425,7 +428,7 @@ class SphericalCompressibleProblem():
             self.namespace['PdV_source_IE_{}'.format(bn)] = PdV_source_IE =  - P_full*div_u
             self.namespace['tot_PdV_source_{}'.format(bn)] = tot_PdV_source = PdV_source_KE + PdV_source_IE
 
-            self.namespace['divRad_source_{}'.format(bn)] = divRad_source = (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + div_rad_flux_L - div_rad_flux_L_RHS)
+            self.namespace['divRad_source_{}'.format(bn)] = divRad_source = (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + div_rad_flux_L)
 
 
             self.namespace['source_KE_{}'.format(bn)] = visc_source_KE + PdV_source_KE #g term turns into dt(PE) + div(u*PE); do not include here while trying to solve for dt(KE) + div(u*KE).
