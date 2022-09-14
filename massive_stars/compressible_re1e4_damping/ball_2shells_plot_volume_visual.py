@@ -184,20 +184,19 @@ if not plotter.idle:
             s1_eq_data['z'] = zeq
         print('past if statement')
 
-        if first:
-            #Get mean properties as f(radius) // Equatorial data
-            mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
-            mean_s1_S1 = np.expand_dims(np.mean(dsets['equator(s1_S1)'][ni], axis=0), axis=0)
-            mean_s1_S2 = np.expand_dims(np.mean(dsets['equator(s1_S2)'][ni], axis=0), axis=0)
-            s1_eq_B  = dsets['equator(s1_B)'][ni] - mean_s1_B
-            s1_eq_S1 = dsets['equator(s1_S1)'][ni] - mean_s1_S1
-            s1_eq_S2 = dsets['equator(s1_S2)'][ni] - mean_s1_S2
-            radial_s1_mean = np.concatenate((mean_s1_B, mean_s1_S1, mean_s1_S2), axis=-1)
-            eq_field_s1 = np.concatenate((s1_eq_B, s1_eq_S1, s1_eq_S2), axis=-1)
-            radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
-            eq_field_s1 /= radial_scaling
-            s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')[eq_phi_pick,:]
-            print('past equator')
+        #Get mean properties as f(radius) // Equatorial data
+        mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
+        mean_s1_S1 = np.expand_dims(np.mean(dsets['equator(s1_S1)'][ni], axis=0), axis=0)
+        mean_s1_S2 = np.expand_dims(np.mean(dsets['equator(s1_S2)'][ni], axis=0), axis=0)
+        s1_eq_B  = dsets['equator(s1_B)'][ni] - mean_s1_B
+        s1_eq_S1 = dsets['equator(s1_S1)'][ni] - mean_s1_S1
+        s1_eq_S2 = dsets['equator(s1_S2)'][ni] - mean_s1_S2
+        radial_s1_mean = np.concatenate((mean_s1_B, mean_s1_S1, mean_s1_S2), axis=-1)
+        eq_field_s1 = np.concatenate((s1_eq_B, s1_eq_S1, s1_eq_S2), axis=-1)
+        radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
+        eq_field_s1 /= radial_scaling
+        s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')[eq_phi_pick,:]
+        print('past equator')
 
 
         #Get meridional slice data
