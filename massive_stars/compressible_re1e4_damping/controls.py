@@ -20,8 +20,7 @@ star['smooth_h'] = True
 ### Numerical choices
 numerics = OrderedDict()
 
-#Current choices: 'FC_HD', 'FC_HD_LinForce'
-numerics['equations'] = 'FC_HD' #anelastic hydrodynamics
+numerics['equations'] = 'FC_HD' #fully compressible hydrodynamics
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution

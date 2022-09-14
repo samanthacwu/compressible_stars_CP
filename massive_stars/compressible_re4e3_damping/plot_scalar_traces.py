@@ -40,24 +40,16 @@ if roll_writes is not None:
 figs = []
 
 # Nu vs time
-fig1 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='energy')
-fig1.add_field(0, 'integ(KE)')
-fig1.add_field(0, 'integ(IE)')
-fig1.add_field(0, 'integ(PE)')
-fig1.add_field(1, 'integ(TotE)')
-figs.append(fig1)
-
 fig2 = ScalarFigure(num_rows=2, num_cols=1, col_inch=6, fig_name='energy_fluc')
+fig2.add_field(0, 'integ(FlucE)')
 fig2.add_field(0, 'integ(KE)')
 fig2.add_field(0, 'integ(IE1)')
 fig2.add_field(0, 'integ(PE1)')
 fig2.add_field(1, 'integ(FlucE)')
 figs.append(fig2)
 
-fig3 = ScalarFigure(num_rows=3, num_cols=1, col_inch=6, fig_name='mass')
-fig3.add_field(0, 'integ(tot_source)')
-fig3.add_field(1, 'integ(rho_fluc)')
-fig3.add_field(2, 'integ(EOS_goodness)')
+fig3 = ScalarFigure(num_rows=1, num_cols=1, col_inch=6, fig_name='mass')
+fig3.add_field(0, 'integ(rho_fluc)')
 figs.append(fig3)
 
 
