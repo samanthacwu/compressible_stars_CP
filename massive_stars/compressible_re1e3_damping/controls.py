@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.05L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (64,128,64)
+star['nr'] = (64,192,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -20,8 +20,7 @@ star['smooth_h'] = True
 ### Numerical choices
 numerics = OrderedDict()
 
-#Current choices: 'FC_HD', 'FC_HD_LinForce'
-numerics['equations'] = 'FC_HD' #anelastic hydrodynamics
+numerics['equations'] = 'FC_HD' #fully compressible hydro
 
 #Need to add a tag saying what the default diffusivity formalism is
 #Target reynolds number of simulation; higher needs more resolution
@@ -47,8 +46,6 @@ dynamics = OrderedDict()
 dynamics['ntheta'] = 64
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
-#dynamics['restart'] = 'final_checkpoint/final_checkpoint_s1.h5'
-#dynamics['restart'] = 'checkpoint/checkpoint_s1.h5'
 
 #In nondimensional units
 dynamics['CFL_max_r'] = 1
