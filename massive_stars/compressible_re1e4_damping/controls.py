@@ -8,7 +8,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
-star['r_bounds'] = (0, '1.05L', '0.82R', '0.93R')
+star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
 star['nr'] = (256,256,64)
@@ -60,5 +60,5 @@ dynamics['sponge'] = True
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
-dynamics['A0'] = 1e-10
+dynamics['A0'] = 1e-6
 
