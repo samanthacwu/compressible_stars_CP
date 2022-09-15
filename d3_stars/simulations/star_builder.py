@@ -77,7 +77,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
 
         if k == 'B':
-            N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius-0.04, width=0.03)
+            N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius*0.9, width=basis.radius*0.03)
         else:
             N2.change_scales(low_scales)
             N2['g'] = N2_func(r_low)
