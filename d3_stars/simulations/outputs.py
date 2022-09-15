@@ -52,9 +52,9 @@ class EvenTaskDict(OrderedDict):
         self.start_iter = solver.iteration
         self.iter = 0
         self.max_dt_check = True
-        self.just_wrote = False
         self.evaluate = False
         self.first = True
+        self.threshold = 1
 
     def add_handler(self, name, sim_dt, out_dir='./', **kwargs):
         logger.info('adding even tasks handler {}'.format(name))
@@ -69,28 +69,26 @@ class EvenTaskDict(OrderedDict):
             if len(self['output_dts']) != 0:
                 self.even_dt = np.min(self['output_dts'])
             self.first = False
+            self.threshold = cfl.threshold
 
         self.iter = self.solver.iteration - self.start_iter
-        timestep = cfl.compute_timestep()
+        timestep = cfl_dt = cfl.compute_timestep()
 
         if np.isfinite(self.even_dt):
             #throttle CFL max_dt once, after the transient.
             #Also, start outputting even analysis tasks.
-            if self.max_dt_check and (timestep < cfl.max_dt):
+            if self.max_dt_check and (timestep < self.even_dt*(1 + self.threshold)):
                 self.max_dt_check = False
                 self.evaluate = True
+                cfl.threshold = 0
 
             #Flag handler for evaluation
+            #Adjust timestep only between outputs.
             if self.evaluate:
                 self.evaluate = False
                 for k in self.handler_keys:
                     self[k].last_iter_div = -1
                 self.slice_time = self.solver.sim_time + self.even_dt
-                self.just_wrote = True
-
-            #Adjust timestep only between outputs.
-            if self.just_wrote:
-                self.just_wrote = False
                 num_steps = np.ceil(self.even_dt / timestep)
                 timestep = self.current_max_dt = cfl.stored_dt = self.even_dt/num_steps
             elif self.max_dt_check:
@@ -101,8 +99,7 @@ class EvenTaskDict(OrderedDict):
             t_future = self.solver.sim_time + timestep
             if t_future >= self.slice_time*(1-1e-8):
                self.evaluate = True
- 
-        #just return cfl timestep
+
         return timestep
 
        
