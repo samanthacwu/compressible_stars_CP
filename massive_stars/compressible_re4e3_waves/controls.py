@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (128,192,64)
+star['nr'] = (128,256,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -46,7 +46,7 @@ dynamics = OrderedDict()
 dynamics['ntheta'] = 128
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
-dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re4e3_damping/checkpoint/checkpoint_s3.h5'
+#dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re4e3_damping/checkpoint/checkpoint_s3.h5'
 
 #In nondimensional units
 dynamics['CFL_max_r'] = 1
