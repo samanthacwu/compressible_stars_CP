@@ -354,18 +354,17 @@ class SphericalCompressibleProblem():
             self.namespace['nonlinear_gradP_div_rho_{}'.format(bn)] = nonlinear_gradP_div_rho = grid_gamma*pom_fluc*(grid_grad_ln_rho1 + grid_grad_s1*grid_inv_cp) + grid_g*pom2_over_pom0
 
             #Radiative diffusivity -- we model flux as kappa * grad T1 (not including nonlinear part of T; it's low mach so it's fine.
-            diff_factor = 2.0 #TODO: make this customizeable.
             self.namespace['F_cond_{}'.format(bn)] = F_cond = -1*kappa_rad*((grad_pom1_RHS)/R_gas)
           
-            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (diff_factor/P0) * d3.div(kappa_rad*d3.grad(pom1))
 
             self.namespace['div_rad_flux_pt1_LHS_{}'.format(bn)] = div_rad_flux_pt1_LHS = grad_kappa_rad@(grad_pom1)
             self.namespace['div_rad_flux_pt2_LHS_{}'.format(bn)] = div_rad_flux_pt2_LHS = kappa_rad * d3.lap(pom1)
             self.namespace['div_rad_flux_pt1_{}'.format(bn)] = div_rad_flux_pt1 = grid_grad_kappa_rad@(grad_pom1_RHS)
             self.namespace['div_rad_flux_pt2_{}'.format(bn)] = div_rad_flux_pt2 = grid_kappa_rad * d3.lap(pom1_RHS)
 
-            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full + d3.Grid(diff_factor*neg_one/grid_P0)) * (div_rad_flux_pt1)
-            self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full + d3.Grid(diff_factor*neg_one/grid_P0)) * (div_rad_flux_pt2)
+            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (1/P0) * (div_rad_flux_pt1_LHS + div_rad_flux_pt2_LHS)
+            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full + d3.Grid(neg_one/grid_P0)) * (div_rad_flux_pt1)
+            self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full + d3.Grid(neg_one/grid_P0)) * (div_rad_flux_pt2)
 
             # Rotation and damping terms
             if self.do_rotation:

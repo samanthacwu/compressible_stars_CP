@@ -41,7 +41,7 @@ for t in flux_tags:
 
 class EvenTaskDict(OrderedDict):
 
-    def __init__(self, solver, *args, **kwargs):
+    def __init__(self, solver, *args, sim_iter_wait=500, sim_time_wait=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.solver = solver
         self['output_dts'] = []
@@ -50,6 +50,10 @@ class EvenTaskDict(OrderedDict):
         self.slice_time = np.inf
         self.current_max_dt = np.inf
         self.start_iter = solver.iteration
+        self.start_time = solver.sim_time
+        self.sim_time_wait = sim_time_wait
+        self.sim_iter_wait = sim_iter_wait
+        self.sim_time = 0
         self.iter = 0
         self.max_dt_check = True
         self.evaluate = False
@@ -72,12 +76,13 @@ class EvenTaskDict(OrderedDict):
             self.threshold = cfl.threshold
 
         self.iter = self.solver.iteration - self.start_iter
+        self.sim_time = self.solver.sim_time - self.start_time
         timestep = cfl_dt = cfl.compute_timestep()
 
         if np.isfinite(self.even_dt):
             #throttle CFL max_dt once, after the transient.
             #Also, start outputting even analysis tasks.
-            if self.max_dt_check and (timestep < self.even_dt*(1 + self.threshold)):
+            if self.max_dt_check and (timestep < self.even_dt*(1 + self.threshold)) and self.iter > self.sim_iter_wait and self.sim_time > self.sim_time_wait: #allow for warmup
                 self.max_dt_check = False
                 self.evaluate = True
                 cfl.threshold = 0

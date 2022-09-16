@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (64,128,64)
+star['nr'] = (64,192,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -59,5 +59,5 @@ dynamics['sponge'] = False
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
-dynamics['A0'] = 1e-6
+dynamics['A0'] = 1e-8
 
