@@ -9,6 +9,7 @@ Options:
     --data_dir=<dir>     Name of data handler directory [default: slices]
     --scale=<s>          resolution scale factor [default: 1]
     --start_file=<n>     start file number [default: 1]
+    --core_only          If flagged, just plot the core CZ
 """
 import gc
 from collections import OrderedDict
@@ -64,6 +65,8 @@ if root_dir is None:
     sys.exit()
 
 fig_name='volume_vizualization'
+if args['--core_only']:
+    fig_name = 'core_' + fig_name
 plotter = SingleTypeReader(root_dir, data_dir, fig_name, start_file=int(args['--start_file']), n_files=np.inf, distribution='even-write')
 if not plotter.idle:
     phi_keys = []
@@ -75,10 +78,12 @@ if not plotter.idle:
                 phi_keys.append(k)
             if k[0] == 'theta':
                 theta_keys.append(k)
-#    r_max = 1
-#    shell_field = 'shell(s1_B,r=1)'
-    r_max = None
-    shell_field = 'shell(s1_S2,r=R)'
+    if args['--core_only']:
+        r_max = 1
+        shell_field = 'shell(s1_B,r=1)'
+    else:
+        r_max = None
+        shell_field = 'shell(s1_S2,r=R)'
 #    r_max = 3.38*0.75
 #    shell_field = 'shell(s1_S1,r=0.75R)'
     phi_vals = ['0.00', '1.57', '3.14', '4.71']
@@ -194,7 +199,14 @@ if not plotter.idle:
         s1_eq_S2 = dsets['equator(s1_S2)'][ni] - mean_s1_S2
         radial_s1_mean = np.concatenate((mean_s1_B, mean_s1_S1, mean_s1_S2), axis=-1)
         eq_field_s1 = np.concatenate((s1_eq_B, s1_eq_S1, s1_eq_S2), axis=-1)
-        radial_scaling = np.sqrt(np.mean(eq_field_s1**2, axis=0))
+
+        radial_scaling = np.std(eq_field_s1, axis=0).ravel()
+        N = mean_s1_B.size // 10
+        indx = np.arange(N)
+        mean_ball = np.mean(radial_scaling[:N])
+        scaling_bound = radial_scaling[N]
+        scaling_smoother = mean_ball + (scaling_bound - mean_ball)*indx/N
+        radial_scaling[:N] = scaling_smoother
         eq_field_s1 /= radial_scaling
         s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')[eq_phi_pick,:]
         print('past equator')

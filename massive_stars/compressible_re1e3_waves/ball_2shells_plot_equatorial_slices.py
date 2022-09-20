@@ -47,7 +47,7 @@ elif args['--mesa_file'] is not None:
         r_B, r_S1 = f['r_stitch'][()]
         r_outer = f['r_outer'][()]
 else:
-    r_B = 1.05
+    r_B = 1.07
     r_S1 = 2.98
     r_outer = 3.38
     print('WARNING: using default r_B = {}, r_S1 = {} and r_outer = {}'.format(r_B, r_S1, r_outer))
