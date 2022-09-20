@@ -362,9 +362,10 @@ class SphericalCompressibleProblem():
             self.namespace['div_rad_flux_pt1_{}'.format(bn)] = div_rad_flux_pt1 = grid_grad_kappa_rad@(grad_pom1_RHS)
             self.namespace['div_rad_flux_pt2_{}'.format(bn)] = div_rad_flux_pt2 = grid_kappa_rad * d3.lap(pom1_RHS)
 
-            diff_factor = 2
-            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (diff_factor/P0) * (div_rad_flux_pt1_LHS + div_rad_flux_pt2_LHS)
-            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full + d3.Grid(diff_factor*neg_one/grid_P0)) * (div_rad_flux_pt1)
+            diff_factor = 1
+            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (diff_factor/P0) * div_rad_flux_pt2_LHS 
+#            self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (diff_factor/P0) * (div_rad_flux_pt1_LHS + div_rad_flux_pt2_LHS)
+            self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full) * (div_rad_flux_pt1)
             self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full + d3.Grid(diff_factor*neg_one/grid_P0)) * (div_rad_flux_pt2)
 
             # Rotation and damping terms
