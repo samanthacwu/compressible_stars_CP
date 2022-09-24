@@ -87,7 +87,7 @@ if not reader.idle:
 
     # Parameters
     dtype = np.float64
-    dealias = 1
+    dealias = 1.5
     radius = float(args['--radius'])
     c = d3.SphericalCoordinates('φ', 'θ', 'r')
     dealias_tuple = (dealias, dealias, dealias)
@@ -115,6 +115,8 @@ if not reader.idle:
 
     scalar_field = dist.Field(bases=basis)
     vector_field = dist.VectorField(bases=basis, coordsys=c)
+    scalar_field.change_scales(dealias)
+    vector_field.change_scales(dealias)
     power_scalar_op = d3.integ(scalar_field**2) / shell_vol
     power_vector_op = d3.integ(vector_field@vector_field) / shell_vol
 
