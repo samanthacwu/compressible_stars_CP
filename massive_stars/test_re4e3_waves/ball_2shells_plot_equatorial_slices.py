@@ -2,12 +2,11 @@
 This script plots snapshots of the evolution of a 2D slice through the equator of a BallBasis simulation.
 
 Usage:
-    plot_equatorial_slices.py --r_B=<r> --r_S1=<r> --r_outer=<r> [options]
-    plot_equatorial_slices.py --mesa_file=<f> [options]
-    plot_equatorial_slices.py [options]
+    plot_equatorial_slices.py <root_dir> --r_B=<r> --r_S1=<r> --r_outer=<r> [options]
+    plot_equatorial_slices.py <root_dir> --mesa_file=<f> [options]
+    plot_equatorial_slices.py <root_dir> [options]
 
 Options:
-    --root_dir=<str>                    Path to root directory where slices/ folder is [default: ./]
     --data_dir=<dir>                    Name of data handler directory [default: slices]
     --fig_name=<fig_name>               Name of figure output directory & base name of saved figures [default: snapshots_equatorial]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
@@ -23,7 +22,7 @@ args = docopt(__doc__)
 from plotpal.slices import SlicePlotter
 
 # Read in master output directory
-root_dir    = args['--root_dir']
+root_dir    = args['<root_dir>']
 data_dir    = args['--data_dir']
 if root_dir is None:
     print('No dedalus output dir specified, exiting')
@@ -48,7 +47,7 @@ elif args['--mesa_file'] is not None:
         r_B, r_S1 = f['r_stitch'][()]
         r_outer = f['r_outer'][()]
 else:
-    r_B = 1.07
+    r_B = 1.05
     r_S1 = 2.98
     r_outer = 3.38
     print('WARNING: using default r_B = {}, r_S1 = {} and r_outer = {}'.format(r_B, r_S1, r_outer))
