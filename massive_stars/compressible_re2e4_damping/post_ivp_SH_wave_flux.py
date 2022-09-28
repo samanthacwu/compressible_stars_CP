@@ -7,7 +7,7 @@ Usage:
 Options:
     --data_dir=<dir>                    Name of data handler directory [default: SH_transform_wave_shells]
     --start_fig=<fig_start_num>         Number of first figure file [default: 1]
-    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 40]
+    --start_file=<file_start_num>       Number of Dedalus output file to start plotting at [default: 1]
     --n_files=<num_files>               Total number of files to plot
     --dpi=<dpi>                         Image pixel density [default: 200]
 
@@ -81,6 +81,8 @@ if not args['--no_ft']:
     transformer.write_transforms(min_freq=np.sqrt(N2plateau_simunit)/(2*np.pi)/200)
 
 
+print('saving figures to {}'.format(transformer.out_dir))
+
 radii = []
 for f in transformer.fields:
     if res.match(f):
@@ -98,12 +100,13 @@ with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
                 radius = float(radius_str.replace('R', ''))*r_outer
             else:
                 radius = float(radius_str)
+            print('using radius {}'.format(radius))
 
             for k in FT_file.keys():
                 if 'r={}'.format(radius_str) in k:
                     if 'u_' in k:
                         print('ur key, {}, r={}'.format(k, radius_str))
-                        ur = FT_file[k][:,:,2,:]
+                        ur = FT_file[k][:,:,1,:] #num FT, freq, vec ind, ell, m
                     if 'enthalpy_fluc_' in k:
                         print('enthalpy key, {}, r={}'.format(k, radius_str))
                         p = FT_file[k][()] #has rho in it. Is (Cp/R) * P.
@@ -119,7 +122,7 @@ with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
 
                 # Sum over m's.
                 true_wl_chunks[j,:] = wave_luminosity_chunks[j,freq_chunks[j] >= 0]
-            wl_chunks = np.sum(true_wl_chunks, axis=3)
+            wl_chunks = np.sum(true_wl_chunks, axis=-1)
             print('saving wave luminosity at r = {}'.format(radius_str))
             lum_file['wave_luminosity(r={})'.format(radius_str)] = wl_chunks
             if i == 0:
@@ -141,14 +144,14 @@ with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_f
     good_ells = (ells >= fit_ell_range[0])*(ells <= fit_ell_range[1])
     for i in range(lum_file['wave_luminosity(r={})'.format(radius_str)][()].shape[0]):
         wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][i,:,:])
-        alpha = -10
+        alpha = -13/2
         beta = 4
         A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
         fit_A.append(A)
         fit_alpha.append(alpha)
         fit_beta.append(beta)
 wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
-wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{-10}\ell^4$'
+wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(alpha)+'}\ell^4$'
 
 print(fit_A)
 
@@ -160,7 +163,7 @@ for ell in range(11):
     with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_file:
         freqs = lum_file['freqs'][()]
         for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-1,:,ell])
+            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,:,ell])
             plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
     plt.loglog(freqs, wave_luminosity_power(freqs, ell), c='k', label=wave_luminosity_str)
     plt.legend(loc='best')
@@ -183,7 +186,7 @@ for f in freqs_for_dfdell:
         ells = lum_file['ells'][()].ravel()
         f_ind = np.argmin(np.abs(freqs - f))
         for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-1,f_ind,:])
+            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,f_ind,:])
             plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
         plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')
