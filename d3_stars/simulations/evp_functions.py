@@ -665,7 +665,7 @@ class StellarEVP():
             #Surface entropy perturbations
             for j, bn in enumerate(self.bases_keys):
                 self.namespace['s1_{}'.format(bn)]['g'] = ef_s1_pieces[j]['g']
-            s1_surf_vals = s1_surf.evaluate()['g']
+            s1_surf_vals = s1_surf.evaluate()['g'][scalar_slices]
             s1_amplitudes.append(s1_surf_vals)
 
         r = []
