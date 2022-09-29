@@ -75,7 +75,7 @@ if not os.path.exists(full_out_dir):
 #        break
 
 freqs = np.logspace(-3, 0, 1000)
-wave_luminosity_power = lambda f, ell: 7.5e-37 * f**(-10)*ell**(4)
+wave_luminosity_power = lambda f, ell: 3.0e-30 * f**(-13/2)*ell**(4)
 
 
         
@@ -111,7 +111,7 @@ for ell in range(64):
         plt.title('ell={}'.format(ell))
         plt.xlabel('freqs (sim units)')
         plt.ylabel(r'power')
-        plt.ylim(1e-30, 1e-7)
+        plt.ylim(1e-30, 1e-10)
         plt.xlim(3e-3, 1.4)
         fig.savefig('{}/s1_simulated_freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
         plt.clf()
@@ -127,7 +127,7 @@ plt.loglog(freqs, sum_ells_power, c='k')
 plt.title('summed over ells')
 plt.xlabel('freqs (sim units)')
 plt.ylabel(r'power')
-plt.ylim(1e-30, 1e-7)
+plt.ylim(1e-30, 1e-10)
 plt.xlim(3e-3, 1.4)
 fig.savefig('{}/s1_simulated_freq_spectrum_summed_ells.png'.format(full_out_dir), dpi=300, bbox_inches='tight')
 

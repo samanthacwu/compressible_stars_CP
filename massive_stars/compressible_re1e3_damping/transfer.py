@@ -103,6 +103,7 @@ for ell in ell_list:
             values_inv_day = f['good_evalues_inv_day'][()]
             velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
+            enth_amplitudes = f['enth_amplitudes'][()].squeeze()
             depths = f['depths'][()]
 
             rs = []
@@ -121,6 +122,7 @@ for ell in ell_list:
 
         values = values[good]
         s1_amplitudes = s1_amplitudes[good]
+        enth_amplitudes = enth_amplitudes[good]
         velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
         print('good values: {}'.format(values))
@@ -139,9 +141,9 @@ for ell in ell_list:
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
 #        r_range = np.linspace(r.min(), r.max(), num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
-        print(s1_amplitudes, s1_amplitudes.shape)
 
         T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range, ell)
+#        T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range, ell)
 
         peaks = 1
         while peaks > 0:
