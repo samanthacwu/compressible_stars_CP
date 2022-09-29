@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 from dedalus.core import subsystems
 from dedalus.tools.array import csr_matvec, scipy_sparse_eigs
-from .compressible_functions import make_bases, make_fields, fill_structure, get_compressible_variables, set_compressible_problem
+from .compressible_functions import SphericalCompressibleProblem
 from .parser import name_star
 import d3_stars.defaults.config as config
 
@@ -366,25 +366,35 @@ class StellarEVP():
         #Create bases
         self.stitch_radii = r_stitch
         radius = self.r_outer
-        self.coords, self.dist, bases, self.bases_keys = make_bases(resolutions, self.stitch_radii, radius, dealias=dealias, dtype=np.complex128, mesh=None)
 
-
-        self.namespace = make_fields(bases, self.coords, self.dist, sponge=sponge, do_rotation=do_rotation)
+        self.compressible = SphericalCompressibleProblem(resolutions, self.stitch_radii, radius, self.ncc_file, dealias=dealias, dtype=np.complex128, mesh=None, sponge=sponge, do_rotation=do_rotation)
+        self.compressible.make_fields()
 
         r_scale = config.numerics['N_dealias']/dealias[0]
         if is_hires:
             r_scale /= hires_factor
-        self.namespace, timescales = fill_structure(bases, self.dist, self.namespace, self.ncc_file, self.r_outer, Pe, 
-                                                sponge=sponge, do_rotation=do_rotation, scales=(1,1,r_scale))
+        variables, timescales = self.compressible.fill_structure(scales=(1,1,r_scale))
+        self.compressible.set_substitutions(EVP=True)
 
-        self.namespace.update(locals())
+        variables = self.compressible.namespace
+        self.coords, self.dist, self.bases, self.bases_keys = self.compressible.coords, self.compressible.dist, self.compressible.bases, self.compressible.bases_keys
+
+
+        if sponge:
+            for i, bn in enumerate(self.compressible.bases.keys()):
+                variables['sponge_{}'.format(bn)]['g'] *= tau_factor
+        t_kep, t_heat, t_rot = timescales
+        logger.info('timescales -- t_kep {}, t_heat {}, t_rot {}'.format(t_kep, t_heat, t_rot))
+
+
+        # Problem
+        self.namespace = variables
         omega = self.dist.Field(name='omega')
         self.namespace['dt'] = lambda A: -1j * omega * A
-
-        prob_variables = get_compressible_variables(bases, self.bases_keys, self.namespace)
-
+        self.namespace.update(locals())
+        prob_variables = self.compressible.get_compressible_variables()
         self.problem = d3.EVP(prob_variables, eigenvalue=omega, namespace=self.namespace)
-        self.problem = set_compressible_problem(self.problem, bases, self.bases_keys, stitch_radii=self.stitch_radii)
+        self.problem = self.compressible.set_compressible_problem(self.problem)
         logger.info('problem built')
 
         logger.info('using ncc cutoff {:.2e}'.format(ncc_cutoff))
@@ -394,7 +404,6 @@ class StellarEVP():
         if self.do_hires and not is_hires:
             self.hires_EVP = StellarEVP(is_hires=True)
 
-        self.bases = bases
         self.hires_factor = hires_factor
 
     def solve(self, ell):
