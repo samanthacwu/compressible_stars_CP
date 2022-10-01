@@ -100,9 +100,7 @@ for ell in range(64):
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
         kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
         ur2 = lambda f: np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau
-        surface_s1_power = lambda f: transfer_interp(f)**2 * ur2(f)
-#        surface_s1_power = lambda f: np.exp(-depthfunc(f))*transfer_interp(f)**2 * ur2(f) #TODO: fix optical depth?
-        print(depthfunc(freqs), smooth_oms, smooth_depths)
+        surface_s1_power = lambda f: np.exp(-depthfunc(f))*transfer_interp(f)**2 * ur2(f) #TODO: fix optical depth?
 
 
         powers.append(surface_s1_power(freqs))

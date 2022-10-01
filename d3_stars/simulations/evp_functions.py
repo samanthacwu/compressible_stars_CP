@@ -262,9 +262,8 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
             #Numpy integrate
             opt_depth = np.trapz(depth_integrand, x=r_mesa)
             depths.append(opt_depth)
-
-
-        smooth_oms = np.logspace(np.log10(good_omegas.min())-1, np.log10(good_omegas.max())+1, 100)
+        
+        smooth_oms = np.logspace(np.log10(np.abs(good_omegas).min())-1, np.log10(good_omegas.max())+1, 100)
         smooth_depths = np.zeros_like(smooth_oms)
         # from Shiode et al 2013 eqns 4-8 
         for i, om in enumerate(smooth_oms):
@@ -589,6 +588,7 @@ class StellarEVP():
         integ_energy_op = None
         rho_fields = []
         s1_surf = None
+        enth_fluc_surf = None
         for i, bn in enumerate(self.bases_keys):
 #            p, u = [self.namespace['{}_{}'.format(f, bn)] for f in ['p', 'u']]
 #            self.namespace['pressure_{}'.format(bn)] = p + self.namespace['pomega_tilde_{}'.format(bn)]
@@ -602,10 +602,12 @@ class StellarEVP():
 
             if i == len(self.bases_keys) - 1:
                 s1_surf = self.namespace['s1_{}'.format(bn)](r=self.r_outer)
+                enth_fluc_surf = self.namespace['enthalpy_fluc_{}'.format(bn)](r=self.r_outer)
         rho_full = np.concatenate(rho_fields, axis=-1)
 
         integ_energies = np.zeros_like(self.solver.eigenvalues, dtype=np.float64) 
         s1_amplitudes = []
+        enth_amplitudes = []
         velocity_eigenfunctions = []
         velocity_eigenfunctions_pieces = []
         entropy_eigenfunctions = []
@@ -666,7 +668,9 @@ class StellarEVP():
             for j, bn in enumerate(self.bases_keys):
                 self.namespace['s1_{}'.format(bn)]['g'] = ef_s1_pieces[j]['g']
             s1_surf_vals = s1_surf.evaluate()['g'][scalar_slices]
+            enth_fluc_surf_vals = enth_fluc_surf.evaluate()['g'][scalar_slices]
             s1_amplitudes.append(np.copy(s1_surf_vals))
+            enth_amplitudes.append(np.copy(s1_surf_vals))
 
         r = []
         bruntN2 = []
@@ -682,6 +686,7 @@ class StellarEVP():
             f['good_evalues_inv_day'] = self.solver.eigenvalues/self.tau_day
             f['good_omegas_inv_day']  = self.solver.eigenvalues.real/self.tau_day
             f['s1_amplitudes']  = s1_amplitudes
+            f['enth_amplitudes']  = enth_amplitudes
             f['integ_energies'] = integ_energies
             f['velocity_eigenfunctions'] = np.array(velocity_eigenfunctions)
             f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
