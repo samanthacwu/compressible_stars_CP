@@ -127,8 +127,8 @@ for ell in ell_list:
         velocity_duals = velocity_duals[good]
         print('good values: {}'.format(values))
 
-        om0 = values.real[-1]
-        om1 = values.real[0]*1.1
+        om0 = np.min(np.abs(values.real))
+        om1 = np.max(values.real)*1.1
         if om0 < xmin: xmin = om0
         if om1 > xmax: xmax = om1
         if j == 0:
