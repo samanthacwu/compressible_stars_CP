@@ -17,6 +17,8 @@ Options:
     --radius=<r>                        Radius at which the SWSH basis lives [default: 2.59]
 
     --no_ft                             Do the base fourier transforms
+
+    --no_minf                           If flagged, do one FT rather than STFT
 """
 import re
 from collections import OrderedDict
@@ -78,7 +80,10 @@ with h5py.File(star_file, 'r') as f:
 # Create Plotter object, tell it which fields to plot
 transformer = HarmonicTimeToFreq(root_dir, data_dir, start_file=start_file, n_files=n_files)
 if not args['--no_ft']:
-    transformer.write_transforms(min_freq=np.sqrt(N2plateau_simunit)/(2*np.pi)/200)
+    if args['--no_minf']:
+        transformer.write_transforms()
+    else:
+        transformer.write_transforms(min_freq=np.sqrt(N2plateau_simunit)/(2*np.pi)/200)
 
 
 print('saving figures to {}'.format(transformer.out_dir))
@@ -91,11 +96,16 @@ for f in transformer.fields:
             radii.append(radius_str)
 
 
-#Calculate wave luminosities
+##Calculate wave luminosities
 with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
     with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'w') as lum_file:
-        freq_chunks = FT_file['freqs_chunks'][()]
+
         for i, radius_str in enumerate(radii):
+            if 'freqs_chunks' in FT_file.keys():
+                freqs = FT_file['freqs_chunks'][()]
+            else:
+                freqs = FT_file['freqs'][()]
+
             if 'R' in radius_str:
                 radius = float(radius_str.replace('R', ''))*r_outer
             else:
@@ -106,34 +116,44 @@ with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
                 if 'r={}'.format(radius_str) in k:
                     if 'u_' in k:
                         print('ur key, {}, r={}'.format(k, radius_str))
-                        ur = FT_file[k][:,:,1,:] #num FT, freq, vec ind, ell, m
+                        if len(freqs.shape) == 1:
+                            ur = FT_file[k][:,1,:] #freq, vec ind, ell, m
+                        else:
+                            ur = FT_file[k][:,:,1,:] #num FT, freq, vec ind, ell, m
                     if 'enthalpy_fluc_' in k:
                         print('enthalpy key, {}, r={}'.format(k, radius_str))
                         p = FT_file[k][()] #has rho in it. Is (Cp/R) * P.
             wave_luminosity_chunks = 4*np.pi*radius**2*(ur*np.conj(p)).real
+            if len(freqs.shape) == 1:
+                freqs = np.expand_dims(freqs, 0)
+                wave_luminosity_chunks = np.expand_dims(wave_luminosity_chunks, 0)
             true_shape = list(wave_luminosity_chunks.shape)
-            true_shape[1] = np.sum(freq_chunks[0,:] >= 0)
+            true_shape[1] = np.sum(freqs[0,:] >= 0)
+            freq_shape = freqs.shape
             true_wl_chunks = np.zeros(true_shape)
             # Collapse negative frequencies
-            for j in range(freq_chunks.shape[0]):
-                for f in np.unique(freq_chunks[j]):
+            for j in range(freq_shape[0]):
+                for f in np.unique(freqs[j]):
                     if f < 0:
-                        wave_luminosity_chunks[j,freq_chunks[j] == -f] += wave_luminosity_chunks[j,freq_chunks[j] == f]
+                        wave_luminosity_chunks[j,freqs[j] == -f] += wave_luminosity_chunks[j,freqs[j] == f]
 
                 # Sum over m's.
-                true_wl_chunks[j,:] = wave_luminosity_chunks[j,freq_chunks[j] >= 0]
+                true_wl_chunks[j,:] = wave_luminosity_chunks[j,freqs[j] >= 0]
             wl_chunks = np.sum(true_wl_chunks, axis=-1)
             print('saving wave luminosity at r = {}'.format(radius_str))
             lum_file['wave_luminosity(r={})'.format(radius_str)] = wl_chunks
             if i == 0:
-                lum_file['freqs'] = freq_chunks[0,freq_chunks[0,:]>=0]
+                lum_file['freqs'] = freqs[0,freqs[0,:]>=0]
                 lum_file['ells'] = FT_file['ells'][()]
+
         
 #Fit A f ^ alpha ell ^ beta
 fit_freq_range = (3e-2, 1e-1)
-fit_ell_range = (1, 10)
+fit_ell_range = (1, 4)
 radius_str = radii[1]
 fig = plt.figure()
+possible_alphas = [-13/2,]
+possible_betas = [3, 4]
 fit_A = []
 fit_alpha = []
 fit_beta  = []
@@ -144,16 +164,27 @@ with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_f
     good_ells = (ells >= fit_ell_range[0])*(ells <= fit_ell_range[1])
     for i in range(lum_file['wave_luminosity(r={})'.format(radius_str)][()].shape[0]):
         wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][i,:,:])
-        alpha = -13/2
-        beta = 4
-        A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
+        info = []
+        error = []
+        for j, alpha in enumerate(possible_alphas):
+            for k, beta in enumerate(possible_betas):
+                A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
+                fit = A * freqs[:,None]**alpha * ells[None,:]**beta
+                error.append(np.mean( np.abs(1 - (np.log10(fit) / np.log10(wave_luminosity))[good_freqs[:,None]*good_ells[None,:]])))
+                info.append((A, alpha, beta))
+        print(info, error)
+        A, alpha, beta = info[np.argmin(error)]
+
         fit_A.append(A)
         fit_alpha.append(alpha)
         fit_beta.append(beta)
 wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
-wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(alpha)+'}\ell^4$'
+wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(fit_alpha[-1])+'}\ell^{' + '{:.1f}'.format(fit_beta[-1]) + '}$'
 
-print(fit_A)
+print('fit_A', fit_A)
+print('fit_A frac', np.array(fit_A[1:])/np.array(fit_A[:-1]))
+print('fit_alpha', fit_alpha)
+print('fit_beta', fit_beta)
 
 
 #plot vs f at given ell
@@ -163,7 +194,10 @@ for ell in range(11):
     with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_file:
         freqs = lum_file['freqs'][()]
         for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,:,ell])
+            if not args['--no_minf']:
+                wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,:,ell])
+            else:
+                wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][0,:,ell])
             plt.loglog(freqs, wave_luminosity, label='r={}'.format(radius_str))
     plt.loglog(freqs, wave_luminosity_power(freqs, ell), c='k', label=wave_luminosity_str)
     plt.legend(loc='best')
@@ -186,7 +220,10 @@ for f in freqs_for_dfdell:
         ells = lum_file['ells'][()].ravel()
         f_ind = np.argmin(np.abs(freqs - f))
         for i, radius_str in enumerate(radii):
-            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,f_ind,:])
+            if not args['--no_minf']:
+                wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][-2,f_ind,:])
+            else:
+                wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][0,f_ind,:])
             plt.loglog(ells, wave_luminosity, label='r={}'.format(radius_str))
         plt.loglog(ells, wave_luminosity_power(f, ells), c='k', label=wave_luminosity_str)
         plt.legend(loc='best')

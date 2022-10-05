@@ -91,7 +91,7 @@ for f in transformer.fields:
             radii.append(radius_str)
 
 
-#Calculate wave luminosities
+##Calculate wave luminosities
 with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
     with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'w') as lum_file:
         freq_chunks = FT_file['freqs_chunks'][()]
@@ -131,9 +131,11 @@ with h5py.File('FT_SH_transform_wave_shells/transforms.h5', 'r') as FT_file:
         
 #Fit A f ^ alpha ell ^ beta
 fit_freq_range = (3e-2, 1e-1)
-fit_ell_range = (1, 10)
+fit_ell_range = (1, 4)
 radius_str = radii[1]
 fig = plt.figure()
+possible_alphas = [-13/2,]
+possible_betas = [3, 4]
 fit_A = []
 fit_alpha = []
 fit_beta  = []
@@ -144,16 +146,27 @@ with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_f
     good_ells = (ells >= fit_ell_range[0])*(ells <= fit_ell_range[1])
     for i in range(lum_file['wave_luminosity(r={})'.format(radius_str)][()].shape[0]):
         wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][i,:,:])
-        alpha = -13/2
-        beta = 4
-        A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
+        info = []
+        error = []
+        for j, alpha in enumerate(possible_alphas):
+            for k, beta in enumerate(possible_betas):
+                A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
+                fit = A * freqs[:,None]**alpha * ells[None,:]**beta
+                error.append(np.mean( np.abs(1 - (np.log10(fit) / np.log10(wave_luminosity))[good_freqs[:,None]*good_ells[None,:]])))
+                info.append((A, alpha, beta))
+        print(info, error)
+        A, alpha, beta = info[np.argmin(error)]
+
         fit_A.append(A)
         fit_alpha.append(alpha)
         fit_beta.append(beta)
 wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
-wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(alpha)+'}\ell^4$'
+wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(fit_alpha[-1])+'}\ell^{' + '{:.1f}'.format(fit_beta[-1]) + '}$'
 
-print(fit_A)
+print('fit_A', fit_A)
+print('fit_A frac', np.array(fit_A[1:])/np.array(fit_A[:-1]))
+print('fit_alpha', fit_alpha)
+print('fit_beta', fit_beta)
 
 
 #plot vs f at given ell
