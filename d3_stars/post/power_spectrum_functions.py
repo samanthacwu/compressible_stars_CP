@@ -5,6 +5,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
+from sys import stdout
 
 hann_power_normalizer = 8/3
 hann_amp_normalizer = 2
@@ -200,6 +201,7 @@ class HarmonicTimeToFreq:
     def write_transforms(self, min_freq=None):
         times = []
         print('getting times...')
+        stdout.flush()
         first = True
         while self.reader.writes_remain():
             dsets, ni = self.reader.get_dsets([], verbose=False)
@@ -215,53 +217,69 @@ class HarmonicTimeToFreq:
             wf['ells']  = ells
             wf['ms']  = ms
 
+
         for i, f in enumerate(self.fields):
             print('reading field {}'.format(f))
+            stdout.flush()
+            #Do one 'm' at a time for lighter memory usage.
+            for j, m in enumerate(ms.squeeze()):
 
-            print('filling datacube...')
-            writes = 0 
-            while self.reader.writes_remain():
-                dsets, ni = self.reader.get_dsets([], verbose=False)
-                rf = self.reader.current_file_handle
-                this_task = rf['tasks'][f][ni,:].squeeze()
-                if writes == 0:  
-                    if this_task.shape[0] == 3 and len(this_task.shape) == 3:
-                        #vector
-                        data_cube = np.zeros((times.shape[0], 3, ells.shape[1], ms.shape[2]), dtype=np.complex128)
+                print('loading m = {}...'.format(m))
+                stdout.flush()
+                writes = 0 
+                while self.reader.writes_remain():
+                    dsets, ni = self.reader.get_dsets([], verbose=False)
+                    rf = self.reader.current_file_handle
+                    this_task = rf['tasks'][f][ni,:].squeeze()
+                    if writes == 0:  
+                        if this_task.shape[0] == 3 and len(this_task.shape) == 3:
+                            #vector
+                            data_cube = np.zeros((times.shape[0], 3, ells.shape[1]), dtype=np.complex128)
+                        else:
+                            data_cube = np.zeros((times.shape[0], ells.shape[1]), dtype=np.complex128)
+                    if this_task.shape[0] == 3:
+                        data_cube[writes,:] = this_task[:,:,j]
                     else:
-                        data_cube = np.zeros((times.shape[0], ells.shape[1], ms.shape[2]), dtype=np.complex128)
-                data_cube[writes,:] = this_task
-                writes += 1
+                        data_cube[writes,:] = this_task[:,j]
+                    writes += 1
 
-            if min_freq is None:
-                FT = FourierTransformer(times, data_cube)
-                freqs, transform = FT.take_transform()
-                #Logic for a single ell,m
-                #        transform = np.zeros(data_cube.shape, dtype=np.complex128)
-                #        for ell in range(data_cube.shape[-2]):
-                #            for m in range(data_cube.shape[-1]):
-                #                if len(data_cube.shape) == 3:
-                #                    input_data = data_cube[:,ell,m]
-                #                    FT = FourierTransformer(times, input_data)
-                #                    freqs, transform[:,ell,m] = FT.take_transform()
-                #                else:
-                #                    input_data = data_cube[:,:,ell,m]
-                #                    FT = FourierTransformer(times, input_data)
-                #                    freqs, transform[:,:,ell,m] = FT.take_transform()
-
-            else:
-                FT = ShortTimeFourierTransformer(times, data_cube, min_freq)
-                freqs_chunks, transform_chunks = FT.take_transforms()
-
-            del data_cube
-            gc.collect()
-
-            with h5py.File('{}/transforms.h5'.format(self.out_dir), 'r+') as wf:
                 if min_freq is None:
-                    wf['{}_cft'.format(f)] = np.copy(transform)
-                    if i == 0:
-                        wf['freqs'] = np.copy(freqs)
+                    FT = FourierTransformer(times, data_cube)
+                    freqs, transform = FT.take_transform()
+                    #Logic for a single ell,m
+                    #        transform = np.zeros(data_cube.shape, dtype=np.complex128)
+                    #        for ell in range(data_cube.shape[-2]):
+                    #            for m in range(data_cube.shape[-1]):
+                    #                if len(data_cube.shape) == 3:
+                    #                    input_data = data_cube[:,ell,m]
+                    #                    FT = FourierTransformer(times, input_data)
+                    #                    freqs, transform[:,ell,m] = FT.take_transform()
+                    #                else:
+                    #                    input_data = data_cube[:,:,ell,m]
+                    #                    FT = FourierTransformer(times, input_data)
+                    #                    freqs, transform[:,:,ell,m] = FT.take_transform()
+
                 else:
-                    wf['{}_cft_chunks'.format(f)] = np.copy(transform_chunks)
-                    if i == 0:
-                        wf['freqs_chunks'] = np.copy(freqs_chunks)
+                    FT = ShortTimeFourierTransformer(times, data_cube, min_freq)
+                    freqs_chunks, transform_chunks = FT.take_transforms()
+
+                del data_cube
+                gc.collect()
+
+                with h5py.File('{}/transforms.h5'.format(self.out_dir), 'r+') as wf:
+                    if min_freq is None:
+                        if j == 0: #create field
+                            shape = transform.shape + (ms.shape[2],)
+                            wf.create_dataset(name='{}_cft'.format(f), shape=shape, maxshape=shape, dtype=transform.dtype)
+                        slices = tuple([slice(None) for sh in transform.shape] + [slice(j,j+1,1)])
+                        wf['{}_cft'.format(f)][slices] = np.expand_dims(np.copy(transform), axis=-1)
+                        if i == 0 and j == 0:
+                            wf['freqs'] = np.copy(freqs)
+                    else:
+                        if j == 0: #create field
+                            shape = transform.shape + (ms.shape[2],)
+                            wf.create_dataset(name='{}_cft_chunks'.format(f), shape=shape, maxshape=shape, dtype=transform.dtype)
+                        slices = tuple([slice(None) for sh in transform.shape] + [slice(j,j+1,1)])
+                        wf['{}_cft_chunks'.format(f)][slices] = np.expand_dims(np.copy(transform), axis=-1)
+                        if i == 0 and j == 0:
+                            wf['freqs_chunks'] = np.copy(freqs_chunks)
