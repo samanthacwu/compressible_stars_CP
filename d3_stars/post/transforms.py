@@ -20,6 +20,7 @@ class SHTransformer():
         dealias_tuple = (dealias, dealias)
         Lmax = resolution[1]-1
         sphere_area = 4*np.pi*radius**2
+        self.dealias = dealias
         
         dist = d3.Distributor((c,), mesh=None, comm=MPI.COMM_SELF, dtype=dtype)
         basis = d3.SphereBasis(c.S2coordsys, resolution, radius=radius, dtype=dtype, dealias=dealias_tuple)
@@ -58,6 +59,7 @@ class SHTransformer():
 
     def transform_scalar_field(self, grid_data, normalization=1/2):
         self.vector = False
+        self.scalar_field.change_scales(self.dealias)
         self.scalar_field['g'] = grid_data
         power_grid = self.power_scalar_op.evaluate()['g'].ravel()[0]
 
@@ -87,6 +89,8 @@ class SHTransformer():
 
     def transform_vector_field(self, grid_data, normalization=1/2):
         self.vector = True
+        self.vector_field.change_scales(self.dealias)
+        self.conj_vector_field.change_scales(self.dealias)
         self.vector_field['g'] = grid_data
         self.conj_vector_field['g'] = np.conj(self.vector_field['g'])
         power_grid = self.power_vector_op.evaluate()['g'].ravel()[0]
@@ -176,23 +180,13 @@ class DedalusShellSHTransformer():
 
                     outputs = OrderedDict()
                     for f in self.fields:
-                        vector = False
                         task_data = dsets[f][ni,:]
-                        size = task_data.size
-                        shape = list(task_data.squeeze().shape)
-                        if task_data.size == self.transformer.scalar_field['g'].size:
-                            shape[0] = self.transformer.ell_values.shape[0]
-                            shape[1] = self.transformer.m_values.shape[1]
-                        elif task_data.size == self.transformer.vector_field['g'].size:
-                            vector = True
-                            shape[1] = self.transformer.ell_values.shape[0]
-                            shape[2] = self.transformer.m_values.shape[1]
-                        if ni == 0:
-                            of.create_dataset(name='tasks/'+f, shape=[len(sim_times),]+shape, dtype=np.complex128)
-                        if vector:
+                        if len(task_data.squeeze().shape) == len(self.transformer.vector_field['g'].squeeze().shape):
                             out_field = self.transformer.transform_vector_field(task_data)
                         else:
                             out_field = self.transformer.transform_scalar_field(task_data)
+                        if ni == 0:
+                            of.create_dataset(name='tasks/'+f, shape=(len(sim_times),)+out_field.shape, dtype=np.complex128)
                         of['tasks/'+f][ni,:] =  np.copy(out_field)
 
 
