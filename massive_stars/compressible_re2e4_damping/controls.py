@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (512,512,64)
+star['nr'] = (512,512,128)
 
 #options for building the star
 star['smooth_h'] = True
@@ -53,7 +53,7 @@ dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1
 dynamics['CFL_max_r'] = 1
 
 #Stop conditions
-dynamics['wall_hours'] = 47 
+dynamics['wall_hours'] = 23.5 
 dynamics['buoy_end_time'] = 150
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor

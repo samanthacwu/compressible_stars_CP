@@ -11,7 +11,7 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (256,384,64)
+star['nr'] = (256,512,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -46,14 +46,14 @@ dynamics = OrderedDict()
 dynamics['ntheta'] = 256 
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
-dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_damping/final_checkpoint/final_checkpoint_s1.h5'
-#dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re4e3_damping/checkpoint/checkpoint_s3.h5'
+dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_waves/first_run/final_checkpoint/final_checkpoint_s1.h5'
+#dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_damping/final_checkpoint/final_checkpoint_s1.h5'
 
 #In nondimensional units
 dynamics['CFL_max_r'] = 1
 
 #Stop conditions
-dynamics['wall_hours'] = 119.5
+dynamics['wall_hours'] = 47.5
 dynamics['buoy_end_time'] = 1000
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor

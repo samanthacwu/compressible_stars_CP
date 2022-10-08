@@ -59,8 +59,9 @@ prof_tasks['fields'] = ['s1', 'KE_lum_r', 'enth_lum_r', 'visc_lum_r', 'cond_lum_
 handlers['profiles']['tasks'].append(prof_tasks)
 
 ### Checkpoints
-handlers['checkpoint']['max_writes'] = 1
-handlers['checkpoint']['dt_factor'] = 10
+handlers['checkpoint']['max_writes'] = 10
+handlers['checkpoint']['dt_factor'] = 1
+handlers['checkpoint']['parallel'] = 'virtual'
    
 ## Hi-cadence shells
 handlers['wave_shells']['max_writes'] = 500
