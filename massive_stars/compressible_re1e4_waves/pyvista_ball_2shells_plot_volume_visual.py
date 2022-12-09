@@ -111,16 +111,19 @@ if not plotter.idle:
     colorbar_dict=dict(lenmode='fraction', len=0.75, thickness=20)
     r_arrays = []
 
-    phi_mer1 = float(phi_vals[2])
-    theta_eq = float(np.pi/2)
-
 
     bs = {}
     first = True
     #Pyvista setup
     pl = pv.Plotter(off_screen=True, shape=(1,2))
 #        pl.camera.focal_point = (0, 0, 0)
-#        pl.camera.position = np.array((1, -1, 1))*3
+
+    view = 1
+    theta_eq = float(np.pi/2)
+    if view == 0:
+        phi_mer1 = float(phi_vals[2])
+    elif view == 1:
+        phi_mer1 = float(phi_vals[3])
 
     size=2000
     sargs = dict(
@@ -169,15 +172,27 @@ if not plotter.idle:
                 phi_vert_de, theta_vert_de, r_vert_de = build_spherical_vertices(phi_de, theta_de, r_de, 0, r_outer)
 
                 shell_frac = 1 
-                shell1_theta_pick = theta_vert >= np.pi/2
-                shell2_theta_pick = np.isfinite(theta_vert)
-                shell1_theta_pick_field = theta >= np.pi/2
-                shell2_theta_pick_field = np.isfinite(theta)
-                shell1_phi_pick = phi_vert <= np.pi*1.05
-                shell2_phi_pick = phi_vert > np.pi 
-                shell1_phi_pick_field = phi <= np.pi*1.05
-                shell2_phi_pick_field = phi > np.pi 
-                eq_phi_pick = phi_vert_de <= np.pi
+                if view == 0:
+                    shell1_theta_pick = theta_vert >= np.pi/2
+                    shell2_theta_pick = np.isfinite(theta_vert)
+                    shell1_theta_pick_field = theta >= np.pi/2
+                    shell2_theta_pick_field = np.isfinite(theta)
+                    shell1_phi_pick = phi_vert <= np.pi*1.05
+                    shell2_phi_pick = phi_vert > np.pi 
+                    shell1_phi_pick_field = phi <= np.pi*1.05
+                    shell2_phi_pick_field = phi > np.pi 
+                    eq_phi_pick = phi_vert_de <= np.pi
+                elif view == 1:
+                    shell1_theta_pick = theta_vert >= np.pi/2
+                    shell2_theta_pick = np.isfinite(theta_vert)
+                    shell1_theta_pick_field = theta >= np.pi/2
+                    shell2_theta_pick_field = np.isfinite(theta)
+                    shell1_phi_pick = (phi_vert <= np.pi*1.552)*(phi_vert > np.pi*0.5)
+                    shell2_phi_pick = np.logical_or(phi_vert < 0.5*np.pi, phi_vert > 1.5*np.pi)
+                    shell1_phi_pick_field = phi <= np.pi*1.05
+                    shell2_phi_pick_field = phi > np.pi 
+                    eq_phi_pick = (phi_vert_de <= 1.5*np.pi)*(phi_vert_de > 0.5*np.pi)
+
                 xo, yo, zo = spherical_to_cartesian(phi_vert[shell1_phi_pick], theta_vert[shell1_theta_pick], [shell_frac*r_outer])[:,:,:,0]
                 xo2, yo2, zo2 = spherical_to_cartesian(phi_vert[shell2_phi_pick], theta_vert[shell2_theta_pick], [shell_frac*r_outer])[:,:,:,0]
                 xeq, yeq, zeq = spherical_to_cartesian(phi_vert_de[eq_phi_pick], [theta_eq], r_vert_de)[:,:,0,:]
@@ -227,6 +242,8 @@ if not plotter.idle:
                 else:
                     r_outer = r_max
 
+            if view == 1:
+                pl.camera.position = np.array((-1, 1, 1))*r_outer*2.5
 
             #Get mean properties as f(radius) // Equatorial data
             mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
@@ -251,12 +268,21 @@ if not plotter.idle:
 
 
             #Get meridional slice data
-            mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[0])][ni] - mean_s1_B).squeeze()
-            mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[2])][ni] - mean_s1_B).squeeze()
-            mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[0])][ni] - mean_s1_S1).squeeze()
-            mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[2])][ni] - mean_s1_S1).squeeze()
-            mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[0])][ni] - mean_s1_S2).squeeze()
-            mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[2])][ni] - mean_s1_S2).squeeze()
+            if view == 0:
+                mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[0])][ni] - mean_s1_B).squeeze()
+                mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[2])][ni] - mean_s1_B).squeeze()
+                mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[0])][ni] - mean_s1_S1).squeeze()
+                mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[2])][ni] - mean_s1_S1).squeeze()
+                mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[0])][ni] - mean_s1_S2).squeeze()
+                mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[2])][ni] - mean_s1_S2).squeeze()
+            elif view == 1:
+                mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[1])][ni] - mean_s1_B).squeeze()
+                mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[3])][ni] - mean_s1_B).squeeze()
+                mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[1])][ni] - mean_s1_S1).squeeze()
+                mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[3])][ni] - mean_s1_S1).squeeze()
+                mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[1])][ni] - mean_s1_S2).squeeze()
+                mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[3])][ni] - mean_s1_S2).squeeze()
+
             #Calculate midpoints meridionally.
 
             mer_0_s1 = np.concatenate((mer_0_s1_B, mer_0_s1_S1, mer_0_s1_S2), axis=-1)/radial_scaling
@@ -277,7 +303,10 @@ if not plotter.idle:
             shell_s1 -= np.mean(shell_s1)
             shell_s1 /= np.std(shell_s1)
             s1_shell1_data['surfacecolor'] = np.pad(shell_s1[shell1_phi_pick_field,:][:,shell1_theta_pick_field], ((0,0), (0,1)), mode='edge')
-            s1_shell2_data['surfacecolor'] = np.pad(shell_s1[shell2_phi_pick_field,:][:,shell2_theta_pick_field], ((0,1), (0,1)), mode='edge')
+            if view == 0:
+                s1_shell2_data['surfacecolor'] = np.pad(shell_s1[shell2_phi_pick_field,:][:,shell2_theta_pick_field], ((0,1), (0,1)), mode='edge')
+            elif view == 1:
+                s1_shell2_data['surfacecolor'] = np.pad(shell_s1[shell2_phi_pick_field,:][:,shell2_theta_pick_field], ((1,1), (0,1)), mode='edge')
             print('past shell')
 
             if first: #static colorbar
