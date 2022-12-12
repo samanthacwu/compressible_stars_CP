@@ -118,12 +118,16 @@ if not plotter.idle:
     pl = pv.Plotter(off_screen=True, shape=(1,2))
 #        pl.camera.focal_point = (0, 0, 0)
 
-    view = 1
+    view = 3
     theta_eq = float(np.pi/2)
     if view == 0:
         phi_mer1 = float(phi_vals[2])
     elif view == 1:
         phi_mer1 = float(phi_vals[3])
+    elif view == 2:
+        phi_mer1 = float(phi_vals[0])
+    elif view == 3:
+        phi_mer1 = float(phi_vals[1])
 
     size=2000
     sargs = dict(
@@ -170,80 +174,70 @@ if not plotter.idle:
 
                 phi_vert, theta_vert, r_vert = build_spherical_vertices(phi, theta, r_de, 0, r_outer)
                 phi_vert_de, theta_vert_de, r_vert_de = build_spherical_vertices(phi_de, theta_de, r_de, 0, r_outer)
+                theta_mer = np.concatenate([-theta_de, theta_de[::-1]])
 
                 shell_frac = 1 
+                xo, yo, zo = spherical_to_cartesian(phi_vert, theta_vert, [shell_frac*r_outer])[:,:,:,0]
+                xeq, yeq, zeq = spherical_to_cartesian(phi_vert_de, [theta_eq], r_vert_de)[:,:,0,:]
+                x_mer, y_mer, z_mer = spherical_to_cartesian([phi_mer1,], theta_mer, r_vert_de)[:,0,:,:]
+
                 if view == 0:
-                    shell1_theta_pick = theta_vert >= np.pi/2
-                    shell2_theta_pick = np.isfinite(theta_vert)
-                    shell1_theta_pick_field = theta >= np.pi/2
-                    shell2_theta_pick_field = np.isfinite(theta)
-                    shell1_phi_pick = phi_vert <= np.pi*1.05
-                    shell2_phi_pick = phi_vert > np.pi 
-                    shell1_phi_pick_field = phi <= np.pi*1.05
-                    shell2_phi_pick_field = phi > np.pi 
-                    eq_phi_pick = phi_vert_de <= np.pi
+                    shell_pick = np.logical_or(zo <= 0, yo <= 0)
+                    eq_pick = yeq >= 0
+                    mer_pick = z_mer >= 0
                 elif view == 1:
-                    shell1_theta_pick = theta_vert >= np.pi/2
-                    shell2_theta_pick = np.isfinite(theta_vert)
-                    shell1_theta_pick_field = theta >= np.pi/2
-                    shell2_theta_pick_field = np.isfinite(theta)
-                    shell1_phi_pick = (phi_vert <= np.pi*1.552)*(phi_vert > np.pi*0.5)
-                    shell2_phi_pick = np.logical_or(phi_vert < 0.5*np.pi, phi_vert > 1.5*np.pi)
-                    shell1_phi_pick_field = phi <= np.pi*1.05
-                    shell2_phi_pick_field = phi > np.pi 
-                    eq_phi_pick = (phi_vert_de <= 1.5*np.pi)*(phi_vert_de > 0.5*np.pi)
+                    shell_pick = np.logical_or(zo <= 0, xo >= 0)
+                    eq_pick = xeq <= 0
+                    mer_pick = z_mer >= 0
+                elif view == 2:
+                    shell_pick = np.logical_or(zo <= 0, yo >= 0)
+                    eq_pick = yeq <= 0
+                    mer_pick = z_mer >= 0
+                elif view == 3:
+                    shell_pick = np.logical_or(zo <= 0, xo <= 0)
+                    eq_pick = xeq >= 0
+                    mer_pick = z_mer >= 0
 
-                xo, yo, zo = spherical_to_cartesian(phi_vert[shell1_phi_pick], theta_vert[shell1_theta_pick], [shell_frac*r_outer])[:,:,:,0]
-                xo2, yo2, zo2 = spherical_to_cartesian(phi_vert[shell2_phi_pick], theta_vert[shell2_theta_pick], [shell_frac*r_outer])[:,:,:,0]
-                xeq, yeq, zeq = spherical_to_cartesian(phi_vert_de[eq_phi_pick], [theta_eq], r_vert_de)[:,:,0,:]
-
-
-                theta_mer = np.concatenate([-theta_de, theta_de[::-1]])
-                mer_theta_pick = np.abs(theta_mer) <= np.pi
-                mer_theta_pick = np.abs(theta_mer) <= np.pi
-                x_mer, y_mer, z_mer = spherical_to_cartesian([phi_mer1,], theta_mer[mer_theta_pick], r_vert_de)[:,0,:,:]
 
                 s1_mer_data = OrderedDict()
-                s1_shell1_data = OrderedDict()
-                s1_shell2_data = OrderedDict()
+                s1_shell_data = OrderedDict()
                 s1_eq_data = OrderedDict()
                 
-                s1_shell1_data['shell1_theta_pick_field'] = shell1_theta_pick_field
-                s1_shell1_data['shell1_phi_pick_field'] = shell1_phi_pick_field
-                s1_shell2_data['shell2_theta_pick_field'] = shell2_theta_pick_field
-                s1_shell2_data['shell2_phi_pick_field'] = shell2_phi_pick_field
-                s1_eq_data['eq_phi_pick'] = eq_phi_pick
+                s1_shell_data['pick'] = shell_pick
+                s1_eq_data['pick'] = eq_pick
+                s1_mer_data['pick'] = mer_pick
 
                 s1_mer_data['x'] = x_mer
                 s1_mer_data['y'] = y_mer
                 s1_mer_data['z'] = z_mer
 
-                s1_shell1_data['x'] = xo
-                s1_shell1_data['y'] = yo
-                s1_shell1_data['z'] = zo
-                s1_shell2_data['x'] = xo2
-                s1_shell2_data['y'] = yo2
-                s1_shell2_data['z'] = zo2
+                s1_shell_data['x'] = xo
+                s1_shell_data['y'] = yo
+                s1_shell_data['z'] = zo
 
                 #aim for a cutout where x > 0.
                 s1_eq_data['x'] = xeq
                 s1_eq_data['y'] = yeq
                 s1_eq_data['z'] = zeq
             else:
-                s1_shell1_data, s1_shell2_data, s1_mer_data, s1_eq_data = data_dicts[ind]
+                s1_shell_data, s1_mer_data, s1_eq_data = data_dicts[ind]
 
-                shell1_theta_pick_field = s1_shell1_data['shell1_theta_pick_field']
-                shell1_phi_pick_field = s1_shell1_data['shell1_phi_pick_field']
-                shell2_theta_pick_field = s1_shell2_data['shell2_theta_pick_field']
-                shell2_phi_pick_field = s1_shell2_data['shell2_phi_pick_field']
-                eq_phi_pick = s1_eq_data['eq_phi_pick']
+                shell_pick = s1_shell_data['pick']
+                eq_pick = s1_eq_data['pick']
+                mer_pick = s1_mer_data['pick']
                 if r_max is None:
                     r_outer = r_de_orig.max()
                 else:
                     r_outer = r_max
 
-            if view == 1:
+            if view == 0:
+                pl.camera.position = np.array((1, 1, 1))*r_outer*2.5
+            elif view == 1:
                 pl.camera.position = np.array((-1, 1, 1))*r_outer*2.5
+            elif view == 2:
+                pl.camera.position = np.array((-1, -1, 1))*r_outer*2.5
+            elif view == 3:
+                pl.camera.position = np.array((1, -1, 1))*r_outer*2.5
 
             #Get mean properties as f(radius) // Equatorial data
             mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
@@ -263,25 +257,31 @@ if not plotter.idle:
             scaling_smoother = mean_ball + (scaling_bound - mean_ball)*indx/N
             radial_scaling[:N] = scaling_smoother
             eq_field_s1 /= radial_scaling
-            s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')[eq_phi_pick,:]
+            s1_eq_data['surfacecolor'] = np.pad(eq_field_s1.squeeze()[:, r_de_orig <= r_outer], ( (1, 0), (1, 0) ), mode='edge')
             print('past equator')
 
 
             #Get meridional slice data
             if view == 0:
-                mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[0])][ni] - mean_s1_B).squeeze()
-                mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[2])][ni] - mean_s1_B).squeeze()
-                mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[0])][ni] - mean_s1_S1).squeeze()
-                mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[2])][ni] - mean_s1_S1).squeeze()
-                mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[0])][ni] - mean_s1_S2).squeeze()
-                mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[2])][ni] - mean_s1_S2).squeeze()
+                mer_0_ind = 0
+                mer_1_ind = 2
             elif view == 1:
-                mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[1])][ni] - mean_s1_B).squeeze()
-                mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[3])][ni] - mean_s1_B).squeeze()
-                mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[1])][ni] - mean_s1_S1).squeeze()
-                mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[3])][ni] - mean_s1_S1).squeeze()
-                mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[1])][ni] - mean_s1_S2).squeeze()
-                mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[3])][ni] - mean_s1_S2).squeeze()
+                mer_0_ind = 1
+                mer_1_ind = 3
+            elif view == 2:
+                mer_0_ind = 2
+                mer_1_ind = 0
+            elif view == 3:
+                mer_0_ind = 3
+                mer_1_ind = 1
+
+            mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[mer_0_ind])][ni] - mean_s1_B).squeeze()
+            mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[mer_1_ind])][ni] - mean_s1_B).squeeze()
+            mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[mer_0_ind])][ni] - mean_s1_S1).squeeze()
+            mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[mer_1_ind])][ni] - mean_s1_S1).squeeze()
+            mer_0_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[mer_0_ind])][ni] - mean_s1_S2).squeeze()
+            mer_1_s1_S2 = (dsets['meridian(s1_S2,phi={})'.format(phi_vals[mer_1_ind])][ni] - mean_s1_S2).squeeze()
+
 
             #Calculate midpoints meridionally.
 
@@ -294,7 +294,7 @@ if not plotter.idle:
             #go from theta = pi -> 0 on RHS slice, then 0 -> pi on LHS slice.
             mer_s1 = np.concatenate( (mer_0_s1, mer_1_s1[::-1,:]), axis=0)
             mer_s1 = np.pad(mer_s1, ((0, 0), (0, 1)), mode='edge')
-            s1_mer_data['surfacecolor'] = mer_s1[mer_theta_pick,:]
+            s1_mer_data['surfacecolor'] = mer_s1
             print('past meridian')
 
             #Get shell slice data
@@ -302,11 +302,7 @@ if not plotter.idle:
             shell_s1 = s1_S_r095R.squeeze()
             shell_s1 -= np.mean(shell_s1)
             shell_s1 /= np.std(shell_s1)
-            s1_shell1_data['surfacecolor'] = np.pad(shell_s1[shell1_phi_pick_field,:][:,shell1_theta_pick_field], ((0,0), (0,1)), mode='edge')
-            if view == 0:
-                s1_shell2_data['surfacecolor'] = np.pad(shell_s1[shell2_phi_pick_field,:][:,shell2_theta_pick_field], ((0,1), (0,1)), mode='edge')
-            elif view == 1:
-                s1_shell2_data['surfacecolor'] = np.pad(shell_s1[shell2_phi_pick_field,:][:,shell2_theta_pick_field], ((1,1), (0,1)), mode='edge')
+            s1_shell_data['surfacecolor'] = np.pad(shell_s1, ((0,1), (0,1)), mode='edge')
             print('past shell')
 
             if first: #static colorbar
@@ -315,31 +311,7 @@ if not plotter.idle:
                 cmap = matplotlib.cm.get_cmap('RdBu_r')
                 norm = matplotlib.colors.Normalize(vmin=-minmax_s1[0], vmax=minmax_s1[0])
 
-                data_dicts.append([s1_shell1_data, s1_shell2_data, s1_mer_data, s1_eq_data])
-    #        data_dicts = [s1_mer_data, s1_eq_data, s1_shell2_data, s1_shell1_data]
-    #        data_dicts = [s1_eq_data]
-            
-    #        for i, d in enumerate(data_dicts):
-    #            print('plotting data {}'.format(i))
-    #            x = d['x']
-    #            y = d['y']
-    #            z = d['z']
-    #            sfc = cmap(norm(d['surfacecolor']))
-    #            surf = ax.plot_surface(x, y, z, facecolors=sfc, cstride=1, rstride=1, linewidth=0, antialiased=False, shade=False)
-    #            d['surf'] = surf
-    #
-    #            if first:
-    #                cbar = matplotlib.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='horizontal', format=FormatStrFormatter('%.1f'))
-    #                cbar.set_label('normalized s1' + ', t = {:.3e}'.format(time_data['sim_time'][ni]))
-    #            ax.view_init(azim=125, elev=25)
-    #            ax.set_xlim(-0.7*r_outer, 0.7*r_outer)
-    #            ax.set_ylim(-0.7*r_outer, 0.7*r_outer)
-    #            ax.set_zlim(-0.7*r_outer, 0.7*r_outer)
-    #            ax.axis('off')
-    #        fig.savefig('{:s}/{:s}_{:06d}.png'.format(plotter.out_dir, fig_name, time_data['write_number'][ni]), dpi=200, bbox_inches='tight')
-    #
-    #        gc.collect()
-    #        ax.clear()
+                data_dicts.append([s1_shell_data, s1_mer_data, s1_eq_data])
 
             for i, d in enumerate(data_dicts[ind]):
                 print('plotting data {}'.format(i))
@@ -347,13 +319,17 @@ if not plotter.idle:
                     x = d['x']
                     y = d['y']
                     z = d['z']
-                    print(x.shape, d['surfacecolor'].shape)
+                    print(x.shape, d['surfacecolor'].shape, d['pick'].shape)
                     grid = pv.StructuredGrid(x, y, z)
                     grid['normalized s1'] = d['surfacecolor'].flatten(order="F")
+                    grid['mask'] = np.array(d['pick'], int).flatten(order="F")
+                    clipped = grid.clip_scalar('mask', value = 0.5, invert=False)
                     d['grid'] = grid
-                    pl.add_mesh(grid, cmap="RdBu_r", scalar_bar_args=sargs, clim=[-minmax_s1[0], minmax_s1[0]])
+                    d['clipped'] = clipped
+                    pl.add_mesh(clipped, scalars="normalized s1", cmap="RdBu_r", scalar_bar_args=sargs, clim=[-minmax_s1[0], minmax_s1[0]])
                 else:
                     d['grid']['normalized s1'] = d['surfacecolor'].flatten(order="F")
+                    d['clipped']['normalized s1'] = d['grid'].clip_scalar('mask', value = 0.5, invert=False)['normalized s1']
 
             if not first:
                 pl.update(force_redraw=True)
