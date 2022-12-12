@@ -230,14 +230,15 @@ if not plotter.idle:
                 else:
                     r_outer = r_max
 
+            camera_distance = r_outer*3
             if view == 0:
-                pl.camera.position = np.array((1, 1, 1))*r_outer*2.5
+                pl.camera.position = np.array((1, 1, 1))*camera_distance
             elif view == 1:
-                pl.camera.position = np.array((-1, 1, 1))*r_outer*2.5
+                pl.camera.position = np.array((-1, 1, 1))*camera_distance
             elif view == 2:
-                pl.camera.position = np.array((-1, -1, 1))*r_outer*2.5
+                pl.camera.position = np.array((-1, -1, 1))*camera_distance
             elif view == 3:
-                pl.camera.position = np.array((1, -1, 1))*r_outer*2.5
+                pl.camera.position = np.array((1, -1, 1))*camera_distance
 
             #Get mean properties as f(radius) // Equatorial data
             mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
