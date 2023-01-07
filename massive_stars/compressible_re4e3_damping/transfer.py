@@ -128,7 +128,7 @@ for ell in ell_list:
         print('depths: {}'.format(depths[good]))
 
         om0 = np.min(np.abs(values.real))
-        om1 = np.max(values.real)*1.1
+        om1 = np.max(values.real)*5
         if om0 < xmin: xmin = om0
         if om1 > xmax: xmax = om1
         if j == 0:

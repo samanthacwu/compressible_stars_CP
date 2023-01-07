@@ -110,6 +110,7 @@ t_freqs = np.logspace(np.log10(freqs.min()), np.log10(freqs.max()), 100000)
 
         
 powers = []
+ell_vals = []
 fig = plt.figure()
 for ell in range(64):
     if ell == 0: continue
@@ -123,14 +124,14 @@ for ell in range(64):
         with h5py.File('eigenvalues/transfer_ell{:03d}_eigenvalues.h5'.format(ell), 'r') as ef:
             transfer_func = ef['transfer'][()]
             transfer_freq = ef['om'][()]/(2*np.pi)
-            transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func), bounds_error=False, fill_value=0)(np.log10(f))
+            transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func), bounds_error=False, fill_value=np.nan)(np.log10(f))
 
         wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
         kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
         ur2 = lambda f: (2*np.pi*f) * (R_gas / Cp) * np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau #TODO: fix the factor of f at the beginning.
-        fudge = 4
+        fudge = 1
         surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
 
 
@@ -147,15 +148,18 @@ for ell in range(64):
         plt.xlim(3e-3, 1.4)
         fig.savefig('{}/s1_simulated_freq_spectrum_ell{}.png'.format(full_out_dir, ell), dpi=300, bbox_inches='tight')
         plt.clf()
+        ell_vals.append(ell)
     except:
         print("no eigenvalues for ell = {}".format(ell))
         
-
+ell_vals = np.array(ell_vals)
 powers = np.array(powers)
 print(powers.shape)
 sum_ells_power = np.sum(powers, axis=0)
-plt.loglog(t_freqs, sum_ells_power, c='k')
-#    plt.legend(loc='best')
+sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None], axis=0)
+plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=0.5)
+plt.loglog(t_freqs, sum_ells_hemisphere_power, c='orange', label=r'$\sum_{\ell} \frac{P_\ell}{\ell}$', lw=0.5)
+plt.legend(loc='best')
 plt.title('summed over ells')
 plt.xlabel('freqs (sim units)')
 plt.ylabel(r'power')
