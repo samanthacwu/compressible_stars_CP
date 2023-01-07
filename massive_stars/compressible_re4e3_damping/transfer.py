@@ -27,7 +27,6 @@ dealias = 1
 
 with h5py.File(out_file, 'r') as f:
     tau_s = f['tau_nd'][()]
-    print(tau_s)
     tau = tau_s/(60*60*24)
     rs = []
     rhos = []
@@ -82,7 +81,6 @@ def refine_peaks(om, T, *args):
 
 
 ell_list = np.arange(1, Lmax+1)
-print(ell_list)
 
 dir = 'eigenvalues'
 
@@ -95,7 +93,7 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 1, 0.1, 0.05, 0.01]
+    depth_list = [10, 0.1, 0.05, 0.01]
     for j, d_filter in enumerate(depth_list):
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
@@ -105,7 +103,6 @@ for ell in ell_list:
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
             enth_amplitudes = f['enth_amplitudes'][()].squeeze()
             depths = f['depths'][()]
-            print('depths', depths)
 
             rs = []
             for bk in ['B', 'S1', 'S2']:
@@ -121,12 +118,14 @@ for ell in ell_list:
 
         good = depths < d_filter
 
-        values = values[good]
+        mingood = np.max(np.abs(values[good].real))
+        values = values[good*(np.abs(values.real) < mingood * 10)]
         s1_amplitudes = s1_amplitudes[good]
         enth_amplitudes = enth_amplitudes[good]
         velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
         print('good values: {}'.format(values))
+        print('depths: {}'.format(depths[good]))
 
         om0 = np.min(np.abs(values.real))
         om1 = np.max(values.real)*1.1
@@ -134,7 +133,7 @@ for ell in ell_list:
         if om1 > xmax: xmax = om1
         if j == 0:
             om0/= 10**(1)
-            print(values.real[-1], om0)
+            stitch_om = np.abs(values[depths[good] <= 2][-1].real)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         r0 = 1.02
@@ -168,12 +167,17 @@ for ell in ell_list:
             vals.append(f(omega))
         good_T[i] = np.min(vals)
 
+    #Do WKB at low frequency
+    good_T[good_om <= stitch_om] *= np.exp(-depthfunc(good_om[good_om <= stitch_om]) + depthfunc(stitch_om))
+#    plt.loglog(good_om/(2*np.pi), good_T)
+#    plt.axvline(stitch_om/(2*np.pi))
+#    plt.show()
+
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = good_om
         f['om_inv_day'] = good_om / tau
         f['transfer'] = good_T
 
-#    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
 #    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 #    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 
