@@ -242,19 +242,26 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
                                        bounds_error=False, fill_value='extrapolate')(r_mesa_nd[good_r])
         chi_rad *= (L_nd**2 / tau_nd)
 
-        # from Shiode et al 2013 eqns 4-8 
         for om in solver.eigenvalues.real:
-            dim_om = (om.real/tau_nd)
+            lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
+            dim_om = np.abs(om.real/tau_nd)
+            wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
+            depth_integrand = np.zeros_like(lamb_freq)
+
+            # from Shiode et al 2013 eqns 4-8 
+            # This is the low-diffusion limit
             Lambda = np.sqrt(ell*(ell+1))
             kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
             v_group = (om/tau_nd) / kr_cm
             gamma_rad = chi_rad * kr_cm**2
 
-            lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
-            wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
-
-            depth_integrand = np.zeros_like(gamma_rad)
             depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
+
+            # from Lecoanet et al 2015 eqn 12. This is the more universal function
+            k_perp = Lambda/r_mesa
+            kz = np.sqrt(-k_perp**2 + 1j*(dim_om/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2_mesa*chi_rad*k_perp**2 / dim_om**3))))
+            depth_integrand[wave_cavity] = -kz[wave_cavity].imag
+
 
             #No optical depth in CZs, or outside of simulation domain...
             depth_integrand[r_mesa/L_nd > r_outer] = 0
@@ -267,7 +274,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
         smooth_depths = np.zeros_like(smooth_oms)
         # from Shiode et al 2013 eqns 4-8 
         for i, om in enumerate(smooth_oms):
-            dim_om = (om.real/tau_nd)
+            dim_om = np.abs(om.real/tau_nd)
             Lambda = np.sqrt(ell*(ell+1))
             kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
             v_group = (om/tau_nd) / kr_cm
@@ -277,7 +284,14 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
             wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
 
             depth_integrand = np.zeros_like(gamma_rad)
-            depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
+#            depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
+
+            # from Lecoanet et al 2015 eqn 12. This is the more universal function
+            k_perp = Lambda/r_mesa
+            kz = np.sqrt(-k_perp**2 + 1j*(dim_om/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2_mesa*chi_rad*k_perp**2 / dim_om**3))))
+            depth_integrand[wave_cavity] = -kz[wave_cavity].imag
+
+
 
             #No optical depth in CZs, or outside of simulation domain...
             depth_integrand[r_mesa/L_nd > r_outer] = 0

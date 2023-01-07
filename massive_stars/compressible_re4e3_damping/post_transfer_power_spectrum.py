@@ -49,6 +49,8 @@ with h5py.File(out_file, 'r') as f:
     N2mesa = f['N2_mesa'][()] * tau_nd**2
     r_mesa = f['r_mesa'][()] / f['L_nd'][()]
     N2_func = interp1d(r_mesa, N2mesa)
+    R_gas = f['R_gas'][()]
+    Cp = f['Cp'][()]
 
 full_out_dir = 'damping_theory_power'
 if not os.path.exists(full_out_dir):
@@ -127,14 +129,16 @@ for ell in range(64):
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
         kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
-        ur2 = lambda f: np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau
-        surface_s1_power = lambda f: np.exp(-depthfunc(f))*np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f) 
+        ur2 = lambda f: (2*np.pi*f) * (R_gas / Cp) * np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau #TODO: fix the factor of f at the beginning.
+        fudge = 4
+        surface_s1_power = lambda f: fudge * np.exp(-depthfunc(f))*np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
+
 
 
         powers.append(surface_s1_power(t_freqs))
         plt.loglog(surface_freqs, surface_power[:,ell], c='orange', label='sim', lw=1.5)
-        plt.loglog(transfer_freq, np.exp(-depthfunc(transfer_freq))*np.conj(transfer_func)*transfer_func*ur2(transfer_freq), c='green', label='transfer', lw=0.5)
-        plt.loglog(t_freqs, powers[-1], c='k', ls='--', label='interpolated transfer', lw=0.5)
+#        plt.loglog(transfer_freq, np.exp(-depthfunc(transfer_freq))*np.conj(transfer_func)*transfer_func*ur2(transfer_freq), c='green', label='transfer', lw=0.5)
+        plt.loglog(t_freqs, powers[-1], c='k',  label='transfer', lw=1)
         plt.legend(loc='best')
         plt.title('ell={}'.format(ell))
         plt.xlabel('freqs (sim units)')

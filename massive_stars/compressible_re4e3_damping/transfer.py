@@ -105,6 +105,7 @@ for ell in ell_list:
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
             enth_amplitudes = f['enth_amplitudes'][()].squeeze()
             depths = f['depths'][()]
+            print('depths', depths)
 
             rs = []
             for bk in ['B', 'S1', 'S2']:
