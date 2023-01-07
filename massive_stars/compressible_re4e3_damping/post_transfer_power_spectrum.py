@@ -131,7 +131,7 @@ for ell in range(64):
         kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
         ur2 = lambda f: (2*np.pi*f) * (R_gas / Cp) * np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau #TODO: fix the factor of f at the beginning.
         fudge = 4
-        surface_s1_power = lambda f: fudge * np.exp(-depthfunc(f))*np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
+        surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
 
 
 
