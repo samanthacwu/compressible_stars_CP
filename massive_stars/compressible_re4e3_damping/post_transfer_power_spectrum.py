@@ -104,6 +104,7 @@ with h5py.File('../compressible_re4e3_waves/FT_SH_transform_wave_shells/power_sp
     surface_power = pow_f['shell(s1_S2,r=R)'][-1,:]
     surface_ells = pow_f['ells'][()].squeeze()
     surface_freqs = pow_f['freqs'][()].squeeze()
+    print('surface power shape', surface_power.shape)
 
 
 t_freqs = np.logspace(np.log10(freqs.min()), np.log10(freqs.max()), 100000)
@@ -155,10 +156,14 @@ for ell in range(64):
 ell_vals = np.array(ell_vals)
 powers = np.array(powers)
 print(powers.shape)
+sim_sum_power = np.sum(surface_power[:,1:ell_vals[-1]], axis=1)
+sim_sum_hemisphere_power = np.sum((surface_power/surface_ells)[:,1:ell_vals[-1]], axis=1)
 sum_ells_power = np.sum(powers, axis=0)
 sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None], axis=0)
-plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=0.5)
-plt.loglog(t_freqs, sum_ells_hemisphere_power, c='orange', label=r'$\sum_{\ell} \frac{P_\ell}{\ell}$', lw=0.5)
+plt.loglog(surface_freqs, sim_sum_power, c='orange', lw=1)
+plt.loglog(surface_freqs, sim_sum_hemisphere_power, c='orange', lw=0.5)
+plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=1)
+plt.loglog(t_freqs, sum_ells_hemisphere_power, c='k', label=r'$\sum_{\ell} \frac{P_\ell}{\ell}$', lw=0.5)
 plt.legend(loc='best')
 plt.title('summed over ells')
 plt.xlabel('freqs (sim units)')
@@ -166,6 +171,7 @@ plt.ylabel(r'power')
 plt.ylim(1e-30, 1e-10)
 plt.xlim(3e-3, 1.4)
 fig.savefig('{}/s1_simulated_freq_spectrum_summed_ells.png'.format(full_out_dir), dpi=300, bbox_inches='tight')
+fig.savefig('{}/s1_simulated_freq_spectrum_summed_ells.pdf'.format(full_out_dir), dpi=300, bbox_inches='tight')
 
 
 with h5py.File('{}/simulated_powers.h5'.format(full_out_dir), 'w') as f:
