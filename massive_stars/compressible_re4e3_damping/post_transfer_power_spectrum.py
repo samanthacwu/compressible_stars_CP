@@ -17,7 +17,6 @@ import numpy as np
 from docopt import docopt
 from configparser import ConfigParser
 from scipy import sparse
-from scipy.interpolate import interp1d
 
 from plotpal.file_reader import SingleTypeReader as SR
 import matplotlib.pyplot as plt
@@ -31,6 +30,8 @@ from scipy.interpolate import interp1d
 from d3_stars.defaults import config
 from d3_stars.simulations.parser import name_star
 out_dir, out_file = name_star()
+
+fit_wave_flux = True
 
 #args = docopt(__doc__)
 with h5py.File(out_file, 'r') as f:
@@ -57,48 +58,60 @@ full_out_dir = 'damping_theory_power'
 if not os.path.exists(full_out_dir):
     os.makedirs(full_out_dir)
 
+if fit_wave_flux:
+    #Fit wave luminosity
+    #Fit A f ^ alpha ell ^ beta
+    radius_str = '1.1'
+    fit_freq_range = (3e-2, 1e-1)
+    fit_ell_range = (1, 3)
+    fig = plt.figure()
+    #possible_alphas = [-6, -13/2, -7]
+    possible_alphas = [-5, -5.25, -11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -15/2, -8]
+    possible_betas = [4]
+    fit_A = []
+    fit_alpha = []
+    fit_beta  = []
+    with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_file:
+        freqs = lum_file['freqs'][()]
+        good_freqs = (freqs >= fit_freq_range[0])*(freqs <= fit_freq_range[1])
+        ells = lum_file['ells'][()].ravel()
+        good_ells = (ells >= fit_ell_range[0])*(ells <= fit_ell_range[1])
+        for i in range(lum_file['wave_luminosity(r={})'.format(radius_str)][()].shape[0]):
+            wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][i,:,:])
+            info = []
+            error = []
+            for j, alpha in enumerate(possible_alphas):
+                for k, beta in enumerate(possible_betas):
+                    A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
+                    fit = A * freqs[:,None]**alpha * ells[None,:]**beta
+                    error.append(np.mean( np.abs(1 - (np.log10(fit) / np.log10(wave_luminosity))[good_freqs[:,None]*good_ells[None,:]])))
+                    info.append((A, alpha, beta))
+            print(info, error)
+            A, alpha, beta = info[np.argmin(error)]
 
-#Fit wave luminosity
-#Fit A f ^ alpha ell ^ beta
-radius_str = '1.5'
-fit_freq_range = (2e-2, 1e-1)
-fit_ell_range = (1, 4)
-fig = plt.figure()
-#possible_alphas = [-6, -13/2, -7]
-possible_alphas = [-5, -5.25, -11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -15/2, -8]
-possible_betas = [4]
-fit_A = []
-fit_alpha = []
-fit_beta  = []
-with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_file:
-    freqs = lum_file['freqs'][()]
-    good_freqs = (freqs >= fit_freq_range[0])*(freqs <= fit_freq_range[1])
-    ells = lum_file['ells'][()].ravel()
-    good_ells = (ells >= fit_ell_range[0])*(ells <= fit_ell_range[1])
-    for i in range(lum_file['wave_luminosity(r={})'.format(radius_str)][()].shape[0]):
-        wave_luminosity = np.abs(lum_file['wave_luminosity(r={})'.format(radius_str)][i,:,:])
-        info = []
-        error = []
-        for j, alpha in enumerate(possible_alphas):
-            for k, beta in enumerate(possible_betas):
-                A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
-                fit = A * freqs[:,None]**alpha * ells[None,:]**beta
-                error.append(np.mean( np.abs(1 - (np.log10(fit) / np.log10(wave_luminosity))[good_freqs[:,None]*good_ells[None,:]])))
-                info.append((A, alpha, beta))
-        print(info, error)
-        A, alpha, beta = info[np.argmin(error)]
+            fit_A.append(A)
+            fit_alpha.append(alpha)
+            fit_beta.append(beta)
+    wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
+    print('fit_A', fit_A)
+    print('fit_A frac', np.array(fit_A[1:])/np.array(fit_A[:-1]))
+    print('fit_alpha', fit_alpha)
+    print('fit_beta', fit_beta)
+#    for ell in ells:
+#        plt.loglog(freqs, wave_luminosity[:,ell == ells].ravel())
+#        plt.loglog(freqs, wave_luminosity_power(freqs, ell))
+#        plt.show()
 
-        fit_A.append(A)
-        fit_alpha.append(alpha)
-        fit_beta.append(beta)
-wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
-wave_luminosity_str = r'{:.2e}'.format(fit_A[-1]) + r'$f^{'+'{:.1f}'.format(fit_alpha[-1])+'}\ell^{' + '{:.1f}'.format(fit_beta[-1]) +  ')$'
+else:
+    radius_str = '1.1'
+    wave_lums = dict()
+    with h5py.File('FT_SH_transform_wave_shells/wave_luminosities.h5', 'r') as lum_file:
+        wave_lums['freqs'] = lum_file['freqs'][()]
+        wave_lums['ells'] = lum_file['ells'][()].ravel()
+        wave_lums['lum'] = lum_file['wave_luminosity(r={})'.format(radius_str)][0,:]
+
 freqs = np.logspace(-3, 0, 1000)
-
-print('fit_A', fit_A)
-print('fit_A frac', np.array(fit_A[1:])/np.array(fit_A[:-1]))
-print('fit_alpha', fit_alpha)
-print('fit_beta', fit_beta)
+t_freqs = np.logspace(np.log10(freqs.min()), np.log10(freqs.max()), 100000)
 
 
 with h5py.File('../compressible_re4e3_waves/FT_SH_transform_wave_shells/power_spectra.h5', 'r') as pow_f:
@@ -107,8 +120,6 @@ with h5py.File('../compressible_re4e3_waves/FT_SH_transform_wave_shells/power_sp
     surface_freqs = pow_f['freqs'][()].squeeze()
     print('surface power shape', surface_power.shape)
 
-
-t_freqs = np.logspace(np.log10(freqs.min()), np.log10(freqs.max()), 100000)
 
         
 powers = []
@@ -128,7 +139,11 @@ for ell in range(64):
             transfer_freq = ef['om'][()]/(2*np.pi)
             transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func), bounds_error=False, fill_value=np.nan)(np.log10(f))
 
-        wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
+        if fit_wave_flux:
+            wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
+        else:
+            log_wave_flux = interp1d(np.log10(wave_lums['freqs']), np.log10(wave_lums['lum'][:,ell == wave_lums['ells']].ravel()/(4*np.pi*1**2*rho_func(1))))
+            wave_flux_rcb = lambda f: 10**(log_wave_flux(np.log10(f)))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
         kh2 = ell * (ell + 1) / 1**2 #at r = 1
@@ -158,6 +173,7 @@ for ell in range(64):
         plt.clf()
         ell_vals.append(ell)
     except:
+#        raise
         print("no eigenvalues for ell = {}".format(ell))
         
 ell_vals = np.array(ell_vals)

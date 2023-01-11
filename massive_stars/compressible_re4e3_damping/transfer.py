@@ -168,10 +168,10 @@ for ell in ell_list:
         good_T[i] = np.min(vals)
 
     #Do WKB at low frequency
-#    good_T[good_om <= stitch_om] *= np.exp(-depthfunc(good_om[good_om <= stitch_om]) + depthfunc(stitch_om))
-##    plt.loglog(good_om/(2*np.pi), good_T)
-##    plt.axvline(stitch_om/(2*np.pi))
-##    plt.show()
+    good_T[good_om <= stitch_om] *= np.exp(-depthfunc(good_om[good_om <= stitch_om]) + depthfunc(stitch_om))
+#    plt.loglog(good_om/(2*np.pi), good_T)
+#    plt.axvline(stitch_om/(2*np.pi))
+#    plt.show()
 
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
         f['om'] = good_om
