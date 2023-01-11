@@ -51,6 +51,7 @@ with h5py.File(out_file, 'r') as f:
     N2_func = interp1d(r_mesa, N2mesa)
     R_gas = f['R_gas'][()]
     Cp = f['Cp'][()]
+    chi_rad_min = f['chi_rad_B'][()].min()
 
 full_out_dir = 'damping_theory_power'
 if not os.path.exists(full_out_dir):
@@ -130,8 +131,14 @@ for ell in range(64):
         wave_flux_rcb = lambda f: wave_luminosity_power(f,ell)/(4*np.pi*1**2*rho_func(1))
 
         #wave_lum_ell should be wave_flux_ell? - see slack stuff around sept 29 2021
-        kr2 = lambda f: (N2plateau/(2*np.pi*f)**2 - 1)*(ell*(ell+1))/1**2 #approximate, r=1
-        ur2 = lambda f: (2*np.pi*f) * (R_gas / Cp) * np.sqrt(kr2(f)) * wave_flux_rcb(f) / N2plateau #TODO: fix the factor of f at the beginning.
+        kh2 = ell * (ell + 1) / 1**2 #at r = 1
+        kr = lambda f: np.abs(( ((-1)**(3/4) / np.sqrt(2))\
+                          *np.sqrt(-2*1j*kh2 - (2*np.pi*f/chi_rad_min) + np.sqrt((2*np.pi*f)**3 + 4*1j*kh2*chi_rad_min*N2plateau)/(chi_rad_min*np.sqrt(2*np.pi*f)) )).real)
+        ur2 = lambda f: (2*np.pi*f) * (R_gas / Cp) * np.sqrt(kr(f)**2) * wave_flux_rcb(f) / N2plateau 
+#        plt.loglog(t_freqs, kr(t_freqs)**2)
+#        plt.loglog(t_freqs, kh2*(N2plateau/(2*np.pi*t_freqs)**2 - 1))
+#        plt.axvline(N2plateau**(1/2)/(2*np.pi))
+#        plt.show()
         fudge = 1
         surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
 

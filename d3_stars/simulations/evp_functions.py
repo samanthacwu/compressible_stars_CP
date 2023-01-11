@@ -68,7 +68,7 @@ def matrix_info(subproblem):
 #    logger.info("rank M + L = {:.3e} / {:.3e}".format(rank_ML, np.max(((sp.L_min + 0.5*sp.M_min) @ sp.pre_right).A.shape)))
 
 
-def solve_dense(solver, ell, group_index=1, verbose=True):
+def solve_dense(solver, ell, group_index=1, verbose=True, lamb_freq=None, bruntN2=None):
     """
     Do a dense eigenvalue solve at a specified ell.
     Sort the eigenvalues and eigenvectors according to damping rate.
@@ -102,6 +102,17 @@ def solve_dense(solver, ell, group_index=1, verbose=True):
 #        order = np.argsort(1/values.real)
         values = values[order]
         vectors = vectors[:, order]
+
+        #Only keep g modes
+        g_modes = np.zeros_like(values, dtype=bool)
+        for i in range(len(g_modes)):
+            g_modes[i] = np.sum((np.abs(values[i].real) < lamb_freq)*(np.abs(values[i].real) < np.sqrt(bruntN2))) > 0
+
+        print('g modes: {}'.format(g_modes))
+        values = values[g_modes]
+        vectors = vectors[:, g_modes]
+
+
 
 
 
@@ -366,6 +377,9 @@ class StellarEVP():
             self.tau_day = 1
             Re_shift = 1
 
+        self.nondim_S1 = S1_mesa[r_mesa/L_nd < self.r_outer] * tau_nd
+        self.nondim_N2 = N2_mesa[r_mesa/L_nd < self.r_outer] * tau_nd**2
+
         Re *= Re_shift
         Pe *= Re_shift
 
@@ -421,7 +435,8 @@ class StellarEVP():
 
     def solve(self, ell):
         logger.info('solving eigenvalue with nr = {} at ell = {}'.format(self.nr, ell))
-        self.solver = solve_dense(self.solver, ell)
+        lamb_freq = np.sqrt(ell*(ell+1)/2)*self.nondim_S1
+        self.solver = solve_dense(self.solver, ell, lamb_freq=lamb_freq, bruntN2=self.nondim_N2)
         self.ell = ell
 
         for sbsys in self.solver.subsystems:
