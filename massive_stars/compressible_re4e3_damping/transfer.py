@@ -47,7 +47,7 @@ def transfer_function(om, values, u_dual, u_outer, r_range, ell):
     u_dual           = u_dual[:, :,    None]
     u_outer         = u_outer[:, None, None]
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-    Forcing = (np.pi/2) * (om / k_h**2)  #technically times ur at r_rcb
+    Forcing = (np.pi/2) * (om / k_h)  #technically times ur at r_rcb
     Amp = 2 * np.pi * r_range**2 * rho(r_range) * u_dual * Forcing /(om - values)
     T = Amp * u_outer
     return np.sum(np.abs(np.sum(T*dr, axis=0)), axis=0)/np.sum(dr)
@@ -93,7 +93,7 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 0.1, 0.05, 0.01]
+    depth_list = [100, 0.1, 0.05, 0.01]
     for j, d_filter in enumerate(depth_list):
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]

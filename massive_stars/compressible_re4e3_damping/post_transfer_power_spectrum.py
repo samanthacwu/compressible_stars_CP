@@ -62,12 +62,12 @@ if fit_wave_flux:
     #Fit wave luminosity
     #Fit A f ^ alpha ell ^ beta
     radius_str = '1.1'
-    fit_freq_range = (3e-2, 1e-1)
-    fit_ell_range = (1, 3)
+    fit_freq_range = (2e-2, 1e-1)
+    fit_ell_range = (1, 4)
     fig = plt.figure()
     #possible_alphas = [-6, -13/2, -7]
-    possible_alphas = [-5, -5.25, -11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -15/2, -8]
-    possible_betas = [4]
+    possible_alphas = [-6.5]#[-5, -5.25, -11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -15/2, -8]
+    possible_betas = [3, 3.25, 3.5, 3.75, 4]
     fit_A = []
     fit_alpha = []
     fit_beta  = []
@@ -154,7 +154,7 @@ for ell in range(64):
 #        plt.loglog(t_freqs, kh2*(N2plateau/(2*np.pi*t_freqs)**2 - 1))
 #        plt.axvline(N2plateau**(1/2)/(2*np.pi))
 #        plt.show()
-        fudge = 1
+        fudge =  1
         surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * ur2(f)
 
 
@@ -179,8 +179,8 @@ for ell in range(64):
 ell_vals = np.array(ell_vals)
 powers = np.array(powers)
 print(powers.shape)
-sim_sum_power = np.sum(surface_power[:,1:ell_vals[-1]], axis=1)
-sim_sum_hemisphere_power = np.sum((surface_power/surface_ells)[:,1:ell_vals[-1]], axis=1)
+sim_sum_power = np.sum(surface_power[:,1:ell_vals[-1]+1], axis=1)
+sim_sum_hemisphere_power = np.sum((surface_power/surface_ells)[:,1:ell_vals[-1]+1], axis=1)
 sum_ells_power = np.sum(powers, axis=0)
 sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None], axis=0)
 plt.loglog(surface_freqs, sim_sum_power, c='orange', lw=1)
