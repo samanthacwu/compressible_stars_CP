@@ -62,12 +62,10 @@ out_dir, star_file = name_star()
 with h5py.File(star_file, 'r') as f:
     rB = f['r_B'][()]
     rS1 = f['r_S1'][()]
-    rS2 = f['r_S2'][()]
     rhoB = np.exp(f['ln_rho0_B'][()])
     rhoS1 = np.exp(f['ln_rho0_S1'][()])
-    rhoS2 = np.exp(f['ln_rho0_S2'][()])
-    r = np.concatenate((rB.flatten(), rS1.flatten(), rS2.flatten()))
-    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten(), rhoS2.flatten()))
+    r = np.concatenate((rB.flatten(), rS1.flatten()))
+    rho = np.concatenate((rhoB.flatten(), rhoS1.flatten()))
     rho_func = interp1d(r,rho)
     tau = f['tau_nd'][()]/(60*60*24)
     r_outer = f['r_outer'][()]

@@ -49,4 +49,4 @@ dynamics['wall_hours'] = 23.5
 dynamics['buoy_end_time'] = 200
 dynamics['sponge'] = True 
 dynamics['tau_factor'] = 1
-dynamics['restart'] = '../twoRcore_re1e3_damping/checkpoint/checkpoint_s4.h5'
+dynamics['restart'] = '../twoRcore_re1e3_damping/final_checkpoint/final_checkpoint_s1.h5'

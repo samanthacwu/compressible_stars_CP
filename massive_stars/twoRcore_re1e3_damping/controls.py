@@ -7,7 +7,7 @@ from collections import OrderedDict
 star = OrderedDict()
 star['path'] = 'zams_15Msol/LOGS/profile47.data'
 star['r_bounds'] = (0, '1.10L', '2L')
-star['nr'] = (96, 32)
+star['nr'] = (96, 64)
 star['smooth_h'] = True
 
 
