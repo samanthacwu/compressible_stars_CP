@@ -47,6 +47,7 @@ nccs['g_phi']['get_grad'] = True
 nccs['g_phi']['grad_name'] = 'neg_g'
 
 nccs['grad_s0']['vector'] = True
+nccs['grad_s0']['nr_max'] = (90, 30)
 
 nccs['pom0']['get_grad'] = True
 nccs['pom0']['grad_name'] = 'grad_pom0'

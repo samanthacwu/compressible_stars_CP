@@ -76,8 +76,11 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         edge_smooth['g'] = one_to_zero(r, 0.95*bases['B'].radius, width=0.03*bases['B'].radius)
         namespace['N2_{}'.format(k)] = N2 = dist.Field(bases=basis, name='N2')
 
+
+
         if k == 'B':
-            N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius*0.9, width=basis.radius*0.03)
+#            N2['g'] = (r/basis.radius)**2 * (N2_func(basis.radius)) * zero_to_one(r, basis.radius*0.9, width=basis.radius*0.03)
+            N2['g'] = N2_func(r)
         else:
             N2.change_scales(low_scales)
             N2['g'] = N2_func(r_low)
@@ -502,7 +505,7 @@ def build_nccs(plot_nccs=False):
     ### entropy gradient
     ### More core convection zone logic here
     #Build a nice function for our basis in the ball
-    grad_s_width = 0.05
+    grad_s_width = 0.03
     grad_s_transition_point = r_bound_nd[1] - grad_s_width
     logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
     logger.info('using default grad s width = {}'.format(grad_s_width))
@@ -569,11 +572,27 @@ def build_nccs(plot_nccs=False):
     interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
 
     #construct N2 function #TODO: blend logic here & in BVP.
+    stitch_point = 1
+    stitch_point = bases['B'].radius
     smooth_N2 = np.copy(N2_mesa)
-    stitch_value = np.interp(bases['B'].radius, r/L_nd, N2_mesa)
-    smooth_N2[r/L_nd < bases['B'].radius] = (r[r/L_nd < bases['B'].radius]/L_nd / bases['B'].radius)**2 * stitch_value
+#    stitch_value = np.interp(bases['B'].radius, r/L_nd, N2_mesa)
+#    grad_N2_stitch = np.gradient(N2_mesa, r)[r/L_nd < bases['B'].radius][-1]
+    stitch_value = np.interp(stitch_point, r/L_nd, N2_mesa)
+    grad_N2_stitch = np.gradient(N2_mesa, r)[r/L_nd < stitch_point][-1]
+    #have N^2 = A*r^2 + B; grad_N2 = 2 * A * r, so A = (grad_N2) / (2 * r_stitch) & B = stitch_value - A*r_stitch^2
+    A = grad_N2_stitch / (2*bases['B'].radius * L_nd)
+    B = stitch_value - A* (bases['B'].radius * L_nd)**2
+#    A = stitch_value / (bases['B'].radius * L_nd)**2
+#    B = 0
 #    smooth_N2 = (r/L_nd)**2 * flat_value
+    smooth_N2[r/L_nd < stitch_point] = A*(r[r/L_nd < stitch_point])**2 + B
     smooth_N2 *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
+#    plt.semilogy(r, N2_mesa, lw=3, c='k')
+#    plt.semilogy(r, -N2_mesa, lw=3, c='k', ls='--')
+#    plt.semilogy(r, smooth_N2, c='orange')
+#    plt.semilogy(r, -smooth_N2, ls='--', c='orange')
+#    plt.ylim(1e-10*np.max(N2_mesa.value), 1e1*np.max(N2_mesa.value))
+#    plt.show()
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
     ln_rho_func = interpolations['ln_rho0']
     grad_ln_rho_func = interpolations['grad_ln_rho0']
@@ -745,9 +764,12 @@ def build_nccs(plot_nccs=False):
     EOS_dedalus = np.concatenate(EOSs, axis=-1).ravel()
     grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
     grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
-    plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa')
-    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere')
-    plt.plot(r_dedalus, N2_dedalus, ls='--', label='dedalus')
+    plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa', c='k')
+    plt.plot(r_nd, -tau_nd**2*N2_mesa, c='k', ls='--')
+#    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere', c='b')
+#    plt.plot(r_nd, -atmo['N2'](r_nd), c='b', ls='--')
+    plt.plot(r_dedalus, N2_dedalus, label='dedalus', c='g')
+    plt.plot(r_dedalus, -N2_dedalus, ls='--', c='g')
     plt.legend()
     plt.ylabel(r'$N^2$')
     plt.xlabel('r')

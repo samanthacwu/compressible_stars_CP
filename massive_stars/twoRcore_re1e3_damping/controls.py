@@ -6,8 +6,8 @@ from collections import OrderedDict
 #nr: radial resolution(s) -> length = len(r_bounds) - 1
 star = OrderedDict()
 star['path'] = 'zams_15Msol/LOGS/profile47.data'
-star['r_bounds'] = (0, '1.07L', '2L')
-star['nr'] = (64,32)
+star['r_bounds'] = (0, '1.10L', '2L')
+star['nr'] = (96, 32)
 star['smooth_h'] = True
 
 
