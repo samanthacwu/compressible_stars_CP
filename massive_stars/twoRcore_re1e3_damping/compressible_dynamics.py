@@ -139,7 +139,8 @@ if __name__ == '__main__':
     # Read in domain bound values
     if len(r_stitch) > 0:
         L_shell = r_outer - r_stitch[0]
-        sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
+        sponge_function = lambda r: zero_to_one(r, r_outer - 0.15, 0.07)
+#        sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
     else:
         sponge_function = lambda r: 0*r
 
