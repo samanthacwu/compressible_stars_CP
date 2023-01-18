@@ -11,6 +11,18 @@
   l = 1 ! Harmonic degree
   tag = 'l=1'
 /
+&mode
+  l = 2 ! Harmonic degree
+  tag = 'l=2'
+/
+&mode
+  l = 3 ! Harmonic degree
+  tag = 'l=3'
+/
+&mode
+  l = 4 ! Harmonic degree
+  tag = 'l=4'
+/
 
 &osc
     nonadiabatic = .TRUE.
@@ -30,7 +42,7 @@
   freq_min = 1        ! Minimum frequency to scan from
   freq_max = 200        ! Maximum frequency to scan to
   n_freq = 2500          ! Number of frequency points in scan
-  tag_list = 'l=1'
+!  tag_list = 'l=1'
 /
 
 &grid
@@ -41,10 +53,12 @@
 /
 
 &nad_output
-  summary_file = './gyre_output/summary.h5'                         ! File name for summary file
+  summary_file_format = 'TXT'
+  summary_file = './gyre_output/summary.txt'                         ! File name for summary file
   summary_item_list = 'l,n_pg,freq,freq_units,E_norm' ! Items to appear in summary file
-  detail_template = 'gyre_output/mode_ell%L_m%M_n%N.h5'
-  detail_item_list = 'j,l,n_pg,n_p,n_g,eta,omega,freq,x,x_ref,f_T,xi_r,xi_r_ref,xi_h,xi_h_ref,lag_L,lag_L_ref,dW_dx,dE_dx,H,L_star,T,M_r,rho,P,prop_type,V_2,As,c_1,Gamma_1'
+  detail_file_format = 'TXT'
+  detail_template = 'gyre_output/mode_ell%L_m%M_n%N.txt'
+  detail_item_list = 'j,l,n_pg,n_p,n_g,eta,omega,freq,x,x_ref,f_T,xi_r,xi_r_ref,xi_h,xi_h_ref,lag_L,lag_L_ref,dW_dx,dE_dx,H,L_star,R_star,M_star,T,M_r,rho,P,prop_type,V_2,As,c_1,Gamma_1'
   freq_units = 'UHZ'                   	      ! Units of freq output items
 /
 

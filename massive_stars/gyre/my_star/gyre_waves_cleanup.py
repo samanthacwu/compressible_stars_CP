@@ -30,7 +30,7 @@ def natural_sort(iterable, reverse=False):
 
 # load modes
 
-def read_modes(file_bases):
+def read_modes(file_bases, ell):
 
     #get info about mesa background
     p = mr.MesaData(mesa_LOG)
@@ -58,17 +58,21 @@ def read_modes(file_bases):
     Mstar = header['M_star'] #g
     Lstar = header['L_star'] #erg/s
     r = data_mode['x']*Rstar #cm
-  
+ 
     for i,filename in enumerate(file_list):
         print(filename)
         summary = tomso.gyre.load_summary(filename)
         header = summary.header
         data_mode = summary.data
-        freq_list.append(-1j*(header['Refreq'] + 1j*header['Imfreq']))
+        freq_list.append(header['Refreq'] + 1j*header['Imfreq'])
         omega_list.append(header['Reomega'] + 1j*header['Imomega'])
         xir_list.append(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #units of r/R
         xih_list.append(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #units of r/R
         L_list.append(Lstar*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']))
+#        plt.semilogy(r, bruntN2)
+#        plt.semilogy(r, lambS1**2)
+#        plt.axhline((2*np.pi*1e-6*freq_list[-1].real)**2)
+#        plt.show()
   
     summary = tomso.gyre.load_summary(glob.glob('%s*.txt' %file_bases[0])[0])
     header = summary.header
@@ -83,14 +87,18 @@ def read_modes(file_bases):
     L_top = L[:,-1]
   
   
-    depths = calculate_optical_depths(freq, r, bruntN2, lambS1, chi_rad, ell=1)
-    return freq,omega,r,ur,uh,L,L_top,rho,depths
+    depths = calculate_optical_depths(freq, r, bruntN2, lambS1, chi_rad, ell=ell)
+    smooth_oms = np.logspace(np.log10(np.abs(freq.real).min())-1, np.log10(np.abs(freq.real).max())+1, 100)
+    smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), r, bruntN2, lambS1, chi_rad, ell=ell)
+    return freq,omega,r,ur,uh,L,L_top,rho,depths,smooth_oms, smooth_depths
   
 
 def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
     #Calculate 'optical depths' of each mode.
     depths = []
     for freq in eigenfrequencies.real:
+        freq = np.abs(freq)
+        om = 2*np.pi*freq
         lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1
         wave_cavity = (2*np.pi*freq < np.sqrt(N2))*(2*np.pi*freq < lamb_freq)
         depth_integrand = np.zeros_like(lamb_freq)
@@ -98,8 +106,10 @@ def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
         # from Lecoanet et al 2015 eqn 12. This is the more universal function
         Lambda = np.sqrt(ell*(ell+1))
         k_perp = Lambda/r
-        kz = np.sqrt(-k_perp**2 + 1j*((2*np.pi*freq)/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2*chi_rad*k_perp**2 / (2*np.pi*freq)**3))))
-        depth_integrand[wave_cavity] = -kz[wave_cavity].imag
+        kz = ((-1)**(3/4)/np.sqrt(2))*np.sqrt(-1j*2*k_perp**2 - (om/chi_rad) + np.sqrt(om**3 + 1j*4*k_perp**2*chi_rad*N2)/(chi_rad*np.sqrt(om)) )
+#        kz = np.sqrt(-k_perp**2 + 1j*((2*np.pi*freq)/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2*chi_rad*k_perp**2 / (2*np.pi*freq)**3))))
+        depth_integrand[wave_cavity] = kz[wave_cavity].imag
+
 
         #Numpy integrate
         opt_depth = np.trapz(depth_integrand, x=r)
@@ -108,7 +118,7 @@ def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
 
 
 def calculate_duals(bases,ell,om_list):
-    freq, omega, r, ur, uh, L, L_top, rho, depths = read_modes(bases)
+    freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths = read_modes(bases, ell)
   
     def IP(ur_1,ur_2,uh_1,uh_2):
       """
@@ -130,23 +140,27 @@ def calculate_duals(bases,ell,om_list):
     
     ur_dual = np.conj(IP_inv)@ur
     uh_dual = np.conj(IP_inv)@uh
-    return freq, omega, r, ur, uh, L, L_top, rho, depths, ur_dual, uh_dual
+    return freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths, ur_dual, uh_dual
 
-ell=1
-om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
+Lmax = 4
+ell_list = np.arange(1, Lmax+1)
+for ell in ell_list:
+    om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
 
-base1 = './gyre_output/mode_ell{:03d}'.format(ell)
-freq, omega, r, ur, uh, L, L_top, rho, depths, ur_dual, uh_dual = calculate_duals([base1],ell,om_list)
-print(freq)
-with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'w') as f:
-    f['dimensional_freqs'] = freq
-    f['nondim_om'] = omega
-    f['depths'] = depths
-    f['r'] = r
-    f['ur'] = ur
-    f['uh'] = uh
-    f['L'] = L
-    f['L_top'] = L_top
-    f['rho'] = rho
-    f['ur_dual'] = ur_dual
-    f['uh_dual'] = uh_dual
+    base1 = './gyre_output/mode_ell{:03d}'.format(ell)
+    freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths, ur_dual, uh_dual = calculate_duals([base1],ell,om_list)
+    print(freq)
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'w') as f:
+        f['dimensional_freqs'] = freq
+        f['nondim_om'] = omega
+        f['depths'] = depths
+        f['r'] = r
+        f['ur'] = ur
+        f['uh'] = uh
+        f['L'] = L
+        f['L_top'] = L_top
+        f['rho'] = rho
+        f['ur_dual'] = ur_dual
+        f['uh_dual'] = uh_dual
+        f['smooth_oms'] = smooth_oms
+        f['smooth_depths'] = smooth_depths

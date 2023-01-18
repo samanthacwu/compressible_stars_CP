@@ -366,7 +366,7 @@
    !logtau_sub_xlogtau
 
 !# Luminosity 
-   !luminosity ! luminosity at outer boundary of zone (in Lsun units)
+   luminosity ! luminosity at outer boundary of zone (in Lsun units)
    !logL ! log10(max(1d-2,L/Lsun))
    !log_Lrad
    !log_Ledd ! log10(Leddington/Lsun) -- local Ledd, 4 pi clight G m / kap
@@ -439,7 +439,7 @@
    !lum_conv_div_lum_rad
    !lum_rad_div_L_Edd
    !lum_conv_div_lum_Edd
-   !lum_conv_div_L
+   lum_conv_div_L
    !lum_rad_div_L
    !lum_rad_div_L_Edd_sub_fourPrad_div_PchiT ! density increases outward if this is > 0
       ! see Joss, Salpeter, and Ostriker, "Critical Luminosity", ApJ 181:429-438, 1973. 
