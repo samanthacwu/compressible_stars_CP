@@ -314,6 +314,107 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
+def transfer_function(om, values, u_dual, field_outer, r_range, rho, ell):
+    """
+    Calculates the transfer function of linear, damped waves of a field at a star/simulation's
+    surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
+
+    The output transfer function must be multiplied by the radial velocity field (u_r) corresponding to
+    the convective driving in the vicinity of the forcing radius.
+
+    Inputs:
+    ------
+     om : NumPy array (float64)
+        The (real) angular frequencies at which to  calculate the transfer function
+     values : NumPy array (complex128)
+        The (complex) eigenvalues corresponding to the gravity waves.
+     u_dual : NumPy array (complex128)
+        The horizontal component of the dual velocity basis; evaluated for each eigenfunction and at each forcing radius.
+     field_outer : NumPy array (complex128)
+        The surface value of each eigenfunction for the field that the transfer function is being calculated for (entropy, luminosity, etc.)
+     r_range : NumPy array (float64)
+        The radial coordinates of delta-function forcings that the transfer function is evaluated for.
+     rho : NumPy array (float64)
+        The mass density evaluated at each radial coordinate in r_range.
+     ell : float
+        The spherical harmonic degree
+
+    Outputs:
+    --------
+     T : NumPy array (complex128)
+        The transfer function, which must be multiplied by the radial velocity field related to the convective driving.
+    """
+    #The none's expand dims
+    #dimensionality is [omega', rf, omega]
+    dr = np.gradient(r_range)[None, :, None]
+    r_range         = r_range[None, :, None]
+    rho                 = rho[None, :, None]
+    om                   = om[None, None, :] 
+    values           = values[:, None, None]
+    u_dual           = u_dual[:, :,    None]
+    field_outer = field_outer[:, None, None]
+    k_h = np.sqrt(ell * (ell + 1)) / r_range
+    leading_amp = 2*np.pi*r_range**2*rho
+    bulk_to_bound_force = np.sqrt(2) * om / k_h #times ur -> comes later.
+    Amp = leading_amp * bulk_to_bound_force * u_dual / (om - values)
+    T = np.sum( np.abs(np.sum(Amp * field_outer * dr, axis=0)), axis=0) / np.sum(dr)
+    return T
+
+def calculate_refined_transfer(om, *args):
+    """
+    Iteratively calculates the transfer function by calling transfer_function()
+
+    This routine locates peaks in the transfer function and inserts a denser frequency mesh
+    into the frequency array around each peak to ensure proper peak resolution.
+
+    Inputs: See transfer_function()
+
+    Outputs:
+    --------
+     om: NumPy array (float64)
+        The real angular frequencies at which the transfer function is calculated.
+     T : NumPy array (complex128)
+        Same as for transfer_function()
+    """
+
+    T = transfer_function(om, *args)
+
+    peaks = 1
+    while peaks > 0:
+        i_peaks = []
+        for i in range(2,len(om)-2):
+            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
+                delta_m = np.abs(T[i]-T[i-1])/T[i]
+                delta_p = np.abs(T[i]-T[i+1])/T[i]
+                if delta_m > 0.01 or delta_p > 0.01:
+                    i_peaks.append(i)
+
+        peaks = len(i_peaks)
+        print("number of peaks: %i" % (peaks))
+
+        om_new = np.array([])
+        for i in i_peaks:
+            om_low = om[i-1]
+            om_high = om[i+1]
+            om_new = np.concatenate([om_new,np.linspace(om_low,om_high,10)])
+
+        T_new = transfer_function(om_new, *args)
+
+#        print([om[i] for i in i_peaks])
+        om = np.concatenate([om,om_new])
+        T = np.concatenate([T,T_new])
+
+        om, sort = np.unique(om, return_index=True)
+        T = T[sort]
+#        if args[-1] > 0:
+#            plt.loglog(om, T)
+#            plt.show()
+
+    return om, T
+
+
+
+
 
 
 # Define smooth Heaviside functions

@@ -357,6 +357,26 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field.change_scales(basis.dealias)
     return this_field
 
+def find_core_cz_radius(mesa_file, dimensionless=True):
+    ### CORE CONVECTION LOGIC - Find boundary of core convection zone  & setup simulation domain
+    ### Split up the domain
+    # Find edge of core cz
+    p = mr.MesaData(mesa_file)
+    r              = (p.radius[::-1] * u.R_sun).cgs
+    mass           = (p.mass[::-1] * u.M_sun).cgs
+    Luminosity     = (p.luminosity[::-1] * u.L_sun).cgs
+    conv_L_div_L   = p.lum_conv_div_L[::-1]
+    L_conv         = conv_L_div_L*Luminosity
+
+    cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
+    core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
+    core_cz_radius = r[core_index]
+    if dimensionless: #no astropy units.
+        return core_cz_radius.value
+    else:
+        return core_cz_radius
+
+
 def build_nccs(plot_nccs=False):
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
@@ -418,12 +438,8 @@ def build_nccs(plot_nccs=False):
     rad_diff        = k_rad / (rho * cp)
     #rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs # this is less smooth
 
-    ### CORE CONVECTION LOGIC - Find boundary of core convection zone  & setup simulation domain
-    ### Split up the domain
-    # Find edge of core cz
-    cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
-    core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
-    core_cz_radius = r[core_index]
+    ### CORE CONVECTION LOGIC - generalize.
+    core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
 
     # Specify fraction of total star to simulate
     r_bounds = list(config.star['r_bounds'])

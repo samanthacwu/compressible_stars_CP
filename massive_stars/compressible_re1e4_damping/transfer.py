@@ -2,6 +2,7 @@
 Calculate transfer function to get surface response of convective forcing.
 Outputs a function which, when multiplied by sqrt(wave flux), gives you the surface response.
 """
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import h5py
@@ -10,86 +11,16 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 from configparser import ConfigParser
 
-
+import d3_stars
 from d3_stars.defaults import config
 from d3_stars.simulations.parser import name_star
+from d3_stars.simulations.star_builder import find_core_cz_radius
+from d3_stars.simulations.evp_functions import calculate_refined_transfer
+
+#Grab relevant information about the simulation stratification.
 out_dir, out_file = name_star()
-
-def transfer_function(om, values, u_dual, field_outer, r_range, rho, ell):
-    """
-    rho is a function of (r) at each point for r_range.
-    k_r is eqn 13 of Lecoanet+2015 PRE 91, 063016.
-
-    Multiply the output of this function by sqrt(wave luminosity) to get surface response.
-    """
-    #The none's expand dims
-    #dimensionality is [omega', rf, omega]
-    dr = np.gradient(r_range)[None, :, None]
-    r_range         = r_range[None, :, None]
-    rho                 = rho[None, :, None]
-    om                   = om[None, None, :] 
-    values           = values[:, None, None]
-    u_dual           = u_dual[:, :,    None]
-    field_outer = field_outer[:, None, None]
-    k_h = np.sqrt(ell * (ell + 1)) / r_range
-    leading_amp = 2*np.pi*r_range**2*rho
-    bulk_to_bound_force = np.sqrt(2) * om / k_h #times ur -> comes later.
-    Amp = leading_amp * bulk_to_bound_force * u_dual / (om - values)
-    T = np.sum( np.abs(np.sum(Amp * field_outer * dr, axis=0)), axis=0) / np.sum(dr)
-    return T
-
-def calculate_refined_transfer(om, *args):
-
-    T = transfer_function(om, *args)
-
-    peaks = 1
-    while peaks > 0:
-        i_peaks = []
-        for i in range(2,len(om)-2):
-            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
-                delta_m = np.abs(T[i]-T[i-1])/T[i]
-                delta_p = np.abs(T[i]-T[i+1])/T[i]
-                if delta_m > 0.01 or delta_p > 0.01:
-                    i_peaks.append(i)
-
-        peaks = len(i_peaks)
-        print("number of peaks: %i" % (peaks))
-
-        om_new = np.array([])
-        for i in i_peaks:
-            om_low = om[i-1]
-            om_high = om[i+1]
-            om_new = np.concatenate([om_new,np.linspace(om_low,om_high,10)])
-
-        T_new = transfer_function(om_new, *args)
-
-#        print([om[i] for i in i_peaks])
-        om = np.concatenate([om,om_new])
-        T = np.concatenate([T,T_new])
-
-        om, sort = np.unique(om, return_index=True)
-        T = T[sort]
-#        if args[-1] > 0:
-#            plt.loglog(om, T)
-#            plt.show()
-
-    return om, T
-
-
-Lmax = config.eigenvalue['Lmax']
-
 with h5py.File(out_file, 'r') as f:
-    stitch_radii = f['r_stitch'][()]
-    radius = f['r_outer'][()]
-
-resolutions = []
-for nr in config.star['nr']:
-    resolutions.append((1, 1, nr))
-dealias = 1
-
-with h5py.File(out_file, 'r') as f:
-    tau_s = f['tau_nd'][()]
-    tau = tau_s/(60*60*24)
+    L_nd = f['L_nd'][()]
     rs = []
     rhos = []
     chi_rads = []
@@ -98,7 +29,7 @@ with h5py.File(out_file, 'r') as f:
         rs.append(f['r_{}'.format(bk)][()])
         rhos.append(np.exp(f['ln_rho0_{}'.format(bk)][()]))
         chi_rads.append(f['chi_rad_{}'.format(bk)][()])
-        #-g[2] * grad_s[2] / cp
+        #N^2 = -g[2] * grad_s[2] / cp
         N2s.append(-f['g_{}'.format(bk)][2,:]*f['grad_s0_{}'.format(bk)][2,:]/f['Cp'][()])
     rs = np.concatenate(rs, axis=-1)
     rhos = np.concatenate(rhos, axis=-1)
@@ -109,13 +40,25 @@ chi_rad = interpolate.interp1d(rs.flatten(), chi_rads.flatten())
 N2 = interpolate.interp1d(rs.flatten(), N2s.flatten())
 
 
+# Generalized logic for getting forcing radius.
+package_path = Path(d3_stars.__file__).resolve().parent
+stock_path = package_path.joinpath('stock_models')
+if os.path.exists(config.star['path']):
+    mesa_file_path = config.star['path']
+else:
+    stock_file_path = stock_path.joinpath(config.star['path'])
+    if os.path.exists(stock_file_path):
+        mesa_file_path = str(stock_file_path)
+    else:
+        raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
+core_cz_radius = find_core_cz_radius(mesa_file_path)
+forcing_radius = 1.02 * core_cz_radius / L_nd
 
 
-forcing_radius = 1.02
+#Calculate transfer functions
+Lmax = config.eigenvalue['Lmax']
 ell_list = np.arange(1, Lmax+1)
-
-dir = 'eigenvalues'
-
+eig_dir = 'eigenvalues'
 for ell in ell_list:
     plt.figure()
     print("ell = %i" % ell)
@@ -127,12 +70,13 @@ for ell in ell_list:
     oms = []
     depth_list = [10, 1, 0.01]
     for j, d_filter in enumerate(depth_list):
-        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
+        #Read in eigenfunction values.
+        #Require: eigenvalues, horizontal duals, transfer surface (s1), optical depths
+
+        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
             values = f['good_evalues'][()]
-            velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
-            enth_amplitudes = f['enth_amplitudes'][()].squeeze()
             depths = f['depths'][()]
 
             rs = []
@@ -143,22 +87,14 @@ for ell in ell_list:
             smooth_depths = f['smooth_depths'][()]
             depthfunc = interp1d(smooth_oms, smooth_depths, bounds_error=False, fill_value='extrapolate')
 
-#        if j == 0:
-#            for value in values:
-#                plt.axvline(value.real/(2*np.pi), c='k')
+        #Pick out eigenvalues that have less optical depth than a given cutoff
         print('depth cutoff: {}'.format(d_filter))
         good = depths < d_filter
-
-        mingood = np.min(np.abs(values[good].real))
-#        good *= (np.abs(values.real) < mingood * 10)
         values = values[good]
         s1_amplitudes = s1_amplitudes[good]
-        enth_amplitudes = enth_amplitudes[good]
-        velocity_eigenfunctions = velocity_eigenfunctions[good]
         velocity_duals = velocity_duals[good]
-#        print('first 20 good values: {}'.format(values[:20]))
-#        print('first 20 depths: {}'.format(depths[good][:20]))
 
+        #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))
         om1 = np.max(values.real)*5
         if om0 < xmin: xmin = om0
@@ -168,14 +104,14 @@ for ell in ell_list:
             stitch_om = np.abs(values[depths[good] <= 1][-1].real)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
+        #Get forcing radius and dual basis evaluated there.
         r0 = forcing_radius
-        r1 = r0 + 0.05*(r.max())
+        r1 = forcing_radius * (1.05)
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
-#        r_range = np.linspace(r.min(), r.max(), num=100, endpoint=True)
         uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
-        
-        om, T = calculate_refined_transfer(om, values, uphi_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
 
+        #Calculate and store transfer function
+        om, T = calculate_refined_transfer(om, values, uphi_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
         oms.append(om)
         transfers.append(T)
 
@@ -207,6 +143,7 @@ for ell in ell_list:
     brunt_N2_u = N2(forcing_radius)
     rho_u = rho(forcing_radius)
 
+    #k_r is eqn 13 of Lecoanet+2015 PRE 91, 063016.
     k_h = np.sqrt(ell*(ell+1))/forcing_radius 
     k_r_low_diss  = -np.sqrt(brunt_N2_u/good_om**2 - 1).real*k_h
     k_r_high_diss = (((-1)**(3/4) / np.sqrt(2))\
@@ -229,7 +166,7 @@ for ell in ell_list:
 #    plt.ylabel('T')
 #    plt.show()
 #
-    with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
+    with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'w') as f:
         f['om'] = good_om
         f['transfer_ur'] = good_T
         f['transfer_root_lum'] = root_lum_to_ur*good_T 
