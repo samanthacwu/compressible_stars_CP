@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 defaults = OrderedDict()
 #Max coefficient expansion
-defaults['nr_max'] = (60,42,36)
+defaults['nr_max'] = (60,50,26)
 defaults['vector'] = False
 defaults['grid_only'] = False
 defaults['get_grad'] = False
@@ -34,7 +34,7 @@ nccs['chi_rad']['nr_max'] = (1,32,20)
 nccs['chi_rad']['get_grad'] = True
 nccs['chi_rad']['grad_name'] = 'grad_chi_rad'
 
-nccs['kappa_rad']['nr_max'] = (32,32,20)
+nccs['kappa_rad']['nr_max'] = (32,32,32)
 nccs['kappa_rad']['get_grad'] = True
 nccs['kappa_rad']['grad_name'] = 'grad_kappa_rad'
 
