@@ -40,7 +40,7 @@ eigenvalue['Lmax'] = 1
 # tau_factor: multiply damping term by this factor.
 # A0: Initial noise amplitude.
 dynamics = OrderedDict()
-dynamics['ntheta'] = 64
+dynamics['ntheta'] = 96
 dynamics['timestepper'] = 'SBDF2'
 dynamics['safety'] = 0.2
 dynamics['CFL_max_r'] = 1.05
