@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 defaults = OrderedDict()
 #Max coefficient expansion
-defaults['nr_max'] = (60,50,26)
+defaults['nr_max'] = (60,50,36)
 defaults['vector'] = False
 defaults['grid_only'] = False
 defaults['get_grad'] = False
