@@ -139,7 +139,8 @@ if __name__ == '__main__':
     # Read in domain bound values
     if len(r_stitch) > 0:
         L_shell = r_outer - r_stitch[0]
-        sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
+        sponge_function = lambda r: zero_to_one(r, r_outer - 0.15, 0.07)
+#        sponge_function = lambda r: zero_to_one(r, r_stitch[0] + 2*L_shell/3, 0.1*L_shell)
     else:
         sponge_function = lambda r: 0*r
 
@@ -180,7 +181,7 @@ if __name__ == '__main__':
     timestep = None
     if restart is not None:
         write, timestep = solver.load_state(restart)
-        timestep *= 0.5 #bootstrap safely
+        timestep *= 0.1 #bootstrap safely
         write_mode = 'append'
     else:
         # Initial conditions
@@ -218,10 +219,6 @@ if __name__ == '__main__':
         timestep = initial_max_dt
     my_cfl = d3.CFL(solver, timestep, safety=safety, cadence=1, max_dt=initial_max_dt, min_change=0.1, max_change=1.5, threshold=0.1)
     my_cfl.add_velocity(heaviside_cfl*u_B)
-
-    if restart is not None:
-        solver.evaluator.evaluate_handlers([my_cfl.frequencies,], wall_time=solver.get_wall_time(), sim_time=solver.sim_time, iteration=solver.iteration)
-
 
     logger.info('cfl constructed') 
 

@@ -8,10 +8,10 @@ star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries
 #Only works with L if you have core convection zone; how to generalize that?
-star['r_bounds'] = (0, '1.07L', '0.82R', '0.93R')
+star['r_bounds'] = (0, '1.10L', '0.82R', '0.93R')
 
 #radial resolution(s) -> length = len(r_bounds) - 1
-star['nr'] = (256,512,64)
+star['nr'] = (256,192,64)
 
 #options for building the star
 star['smooth_h'] = True
@@ -43,23 +43,25 @@ eigenvalue['Lmax'] = 1
 
 dynamics = OrderedDict()
 
+#dynamics['ntheta'] = 128
 dynamics['ntheta'] = 256 
 dynamics['safety'] = 0.2
 dynamics['timestepper'] = 'SBDF2'
-dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_waves/first_run/final_checkpoint/final_checkpoint_s1.h5'
+dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re4e3_waves/checkpoint/checkpoint_s3.h5'
+#dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_waves/first_run/final_checkpoint/final_checkpoint_s1.h5'
 #dynamics['restart'] = '/nobackup/eanders/d3_stars/massive_stars/compressible_re1e4_damping/final_checkpoint/final_checkpoint_s1.h5'
 
 #In nondimensional units
-dynamics['CFL_max_r'] = 1
+dynamics['CFL_max_r'] = 1.05
 
 #Stop conditions
-dynamics['wall_hours'] = 47.5
-dynamics['buoy_end_time'] = 1000
+dynamics['wall_hours'] = 119.5
+dynamics['buoy_end_time'] = 520
 
 #Damping sim if sponge = true; damping term multiplied by tau_factor
 dynamics['sponge'] = False
 dynamics['tau_factor'] = 1
 
 #Initial noise amplitude.
-dynamics['A0'] = 1e-6
+dynamics['A0'] = 1e-8
 

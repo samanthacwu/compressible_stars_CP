@@ -71,8 +71,8 @@ handlers['wave_shells']['parallel'] = 'virtual'
 
 wave_shell_tasks = OrderedDict()
 wave_shell_tasks['type'] = 'shell'
-wave_shell_tasks['fields'] = ['u', 'enthalpy_fluc']
-wave_shell_tasks['interps'] = [0.5, 1.1, 1.25, 1.5, 1.75]
+wave_shell_tasks['fields'] = ['u', 's1', 'enthalpy_fluc']
+wave_shell_tasks['interps'] = [1.1, 1.25, 1.5, 1.75]
 handlers['wave_shells']['tasks'].append(wave_shell_tasks)
 
 
