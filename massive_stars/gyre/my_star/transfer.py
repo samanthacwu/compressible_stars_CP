@@ -34,6 +34,8 @@ chi_rads = 16 * sigma_SB * T**3 / (3 * rhos**2 * cp * opacity)
 rho = interpolate.interp1d(r.flatten(), rhos.flatten())
 chi_rad = interpolate.interp1d(r.flatten(), chi_rads.flatten())
 N2 = interpolate.interp1d(r.flatten(), bruntN2.flatten())
+#plt.semilogy(r, bruntN2)
+#plt.show()
 
 
 # Generalized logic for getting forcing radius.
@@ -52,7 +54,7 @@ forcing_radius = 1.02 * core_cz_radius
 
 
 #Calculate transfer functions
-Lmax = 4
+Lmax = 3
 ell_list = np.arange(1, Lmax+1)
 eig_dir = 'gyre_output'
 for ell in ell_list:
@@ -132,7 +134,8 @@ for ell in ell_list:
 
     # Right now the transfer function gets us from ur (near RCB) -> surface. We want wave luminosity (near RCB) -> surface.
     chi_rad_u = chi_rad(forcing_radius)
-    brunt_N2_u = N2(forcing_radius)
+    brunt_N2_u = N2(0.5*r.max())
+#    brunt_N2_u = N2(forcing_radius)
     rho_u = rho(forcing_radius)
 
     #k_r is eqn 13 of Lecoanet+2015 PRE 91, 063016.

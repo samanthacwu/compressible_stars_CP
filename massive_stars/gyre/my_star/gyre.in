@@ -23,6 +23,70 @@
   l = 4 ! Harmonic degree
   tag = 'l=4'
 /
+&mode
+  l = 5 ! Harmonic degree
+  tag = 'l=5'
+/
+&mode
+  l = 6 ! Harmonic degree
+  tag = 'l=6'
+/
+&mode
+  l = 7 ! Harmonic degree
+  tag = 'l=7'
+/
+&mode
+  l = 8 ! Harmonic degree
+  tag = 'l=8'
+/
+&mode
+  l = 9 ! Harmonic degree
+  tag = 'l=9'
+/
+&mode
+  l = 10 ! Harmonic degree
+  tag = 'l=10'
+/
+&mode
+  l = 11 ! Harmonic degree
+  tag = 'l=11'
+/
+&mode
+  l = 12 ! Harmonic degree
+  tag = 'l=12'
+/
+&mode
+  l = 13 ! Harmonic degree
+  tag = 'l=13'
+/
+&mode
+  l = 14 ! Harmonic degree
+  tag = 'l=14'
+/
+&mode
+  l = 15 ! Harmonic degree
+  tag = 'l=15'
+/
+&mode
+  l = 16 ! Harmonic degree
+  tag = 'l=16'
+/
+&mode
+  l = 17 ! Harmonic degree
+  tag = 'l=17'
+/
+&mode
+  l = 18 ! Harmonic degree
+  tag = 'l=18'
+/
+&mode
+  l = 19 ! Harmonic degree
+  tag = 'l=19'
+/
+&mode
+  l = 20 ! Harmonic degree
+  tag = 'l=20'
+/
 
 &osc
     nonadiabatic = .TRUE.
@@ -32,16 +96,17 @@
 /
 
 &num
-  diff_scheme = 'COLLOC_GL2' 
+  diff_scheme = 'MAGNUS_GL2' 
+  n_iter_max = 200
 /
 
 &scan
   grid_type = 'INVERSE' ! Scan grid uniform in inverse frequency
   freq_min_units = 'UHZ'
   freq_max_units = 'UHZ'
-  freq_min = 1        ! Minimum frequency to scan from
-  freq_max = 200        ! Maximum frequency to scan to
-  n_freq = 2500          ! Number of frequency points in scan
+  freq_min = 0.8        ! Minimum frequency to scan from
+  freq_max = 80        ! Maximum frequency to scan to
+  n_freq = 2000          ! Number of frequency points in scan
 !  tag_list = 'l=1'
 /
 
