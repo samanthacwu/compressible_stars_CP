@@ -40,6 +40,33 @@ chi_rad = interpolate.interp1d(rs.flatten(), chi_rads.flatten())
 N2 = interpolate.interp1d(rs.flatten(), N2s.flatten())
 
 
+def eff(gam, om, dt):
+    # combined, for convenience
+    B = gam + 1j*om
+#    B = gam + 1j*om
+
+    # adding term by term - see overleaf for disucussion of which ones
+    # are important in the regime of omega >> gamma
+
+    # O(1)
+    numerical = B
+#    numerical = 2*B
+    # O(dt**2)
+    numerical += (1/3)*(B**3)*(dt**2)
+    # O(dt**3)
+    numerical += (1/4)*(B**4)*(dt**3)
+    # and so on
+    numerical += (7/60)*(B**5)*(dt**4)
+    numerical += (7/72)*(B**6)*(dt**5)
+    numerical += (241/2520)*(B**7)*(dt**6)
+    numerical += (211/2880)*(B**8)*(dt**7)
+    return numerical.real, numerical.imag
+
+timestep = 0.09
+
+
+
+
 # Generalized logic for getting forcing radius.
 package_path = Path(d3_stars.__file__).resolve().parent
 stock_path = package_path.joinpath('stock_models')
@@ -68,8 +95,10 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 1, 0.01]
+    depth_list = [2,]
+    depth_end  = depth_list[1:] + [1e-10]
     for j, d_filter in enumerate(depth_list):
+        d_end = depth_end[j]
         #Read in eigenfunction values.
         #Require: eigenvalues, horizontal duals, transfer surface (s1), optical depths
 
@@ -78,6 +107,16 @@ for ell in ell_list:
             values = f['good_evalues'][()]
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
             depths = f['depths'][()]
+
+            eff_evalues = []
+            for ev in values:
+                gamma_eff, omega_eff = eff(-ev.imag, np.abs(ev.real), timestep)
+                if ev.real < 0:
+                    eff_evalues.append(-omega_eff - 1j*gamma_eff)
+                else:
+                    eff_evalues.append(omega_eff - 1j*gamma_eff)
+            values = np.array(eff_evalues)
+ 
 
             rs = []
             for bk in ['B', 'S1', 'S2']:
@@ -88,20 +127,20 @@ for ell in ell_list:
             depthfunc = interp1d(smooth_oms, smooth_depths, bounds_error=False, fill_value='extrapolate')
 
         #Pick out eigenvalues that have less optical depth than a given cutoff
-        print('depth cutoff: {}'.format(d_filter))
-        good = depths < d_filter
+        print('depth cutoff: {}, end: {}'.format(d_filter, d_end))
+        good = (depths < d_filter)*(values.real > 0)*(depths > 1e-10)
         values = values[good]
         s1_amplitudes = s1_amplitudes[good]
         velocity_duals = velocity_duals[good]
 
         #Construct frequency grid for evaluation
-        om0 = np.min(np.abs(values.real))
-        om1 = np.max(values.real)*5
+        om0 = np.min(np.abs(values.real))*0.95
+        om1 = np.max(values.real)*1.05
         if om0 < xmin: xmin = om0
         if om1 > xmax: xmax = om1
-        if j == 0:
-            om0/= 10**(1)
-            stitch_om = np.abs(values[depths[good] <= 1][-1].real)
+#        if j == 0:
+#            om0/= 10**(1)
+#        stitch_om = np.abs(values[depths[good] <= 1][-1].real)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         #Get forcing radius and dual basis evaluated there.
@@ -114,6 +153,17 @@ for ell in ell_list:
         om, T = calculate_refined_transfer(om, values, uphi_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
         oms.append(om)
         transfers.append(T)
+        plt.loglog(om, T)
+    om_new = np.logspace(np.log10(om0)-0.3, np.log10(om0), 100)
+    T_damp = T[0]*np.exp(-depthfunc(om_new)+2)
+    oms.append(om_new)
+    transfers.append(T_damp)
+
+#    plt.loglog(om_new, T_damp)
+#    plt.loglog(om, 1000*np.exp(-depthfunc(om)))
+#    plt.axvline(om[depthfunc(om) > 1].max())
+#    plt.axvline(om[depthfunc(om) > 3].max())
+#    plt.show()
 
 
     #right now we have a transfer function for each optical depth filter
