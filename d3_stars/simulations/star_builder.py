@@ -119,7 +119,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
     locals().update(namespace)
     ncc_cutoff=1e-9
     tolerance=1e-9
-    HSE_tolerance = 3e-5
+    HSE_tolerance = 1e-4#3e-5
 
     #Solve for ln_rho.
     variables = []
