@@ -101,10 +101,10 @@ def solve_dense(solver, ell, group_index=1, verbose=True, lamb_freq=None, bruntN
         values = values[posvals]
         vectors = vectors[:, posvals]
 
-        #Sort by damping rate
-        order = np.argsort(-values.imag)
-#        #Sort by real frequency magnitude
-#        order = np.argsort(1/values.real)
+#        #Sort by damping rate
+#        order = np.argsort(-values.imag)
+        #Sort by real frequency magnitude
+        order = np.argsort(1/values.real)
         values = values[order]
         vectors = vectors[:, order]
 
@@ -124,10 +124,10 @@ def solve_dense(solver, ell, group_index=1, verbose=True, lamb_freq=None, bruntN
 #        cond2 = values.real > 0
 #        values = values[cond2]
 #        vectors = vectors[:, cond2]
-#        #Get rid of purely diffusive modes
-#        goodvals = np.abs(values.real/values.imag) > 1e-5
-#        values = values[goodvals]
-#        vectors = vectors[:, goodvals]
+        #Get rid of purely diffusive modes
+        goodvals = np.abs(values.real/values.imag) > 1e-4
+        values = values[goodvals]
+        vectors = vectors[:, goodvals]
 
         #Update solver
         solver.eigenvalues = values
@@ -613,7 +613,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05, depth_cutoff=None):
+    def check_eigen(self, cutoff=3e-6, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -650,9 +650,9 @@ class StellarEVP():
 
         good_values = []
         for i, v1 in enumerate(self.solver.eigenvalues):
-            if np.abs(v1.real) < np.abs(v1.imag):
-                logger.debug('skipping eigenvalue {}; damps very quickly'.format(v1))
-                continue
+#            if np.abs(v1.real) < 1e-3*np.abs(v1.imag):
+#                logger.debug('skipping eigenvalue {}; damps very quickly'.format(v1))
+#                continue
             if v1.imag > 0:
                 logger.debug('skipping eigenvalue {}; spurious growth mode'.format(v1))
                 continue
@@ -683,7 +683,10 @@ class StellarEVP():
             self.hires_EVP.solver = self.hires_EVP.solve_sparse(self.ell, [v1,])
             v2 = self.hires_EVP.solver.eigenvalues[0]
             real_goodness = np.abs(v1.real - v2.real)/np.abs(v1.real).min()
+            imag_goodness = np.abs(v1.imag - v2.imag)/np.abs(v1.imag).min()
             goodness = np.abs(v1 - v2)/np.abs(v1).min()
+
+            logger.debug('Value: {:.3e} / Goodness: {:.3e}, Real: {:.3e}, Imag: {:.3e}'.format(v1, goodness, real_goodness, imag_goodness))
 
             if goodness < cutoff:
                 self.hires_EVP.solver.set_state(0, self.hires_EVP.subsystem)
@@ -701,6 +704,9 @@ class StellarEVP():
                 if vector_diff < np.sqrt(cutoff):
                     logger.info('good evalue {} w/ vdiff {} and czfrac {}'.format(v1, vector_diff, cz_KE_frac.real))
                     good_values.append(i)
+                    if max_modes is not None and len(good_values) == max_modes:
+                        logger.info('reached {} modes == max modes; breaking'.format(max_modes))
+                        break
                 else:
                     logger.debug('skipping eigenvalue {}; vector diff is {}'.format(v1, vector_diff))
                     continue
