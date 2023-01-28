@@ -96,6 +96,11 @@ def solve_dense(solver, ell, group_index=1, verbose=True, lamb_freq=None, bruntN
         values = values[cond1]
         vectors = vectors[:, cond1]
 
+        #Only keep values with positive real omega
+        posvals = values.real > 0
+        values = values[posvals]
+        vectors = vectors[:, posvals]
+
         #Sort by damping rate
         order = np.argsort(-values.imag)
 #        #Sort by real frequency magnitude
@@ -108,7 +113,6 @@ def solve_dense(solver, ell, group_index=1, verbose=True, lamb_freq=None, bruntN
         for i in range(len(g_modes)):
             g_modes[i] = np.sum((np.abs(values[i].real) < lamb_freq)*(np.abs(values[i].real) < np.sqrt(bruntN2))) > 0
 
-        print('g modes: {}'.format(g_modes))
         values = values[g_modes]
         vectors = vectors[:, g_modes]
 
@@ -609,7 +613,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05):
+    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05, depth_cutoff=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -617,6 +621,8 @@ class StellarEVP():
         if not self.do_hires:
             logger.info("hires_scales = 1; skipping check_eigen()")
             return
+
+        depths, smooth_oms, smooth_depths = calculate_optical_depths(self.solver, self.bases_keys, self.stitch_radii, self.r_outer, self.ncc_file, self.namespace, ell=self.ell)
         
         self.hires_EVP.setup_sparse_solve(self.ell)
         namespace = self.hires_EVP.problem.namespace
@@ -649,6 +655,9 @@ class StellarEVP():
                 continue
             if v1.imag > 0:
                 logger.debug('skipping eigenvalue {}; spurious growth mode'.format(v1))
+                continue
+            if depth_cutoff is not None and depths[i] > depth_cutoff:
+                logger.debug('skipping eigenvalue {}; diffusively dominated'.format(v1))
                 continue
 
             #Check if Evalue is spurious or fully in the CZ:
@@ -830,8 +839,8 @@ class StellarEVP():
                 f['r_{}'.format(bn)] = self.namespace['r1_{}'.format(bn)]
                 f['rho_{}'.format(bn)] = self.namespace['rho0_{}'.format(bn)]['g']
                 for j in range(len(self.solver.eigenvalues)):
-                    f['velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
-                    f['full_velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = full_velocity_eigenfunctions_pieces[j][i]
+                    f['pieces/velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
+                    f['pieces/full_velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = full_velocity_eigenfunctions_pieces[j][i]
             f['r'] = r
             f['rho_full'] = rho_full
             f['depths'] = np.array(depths)
@@ -850,13 +859,15 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self):
+    def get_duals(self, ell=None):
+        if ell is not None:
+            self.ell = ell
         full_velocity_eigenfunctions_pieces = []
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'r') as f:
             evalues = f['good_evalues'][()]
             velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
-            for i in range(len(f.keys())):
-                key = 'full_velocity_eigenfunctions_piece_{}'.format(i)
+            for i in range(len(f['pieces'].keys())):
+                key = 'pieces/full_velocity_eigenfunctions_piece_{}'.format(i)
                 these_pieces = []
                 for j, bn in enumerate(self.bases_keys):
                     this_key = '{}_{}'.format(key, bn)
@@ -864,6 +875,7 @@ class StellarEVP():
                         these_pieces.append(f[this_key][()])
                 if len(these_pieces) > 0:
                     full_velocity_eigenfunctions_pieces.append(these_pieces)
+
         #Calculate duals
 
         dist = self.dist
@@ -887,22 +899,26 @@ class StellarEVP():
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
 
-        pos_evalues = evalues.real > 0
-        pos_indices = np.where(pos_evalues)[0]
-        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
-        neg_evalues = evalues.real < 0
-        neg_indices = np.where(neg_evalues)[0]
-        neg_velocity_duals = calculate_duals(velocity_eigenfunctions[neg_indices,:], self.bases, dist, IP=IP)
-        duals = np.zeros((evalues.size, *tuple(neg_velocity_duals.shape[1:])), dtype=neg_velocity_duals.dtype)
-        for i, ev in enumerate(evalues):
-            if ev.real > 0:
-                duals[i,:] = pos_velocity_duals[ev == evalues[pos_evalues]]
-            elif ev.real < 0:
-                duals[i,:] = neg_velocity_duals[ev == evalues[neg_evalues]]
+        duals = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP)
+#        pos_evalues = evalues.real > 0
+#        pos_indices = np.where(pos_evalues)[0]
+#        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
+#        neg_evalues = evalues.real < 0
+#        neg_indices = np.where(neg_evalues)[0]
+#        neg_velocity_duals = calculate_duals(velocity_eigenfunctions[neg_indices,:], self.bases, dist, IP=IP)
+#        duals = np.zeros((evalues.size, *tuple(neg_velocity_duals.shape[1:])), dtype=neg_velocity_duals.dtype)
+#        for i, ev in enumerate(evalues):
+#            if ev.real > 0:
+#                duals[i,:] = pos_velocity_duals[ev == evalues[pos_evalues]]
+#            elif ev.real < 0:
+#                duals[i,:] = neg_velocity_duals[ev == evalues[neg_evalues]]
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'r') as f:
             with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'w') as df:
                 for k in f.keys():
+                    if k == 'pieces': continue
                     df.create_dataset(k, data=f[k])
+                for k in f['pieces'].keys():
+                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
                 df['velocity_duals'] = duals
 
         gc.collect()
