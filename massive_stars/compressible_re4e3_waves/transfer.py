@@ -79,7 +79,7 @@ else:
     else:
         raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
 core_cz_radius = find_core_cz_radius(mesa_file_path)
-forcing_radius = 0.95 * core_cz_radius / L_nd
+forcing_radius = 1 * core_cz_radius / L_nd
 
 
 #Calculate transfer functions
@@ -96,6 +96,7 @@ for ell in ell_list:
     transfers = []
     oms = []
     depth_list = [1e10,]
+#    depth_list = [1e10,0.3, 0.1, 0.01]
     depth_end  = depth_list[1:] + [1e-10]
     for j, d_filter in enumerate(depth_list):
         d_end = depth_end[j]
@@ -144,12 +145,12 @@ for ell in ell_list:
 
         #Get forcing radius and dual basis evaluated there.
         r0 = forcing_radius
-        r1 = forcing_radius * (1.1)
+        r1 = forcing_radius * (1.05)
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
-        utheta_dual_interp = interpolate.interp1d(r, velocity_duals[:,1,:], axis=-1)(r_range)
+        uh_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range) #m == 1 solve; recall there is some power in utheta, too
 
         #Calculate and store transfer function
-        om, T = calculate_refined_transfer(om, values, utheta_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
+        om, T = calculate_refined_transfer(om, values, uh_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
         oms.append(om)
         transfers.append(T)
 #        plt.loglog(om, T)
@@ -188,8 +189,8 @@ for ell in ell_list:
 #    plt.axvline(good_om[depthfunc(good_om) > 10].max())
 #    plt.show()
 
-#    for om in raw_values:
-#        plt.axvline(om.real/(2*np.pi))
+    for om in raw_values:
+        plt.axvline(om.real/(2*np.pi))
     plt.loglog(good_om/(2*np.pi), good_T)
 #    good_T[depthfunc(good_om) >= 2.3] = offset*np.exp(-depthfunc(good_om))[depthfunc(good_om) >= 2.3]
 #    plt.loglog(good_om/(2*np.pi), good_T)
