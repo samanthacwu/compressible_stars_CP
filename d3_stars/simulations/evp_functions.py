@@ -546,7 +546,7 @@ class StellarEVP():
 
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -554,7 +554,7 @@ class StellarEVP():
         logger.info('setting up sparse solve for ell = {}'.format(ell))
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -613,7 +613,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=3e-6, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
+    def check_eigen(self, cutoff=3e-7, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -727,7 +727,7 @@ class StellarEVP():
                 grid_space = (False,False)
                 elements = (np.array((i,)),np.array((j,)))
                 m, this_ell = self.bases['B'].sphere_basis.elements_to_groups(grid_space, elements)
-                if this_ell == self.ell and m == 1:
+                if this_ell == self.ell and m == 0:
                     good[i,j] = True
 
         integ_energy_op = None
@@ -865,7 +865,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None):
+    def get_duals(self, ell=None, zero_phi=True):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -901,6 +901,9 @@ class StellarEVP():
             for i, bn in enumerate(self.bases.keys()):
                 velocity1 = velocity_list1[i]
                 velocity2 = velocity_list2[i]
+                if zero_phi:
+                    velocity1[0,:] = 0
+                    velocity2[0,:] = 0
                 conj_work_fields[i]['g'] = np.conj(velocity1)
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
