@@ -79,7 +79,7 @@ else:
     else:
         raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
 core_cz_radius = find_core_cz_radius(mesa_file_path)
-forcing_radius = 1.02 * core_cz_radius / L_nd
+forcing_radius = 0.95 * core_cz_radius / L_nd
 
 
 #Calculate transfer functions
@@ -95,7 +95,7 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [2,]
+    depth_list = [1e10,]
     depth_end  = depth_list[1:] + [1e-10]
     for j, d_filter in enumerate(depth_list):
         d_end = depth_end[j]
@@ -104,7 +104,7 @@ for ell in ell_list:
 
         with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
-            values = f['good_evalues'][()]
+            values = raw_values = f['good_evalues'][()]
             s1_amplitudes = f['s1_amplitudes'][()].squeeze()
             depths = f['depths'][()]
 
@@ -136,41 +136,38 @@ for ell in ell_list:
         #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))*0.95
         om1 = np.max(values.real)*1.05
+#        if j == 0:
+#            om0 /= 10
         if om0 < xmin: xmin = om0
         if om1 > xmax: xmax = om1
-#        if j == 0:
-#            om0/= 10**(1)
-#        stitch_om = np.abs(values[depths[good] <= 1][-1].real)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         #Get forcing radius and dual basis evaluated there.
         r0 = forcing_radius
-        r1 = forcing_radius * (1.05)
+        r1 = forcing_radius * (1.1)
         r_range = np.linspace(r0, r1, num=100, endpoint=True)
-        uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
+        utheta_dual_interp = interpolate.interp1d(r, velocity_duals[:,1,:], axis=-1)(r_range)
 
         #Calculate and store transfer function
-        om, T = calculate_refined_transfer(om, values, uphi_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
+        om, T = calculate_refined_transfer(om, values, utheta_dual_interp, s1_amplitudes, r_range, rho(r_range), ell)
         oms.append(om)
         transfers.append(T)
-        plt.loglog(om, T)
-    om_new = np.logspace(np.log10(om0)-0.3, np.log10(om0), 100)
-    T_damp = T[0]*np.exp(-depthfunc(om_new)+2)
-    oms.append(om_new)
-    transfers.append(T_damp)
-
+#        plt.loglog(om, T)
+#    om_new = np.logspace(np.log10(om0)-0.3, np.log10(om0), 100)
+#    T_damp = T[0]*np.exp(-depthfunc(om_new)+2)
+#    oms.append(om_new)
+#    transfers.append(T_damp)
+#
 #    plt.loglog(om_new, T_damp)
-#    plt.loglog(om, 1000*np.exp(-depthfunc(om)))
-#    plt.axvline(om[depthfunc(om) > 1].max())
-#    plt.axvline(om[depthfunc(om) > 3].max())
-#    plt.show()
-
 
     #right now we have a transfer function for each optical depth filter
     # We want to just get one transfer function value at each om
     # use the minimum T value from all filters we've done.
     good_om = np.sort(np.concatenate(oms))
+    good_om = good_om[depthfunc(good_om) <= 3] #filter only low-depth modes!
     good_T = np.zeros_like(good_om)
+
+
 
     from scipy.interpolate import interp1d
     interps = []
@@ -182,6 +179,25 @@ for ell in ell_list:
         for f in interps:
             vals.append(f(omega))
         good_T[i] = np.min(vals)
+
+#    exp_fit_ind = (depthfunc(good_om) > 1)*(depthfunc(good_om) < 2.3)
+#    offset = np.mean((T/np.exp(-depthfunc(good_om)))[exp_fit_ind])
+#    plt.loglog(good_om, offset*np.exp(-depthfunc(good_om)))
+#    plt.axvline(good_om[depthfunc(good_om) > 1].max())
+#    plt.axvline(good_om[depthfunc(good_om) > 3].max()/(2*np.pi))
+#    plt.axvline(good_om[depthfunc(good_om) > 10].max())
+#    plt.show()
+
+#    for om in raw_values:
+#        plt.axvline(om.real/(2*np.pi))
+    plt.loglog(good_om/(2*np.pi), good_T)
+#    good_T[depthfunc(good_om) >= 2.3] = offset*np.exp(-depthfunc(good_om))[depthfunc(good_om) >= 2.3]
+#    plt.loglog(good_om/(2*np.pi), good_T)
+    plt.ylim(1e-1, 1e5)
+    plt.title('ell = {}'.format(ell))
+    plt.show()
+
+
 
     #Do WKB at low frequency -- exponentially attenuate by exp(-om/om_{tau=1}) [assume transfer does everything right up to tau=1]
 #    good_T *= np.exp(-depthfunc(good_om))

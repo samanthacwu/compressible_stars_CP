@@ -31,7 +31,8 @@ from d3_stars.defaults import config
 from d3_stars.simulations.parser import name_star
 out_dir, out_file = name_star()
 
-fit_wave_flux = False
+#fit_wave_flux = False
+fit_wave_flux = True
 
 #args = docopt(__doc__)
 with h5py.File(out_file, 'r') as f:
@@ -61,13 +62,15 @@ if not os.path.exists(full_out_dir):
 if fit_wave_flux:
     #Fit wave luminosity
     #Fit A f ^ alpha ell ^ beta
+#    radius_str = '1.1'
     radius_str = '1.25'
-    fit_freq_range = (2e-2, 1e-1)
+    fit_freq_range = (4e-2, 1e-1)
     fit_ell_range = (1, 4)
     fig = plt.figure()
-    #possible_alphas = [-6, -13/2, -7]
-    possible_alphas = [-6.5]#[-5, -5.25, -11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -15/2, -8]
-    possible_betas = [3, 3.25, 3.5, 3.75, 4]
+#    possible_alphas = [-13/2]
+#    possible_betas = [4]
+    possible_alphas = [-11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -7.25, -15/2]
+    possible_betas = [2.5, 2.75, 3, 3.25, 3.5, 3.75, 4]
     fit_A = []
     fit_alpha = []
     fit_beta  = []
@@ -92,18 +95,22 @@ if fit_wave_flux:
             fit_A.append(A)
             fit_alpha.append(alpha)
             fit_beta.append(beta)
-    wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*ell**(fit_beta[-1])
+    wave_luminosity_power = lambda f, ell: fit_A[-1]*f**(fit_alpha[-1])*np.sqrt(ell*(ell+1))**(fit_beta[-1])
     print('fit_A', fit_A)
     print('fit_A frac', np.array(fit_A[1:])/np.array(fit_A[:-1]))
     print('fit_alpha', fit_alpha)
     print('fit_beta', fit_beta)
+#    plt.loglog(freqs, wave_luminosity[:,ells==1])
+#    plt.loglog(freqs, wave_luminosity_power(freqs, 1))
+#    plt.show()
 #    for ell in ells:
 #        plt.loglog(freqs, wave_luminosity[:,ell == ells].ravel())
 #        plt.loglog(freqs, wave_luminosity_power(freqs, ell))
 #        plt.show()
 
 else:
-    radius_str = '1.25'
+#    radius_str = '1.25'
+    radius_str = '1.1'
     wave_lums = dict()
     with h5py.File('../twoRcore_re4e3_damping/wave_flux/wave_luminosities.h5', 'r') as lum_file:
         wave_lums['freqs'] = lum_file['freqs'][()]
@@ -125,15 +132,15 @@ with h5py.File('power_spectra/power_spectra.h5', 'r') as pow_f:
 powers = []
 ell_vals = []
 fig = plt.figure()
-for ell in range(64):
-    if ell == 0: continue
+Lmax = config.eigenvalue['Lmax']
+for ell in range(1, Lmax+1):
     try:
         print('plotting ell = {}'.format(ell))
         with h5py.File('eigenvalues/transfer_ell{:03d}_eigenvalues.h5'.format(ell), 'r') as ef:
             transfer_func = ef['transfer_ur'][()]
             transfer_func_root_lum = ef['transfer_root_lum'][()]
             transfer_freq = ef['om'][()]/(2*np.pi)
-            transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func_root_lum), bounds_error=False, fill_value=np.nan)(np.log10(f))
+            transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func_root_lum), bounds_error=False, fill_value=-1e99)(np.log10(f))
 
         if fit_wave_flux:
             wave_luminosity = lambda f: wave_luminosity_power(f,ell)
@@ -150,7 +157,7 @@ for ell in range(64):
 #        plt.loglog(t_freqs, kh2*(N2plateau/(2*np.pi*t_freqs)**2 - 1))
 #        plt.axvline(N2plateau**(1/2)/(2*np.pi))
 #        plt.show()
-        fudge =  1/10
+        fudge =  1/2
         surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * wave_luminosity(f)
 
 
@@ -179,9 +186,9 @@ sim_sum_power = np.sum(surface_power[:,1:ell_vals[-1]+1], axis=1)
 sim_sum_hemisphere_power = np.sum((surface_power/surface_ells)[:,1:ell_vals[-1]+1], axis=1)
 sum_ells_power = np.sum(powers, axis=0)
 sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None], axis=0)
-plt.loglog(surface_freqs, sim_sum_power, c='orange', lw=1)
+#plt.loglog(surface_freqs, sim_sum_power, c='orange', lw=1)
 plt.loglog(surface_freqs, sim_sum_hemisphere_power, c='orange', lw=0.5)
-plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=1)
+#plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=1)
 plt.loglog(t_freqs, sum_ells_hemisphere_power, c='k', label=r'$\sum_{\ell} \frac{P_\ell}{\ell}$', lw=0.5)
 plt.legend(loc='best')
 plt.title('summed over ells')
