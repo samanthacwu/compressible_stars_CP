@@ -8,35 +8,36 @@
 /
 
 &mode
-  l = 1 ! Harmonic degree
+  l = 6 ! Harmonic degree
   n_pg_min = -80
   n_pg_max = 0
-  tag = 'l=1'
+  tag = 'l=6'
 /
 &mode
-  l = 2 ! Harmonic degree
+  l = 7 ! Harmonic degree
   n_pg_min = -80
   n_pg_max = 0
-  tag = 'l=2'
+  tag = 'l=7'
 /
 &mode
-  l = 3 ! Harmonic degree
+  l = 8 ! Harmonic degree
   n_pg_min = -80
   n_pg_max = 0
-  tag = 'l=3'
+  tag = 'l=8'
 /
 &mode
-  l = 4 ! Harmonic degree
+  l = 9 ! Harmonic degree
   n_pg_min = -80
   n_pg_max = 0
-  tag = 'l=4'
+  tag = 'l=9'
 /
 &mode
-  l = 5 ! Harmonic degree
+  l = 10 ! Harmonic degree
   n_pg_min = -80
   n_pg_max = 0
-  tag = 'l=5'
+  tag = 'l=10'
 /
+
 
 &osc
     nonadiabatic = .TRUE.
@@ -55,7 +56,7 @@
   grid_type = 'INVERSE' ! Scan grid uniform in inverse frequency
   freq_min_units = 'UHZ'
   freq_max_units = 'UHZ'
-  freq_min = 0.3        ! Minimum frequency to scan from
+  freq_min = 2        ! Minimum frequency to scan from
   freq_max = 100        ! Maximum frequency to scan to
   n_freq = 3000          ! Number of frequency points in scan
 /

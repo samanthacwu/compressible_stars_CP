@@ -54,7 +54,7 @@ forcing_radius = 1.02 * core_cz_radius
 
 
 #Calculate transfer functions
-Lmax = 3
+Lmax = 10
 ell_list = np.arange(1, Lmax+1)
 eig_dir = 'gyre_output'
 for ell in ell_list:
@@ -66,14 +66,16 @@ for ell in ell_list:
 
     transfers = []
     oms = []
-    depth_list = [10, 1, 0.01]
+    depth_list = [1e10, 1, 0.3, 0.1,]
     for j, d_filter in enumerate(depth_list):
         #Read in eigenfunction values.
         #Require: eigenvalues, horizontal duals, transfer surface (s1), optical depths
 
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'r') as f:
+            r = f['r'][()]
             uh_duals = f['uh_dual'][()]
-            values = 2*np.pi*f['dimensional_freqs'][()] #TODO: check if this is right
+            raw_values = 2*np.pi*f['dimensional_freqs'][()] #TODO: check if this is right
+#            print(raw_values)
             Lum_amplitudes = f['L_top'][()].squeeze()
             depths = f['depths'][()]
 
@@ -83,19 +85,22 @@ for ell in ell_list:
 
         #Pick out eigenvalues that have less optical depth than a given cutoff
         print('depth cutoff: {}'.format(d_filter))
-        good = depths < d_filter
-        values = values[good]
+        good = (depths < d_filter)*(raw_values.real > 0)#*(depths > d_filter/15)
+        values = raw_values[good]
         Lum_amplitudes = Lum_amplitudes[good]
         uh_duals = uh_duals[good]
 
         #Construct frequency grid for evaluation
-        om0 = np.min(np.abs(values.real))
-        om1 = np.max(values.real)*5
-        if om0 < xmin: xmin = om0
-        if om1 > xmax: xmax = om1
+        om1 = np.max(values.real)*1.05
         if j == 0:
-            om0/= 10**(1)
-            stitch_om = np.abs(values[depths[good] <= 1][-1].real)
+            om0 = np.min(np.abs(values.real))*0.95
+        else:
+            om0 = np.min(np.abs(values.real))*0.95
+        if om0 < xmin: xmin = om0
+#        if om1 > xmax: xmax = om1
+##            om0/= 10**(1)
+#            stitch_om = smooth_oms[smooth_depths <= 10][0]
+#            print('stitch', stitch_om)
         om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
 
         #Get forcing radius and dual basis evaluated there.
@@ -108,6 +113,17 @@ for ell in ell_list:
         om, T = calculate_refined_transfer(om, values, uh_dual_interp, Lum_amplitudes, r_range, rho(r_range), ell)
         oms.append(om)
         transfers.append(T)
+#        plt.loglog(om/(2*np.pi), T)
+#    for v in raw_values:
+#        plt.axvline(v.real)
+#    plt.show()
+
+#    om_new = np.logspace(np.log10(om0)-0.3, np.log10(om0), 100)
+#    T_damp = T[0]*np.exp(-depthfunc(om_new)+3)
+#    oms.append(om_new)
+#    transfers.append(T_damp)
+
+
 
 
     #right now we have a transfer function for each optical depth filter
@@ -128,8 +144,14 @@ for ell in ell_list:
         good_T[i] = np.min(vals)
 
     #Do WKB at low frequency -- exponentially attenuate by exp(-om/om_{tau=1}) [assume transfer does everything right up to tau=1]
+#    wkb = np.exp(-depthfunc(good_om/(2*np.pi)))
+#    wkb *= good_T[good_om > stitch_om][0] / np.exp(-depthfunc(good_om[good_om > stitch_om][0]/(2*np.pi)))
+#    plt.loglog(good_om, good_T)
+#    plt.loglog(good_om, wkb)
+#    plt.axvline(stitch_om)
+#    plt.show()
 #    good_T *= np.exp(-depthfunc(good_om))
-    good_T[good_om <= stitch_om] *= np.exp(-depthfunc(good_om[good_om <= stitch_om]) + depthfunc(stitch_om))
+#    good_T[good_om <= stitch_om] *= np.exp(-depthfunc(good_om[good_om <= stitch_om]) + depthfunc(stitch_om))
 
 
     # Right now the transfer function gets us from ur (near RCB) -> surface. We want wave luminosity (near RCB) -> surface.
@@ -152,11 +174,21 @@ for ell in ell_list:
 #
     k2 = k_r**2 + k_h**2
     root_lum_to_ur = np.sqrt(1/(4*np.pi*forcing_radius**2*rho_u))*np.sqrt(np.array(1/(-(good_om + 1j*chi_rad_u*k2)*k_r / k_h**2).real, dtype=np.complex128))
+    transfer_root_lum = root_lum_to_ur*good_T 
 
-    plt.loglog(good_om/(2*np.pi), good_T)
-    plt.loglog(good_om/(2*np.pi), (root_lum_to_ur*good_T).real, color='orange')
-    plt.loglog(good_om/(2*np.pi), (root_lum_to_ur*good_T).imag, color='orange', ls='--')
-    plt.axvline(stitch_om/(2*np.pi))
+
+#    plt.loglog(good_om, depthfunc(good_om))
+#    plt.loglog(good_om, good_om**(-4)/1e20)
+#    plt.loglog(good_om, good_om**(-1/4))
+#    plt.show()
+#    plt.figure()
+
+#    plt.loglog(good_om/(2*np.pi), good_T)
+    plt.loglog(good_om/(2*np.pi),transfer_root_lum.real, color='black', label='transfer')
+    plt.loglog(good_om/(2*np.pi),transfer_root_lum.imag, color='black', ls='--')
+#    plt.loglog(good_om/(2*np.pi), np.exp(1-depthfunc(good_om)), c='blue', label='WKB envelope')
+#    plt.loglog(good_om/(2*np.pi), 1e-3*(good_om/1e-5/2/np.pi)**(-3.75), label='Forcing shape')
+#    plt.ylim(1e-10, 1)
     plt.xlabel('frequency')
     plt.ylabel('T')
     plt.show()

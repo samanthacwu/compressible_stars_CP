@@ -10,6 +10,7 @@ import glob
 import time
 import matplotlib.pyplot as plt
 from scipy import linalg
+from scipy.interpolate import interp1d
 import h5py
 import re
 
@@ -31,20 +32,21 @@ def natural_sort(iterable, reverse=False):
 
 # load modes
 
-def read_modes(file_list, ell):
+def read_modes(file_list, ell, depth_cut=100):
 
     #get info about mesa background
     p = mr.MesaData(mesa_LOG)
-    r = p.radius[::-1]*Rsun_to_cm #in cm
-    bruntN2 = p.brunt_N2[::-1] #rad^2/s^2
-    lambS1  = p.lamb_S[::-1] #rad/s
+    r_mesa = p.radius[::-1]*Rsun_to_cm #in cm
+    bruntN2_mesa = p.brunt_N2[::-1] #rad^2/s^2
+    lambS1_mesa  = p.lamb_S[::-1] #rad/s
     T       = p.temperature[::-1] #K
     rho     = 10**(p.logRho[::-1]) #g/cm^3
     opacity = p.opacity[::-1] #cm^2 / g
     cp      = p.cp[::-1] #erg / K / g
-    chi_rad = 16 * sigma_SB * T**3 / (3 * rho**2 * cp * opacity)
+    chi_rad_mesa = 16 * sigma_SB * T**3 / (3 * rho**2 * cp * opacity)
 
     freq_list = []
+    depth_list = []
     xir_list = []
     xih_list = []
     L_list = []
@@ -57,7 +59,24 @@ def read_modes(file_list, ell):
     Rstar = header['R_star'] #cm
     Mstar = header['M_star'] #g
     Lstar = header['L_star'] #erg/s
-    r = data_mode['x']*Rstar #cm
+    x = data_mode['x']
+    r = x*Rstar #cm
+
+    V = data_mode['V_2']*x**2
+    As = data_mode['As']
+    c_1 = data_mode['c_1']
+    Gamma_1 = data_mode['Gamma_1']
+
+    bruntN2 = As/c_1
+    lambS1 = np.sqrt(1*(1+1))*np.sqrt(Gamma_1/(V*c_1))
+    chi_rad = 10**(interp1d(r_mesa, np.log10(chi_rad_mesa), bounds_error=False, fill_value='extrapolate')(r))
+
+    #re-dimensionalize
+    mid_r = r[len(r)//2]
+    bruntN2 *= 10**(interp1d(r_mesa, np.log10(bruntN2_mesa))(mid_r)) / bruntN2[len(r)//2]
+    lambS1 *= 10**(interp1d(r_mesa, np.log10(lambS1_mesa))(mid_r)) / lambS1[len(r)//2]
+
+
 
  
     for i,filename in enumerate(file_list):
@@ -66,7 +85,14 @@ def read_modes(file_list, ell):
         header = summary.header
         data_mode = summary.data
 
-        freq_list.append(header['Refreq'] + 1j*header['Imfreq'])
+        frequency = (header['Refreq'] + 1j*header['Imfreq'])*1e-6 #in Hz
+        depth = calculate_optical_depths(np.array([frequency,]), r, bruntN2, lambS1, chi_rad, ell=ell)[0]
+        if depth > depth_cut:
+            print('skipping mode with {}'.format(depth))
+            continue
+
+        freq_list.append(frequency)
+        depth_list.append(depth)
         omega_list.append(header['Reomega'] + 1j*header['Imomega'])
         xir_list.append(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #units of r/R
         xih_list.append(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #units of r/R
@@ -80,7 +106,8 @@ def read_modes(file_list, ell):
     header = summary.header
     data_mode = summary.data
   
-    freq = np.array(freq_list)*1e-6 #in Hz
+    freq = np.array(freq_list) #in Hz
+    depths = np.array(depth_list)
     omega = np.array(omega_list) #dimensionless eigenfrequency
     #technically probs off by 2pi but doesn't matter bc eigenfunctions have arbitrary normalization.
     ur = Rstar*np.array(xir_list)*1j*freq[:,None] #cm/s
@@ -88,16 +115,16 @@ def read_modes(file_list, ell):
     L = np.array(L_list)#erg/s
     L_top = L[:,-1]
   
-  
-    depths = calculate_optical_depths(freq, r, bruntN2, lambS1, chi_rad, ell=ell)
-    smooth_oms = np.logspace(np.log10(np.abs(freq.real).min())-1, np.log10(np.abs(freq.real).max())+1, 100)
+    smooth_oms = np.logspace(np.log10(np.abs(freq.real).min())-3, np.log10(np.abs(freq.real).max())+1, 100)
     smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), r, bruntN2, lambS1, chi_rad, ell=ell)
+
     return freq,omega,r,ur,uh,L,L_top,rho,depths,smooth_oms, smooth_depths
   
 
 def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
     #Calculate 'optical depths' of each mode.
     depths = []
+#    chi_rad = chi_rad.min()
     for freq in eigenfrequencies.real:
         freq = np.abs(freq)
         om = 2*np.pi*freq
@@ -111,6 +138,8 @@ def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
         kz = ((-1)**(3/4)/np.sqrt(2))*np.sqrt(-1j*2*k_perp**2 - (om/chi_rad) + np.sqrt(om**3 + 1j*4*k_perp**2*chi_rad*N2)/(chi_rad*np.sqrt(om)) )
 #        kz = np.sqrt(-k_perp**2 + 1j*((2*np.pi*freq)/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2*chi_rad*k_perp**2 / (2*np.pi*freq)**3))))
         depth_integrand[wave_cavity] = kz[wave_cavity].imag
+#        plt.semilogy(r, depth_integrand)
+#        plt.show()
 
 
         #Numpy integrate
@@ -137,6 +166,8 @@ def calculate_duals(file_list,ell,om_list):
       if i % 10 == 0: print(i)
       for j in range(len(ur)):
         IP_matrix[i,j] = IP(ur[i],ur[j],uh[i],uh[j])
+
+    print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
     
     IP_inv = linalg.inv(IP_matrix)
     
@@ -144,46 +175,54 @@ def calculate_duals(file_list,ell,om_list):
     uh_dual = np.conj(IP_inv)@uh
     return freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths, ur_dual, uh_dual
 
-Lmax = 3
+Lmax = 10
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
     om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
 
     base1 = './gyre_output/mode_ell{:03d}'.format(ell)
     file_list = natural_sort(glob.glob('%s*n-*.txt' %base1))
-    good_files = []
-    neg_files  = []
-    neg_summary = pg.read_output('./gyre_output/neg_summary.txt')
-    tol = 1e-10
-    for i,filename in enumerate(file_list):
-        summary = tomso.gyre.load_summary(filename)
-        header = summary.header
-        data_mode = summary.data
-        freq = header['Refreq'] + 1j*header['Imfreq']
-        neg_freq = -freq.real + 1j*freq.imag
-        neg_ind = np.argmin(np.abs((neg_summary['freq'] - neg_freq)))
-        file_neg_freq = neg_summary['freq'][neg_ind]
-        file_neg_n_pg = neg_summary['n_pg'][neg_ind]
-        file_neg_ell  = neg_summary['l'][neg_ind]
-        if np.abs(file_neg_freq.real/neg_freq.real - 1) < tol:
-            neg_file = './gyre_output/neg_mode_ell{:03d}_m+00_n{:06}.txt'.format(file_neg_ell, file_neg_n_pg)
-            good_files.append(filename)
-            neg_files.append(neg_file)
+#    good_files = []
+#    neg_files  = []
+#    neg_summary = pg.read_output('./gyre_output/neg_summary.txt')
+#    tol = 1e-10
+#    for i,filename in enumerate(file_list):
+#        summary = tomso.gyre.load_summary(filename)
+#        header = summary.header
+#        data_mode = summary.data
+#        freq = header['Refreq'] + 1j*header['Imfreq']
+#        neg_freq = -freq.real + 1j*freq.imag
+#        neg_ind = np.argmin(np.abs((neg_summary['freq'] - neg_freq)))
+#        file_neg_freq = neg_summary['freq'][neg_ind]
+#        file_neg_n_pg = neg_summary['n_pg'][neg_ind]
+#        file_neg_ell  = neg_summary['l'][neg_ind]
+#        if np.abs(file_neg_freq.real/neg_freq.real - 1) < tol and np.abs(file_neg_freq.imag/neg_freq.imag - 1) < tol:
+#            neg_file = './gyre_output/neg_mode_ell{:03d}_m+00_n{:06}.txt'.format(file_neg_ell, file_neg_n_pg)
+#            good_files.append(filename)
+#            neg_files.append(neg_file)
 
-    freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths, ur_dual, uh_dual = calculate_duals(good_files,ell,om_list)
-    neg_freq, neg_omega, neg_r, neg_ur, neg_uh, neg_L, neg_L_top, neg_rho, neg_depths, neg_smooth_oms, neg_smooth_depths, neg_ur_dual, neg_uh_dual = calculate_duals(neg_files,ell,om_list)
+    freq, omega, r, ur, uh, L, L_top, rho, depths, smooth_oms, smooth_depths, ur_dual, uh_dual = calculate_duals(file_list,ell,om_list)
+#    neg_freq, neg_omega, neg_r, neg_ur, neg_uh, neg_L, neg_L_top, neg_rho, neg_depths, neg_smooth_oms, neg_smooth_depths, neg_ur_dual, neg_uh_dual = calculate_duals(neg_files,ell,om_list)
+#
+#    freq = np.concatenate((freq, neg_freq))
+#    argsort = np.argsort(-freq.imag)
+#    freq = freq[argsort]
+#    omega = np.concatenate((omega, neg_omega))[argsort]
+#    ur = np.concatenate((ur, neg_ur))[argsort]
+#    uh = np.concatenate((uh, neg_uh))[argsort]
+#    L  = np.concatenate((L, neg_L))[argsort]
+#    L_top = np.concatenate((L_top, neg_L_top))[argsort]
+#    depths = np.concatenate((depths, neg_depths))[argsort]
+#    ur_dual = np.concatenate((ur_dual, neg_ur_dual))[argsort]
+#    uh_dual = np.concatenate((uh_dual, neg_uh_dual))[argsort]
 
-    freq = np.concatenate((freq, neg_freq))
-    argsort = np.argsort(-freq.imag)
-    freq = freq[argsort]
-    omega = np.concatenate((omega, neg_omega))[argsort]
-    ur = np.concatenate((ur, neg_ur))[argsort]
-    uh = np.concatenate((uh, neg_uh))[argsort]
-    L  = np.concatenate((L, neg_L))[argsort]
-    L_top = np.concatenate((L_top, neg_L_top))[argsort]
-    depths = np.concatenate((depths, neg_depths))[argsort]
-    ur_dual = np.concatenate((ur_dual, neg_ur_dual))[argsort]
-    uh_dual = np.concatenate((uh_dual, neg_uh_dual))[argsort]
+#    plt.scatter(np.abs(freq.real), depths)
+#    plt.loglog(np.abs(freq.real), (1e-25*np.abs(freq.real)**(-4)))
+#    plt.loglog(np.abs(freq.real), (1e-1*np.abs(freq.real)**(-1/4)))
+#    plt.ylim(1e-3, 1e3)
+#    plt.yscale('log')
+#    plt.xscale('log')
+#    plt.show()
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'w') as f:
         f['dimensional_freqs'] = freq
