@@ -837,15 +837,15 @@ class StellarEVP():
             f['entropy_eigenfunctions'] = np.array(entropy_eigenfunctions)
             f['ln_rho_eigenfunctions'] = np.array(ln_rho_eigenfunctions)
             f['enthalpy_fluc_eigenfunctions'] = np.array(enthalpy_eigenfunctions)
-            f['full_velocity_eigenfunctions'] = np.array(full_velocity_eigenfunctions)
-            f['full_entropy_eigenfunctions'] = np.array(full_entropy_eigenfunctions)
-            f['full_ln_rho_eigenfunctions'] = np.array(full_ln_rho_eigenfunctions)
-            f['full_enthalpy_fluc_eigenfunctions'] = np.array(full_enthalpy_eigenfunctions)
+#            f['full_velocity_eigenfunctions'] = np.array(full_velocity_eigenfunctions)
+#            f['full_entropy_eigenfunctions'] = np.array(full_entropy_eigenfunctions)
+#            f['full_ln_rho_eigenfunctions'] = np.array(full_ln_rho_eigenfunctions)
+#            f['full_enthalpy_fluc_eigenfunctions'] = np.array(full_enthalpy_eigenfunctions)
             for i, bn in enumerate(self.bases_keys):
                 f['r_{}'.format(bn)] = self.namespace['r1_{}'.format(bn)]
                 f['rho_{}'.format(bn)] = self.namespace['rho0_{}'.format(bn)]['g']
                 for j in range(len(self.solver.eigenvalues)):
-                    f['pieces/velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
+#                    f['pieces/velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = velocity_eigenfunctions_pieces[j][i]
                     f['pieces/full_velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = full_velocity_eigenfunctions_pieces[j][i]
             f['r'] = r
             f['rho_full'] = rho_full
@@ -865,7 +865,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None, zero_phi=False):
+    def get_duals(self, ell=None, zero_phi=False, cleanup=True):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -926,8 +926,11 @@ class StellarEVP():
                 for k in f.keys():
                     if k == 'pieces': continue
                     df.create_dataset(k, data=f[k])
-                for k in f['pieces'].keys():
-                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
+#                for k in f['pieces'].keys():
+#                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
                 df['velocity_duals'] = duals
+        if cleanup:
+            #remove large pre-dual file.
+            os.remove('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell))
 
         gc.collect()
