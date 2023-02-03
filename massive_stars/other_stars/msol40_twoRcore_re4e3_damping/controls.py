@@ -17,7 +17,7 @@ star['smooth_h'] = True
 #ncc_cutoff: non-constant-coefficient cutoff needs to be small enough to resolve star non-constant coefficients but large enough that machine precision isn't a problem    
 numerics = OrderedDict()
 numerics['equations'] = 'FC_HD' #fully compressible hydro
-numerics['reynolds_target'] = 4e3
+numerics['reynolds_target'] = 3.1e3
 numerics['prandtl'] = 1
 numerics['ncc_cutoff'] = 1e-10
 numerics['N_dealias'] = 1.5
