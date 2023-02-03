@@ -377,7 +377,7 @@ def find_core_cz_radius(mesa_file, dimensionless=True):
         return core_cz_radius
 
 
-def build_nccs(plot_nccs=False):
+def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_filter=False):
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
@@ -521,7 +521,7 @@ def build_nccs(plot_nccs=False):
     ### entropy gradient
     ### More core convection zone logic here
     #Build a nice function for our basis in the ball
-    grad_s_width = 0.03
+    grad_s_width = grad_s_transition_default
     grad_s_transition_point = r_bound_nd[1] - grad_s_width
     logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
     logger.info('using default grad s width = {}'.format(grad_s_width))
@@ -673,7 +673,12 @@ def build_nccs(plot_nccs=False):
             ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
             ncc_dict['g']['from_grad'] = True 
         
-    
+   
+    if reapply_grad_s_filter:
+        for bn, basis in bases.items():
+            ncc_dict['grad_s0']['field_{}'.format(bn)]['g'] *= zero_to_one(dedalus_r[bn], grad_s_transition_point-5*grad_s_width, width=grad_s_width)
+            ncc_dict['grad_s0']['field_{}'.format(bn)]['c'] *= 1
+            ncc_dict['grad_s0']['field_{}'.format(bn)]['g']
 #        #Evaluate for grad chi rad
 #        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
     
