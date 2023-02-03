@@ -181,7 +181,7 @@ if __name__ == '__main__':
     timestep = None
     if restart is not None:
         write, timestep = solver.load_state(restart)
-        timestep *= 0.1 #bootstrap safely
+        timestep *= 0.5 #bootstrap safely
         write_mode = 'append'
     else:
         # Initial conditions
