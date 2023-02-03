@@ -374,7 +374,7 @@ class SphericalCompressibleProblem():
             # Rotation and damping terms
             if self.do_rotation:
                 ez = self.namespace['ez_{}'.format(bn)]
-                self.namespace['rotation_term_{}'.format(bn)] = -2*Omega*d3.cross(ez, u)
+                self.namespace['rotation_term_{}'.format(bn)] = -2*self.Omega*d3.cross(ez, u)
             else:
                 self.namespace['rotation_term_{}'.format(bn)] = 0
 
@@ -441,7 +441,7 @@ class SphericalCompressibleProblem():
             self.namespace['tot_source_{}'.format(bn)] = self.namespace['source_KE_{}'.format(bn)] + self.namespace['source_IE_{}'.format(bn)]
         return self.namespace
 
-    def fill_structure(self, scales=None):
+    def fill_structure(self, scales=None, dimensional_Omega=None):
         self.fields_filled = True
         logger.info('using NCC file {}'.format(self.ncc_file))
         max_dt = None
@@ -497,10 +497,10 @@ class SphericalCompressibleProblem():
 
                     if t_rot is None:
                         if self.do_rotation:
-                            sim_tau_sec = f['tau_nd'][()]
-                            sim_tau_day = sim_tau_sec / (60*60*24)
-                            Omega = sim_tau_day * dimensional_Omega 
-                            t_rot = 1/(2*Omega)
+                            sim_tau_sec = f['tau_nd'][()] #sec / sim time
+                            sim_tau_day = sim_tau_sec / (60*60*24) # days / sim time
+                            self.Omega = sim_tau_day * dimensional_Omega  # 1 / sim time
+                            t_rot = 1/(2*self.Omega)
                         else:
                             t_rot = np.inf
 
@@ -514,7 +514,7 @@ class SphericalCompressibleProblem():
                 raise NotImplementedError("Must supply star file")
 
             if self.do_rotation:
-                logger.info("Running with Coriolis Omega = {:.3e}".format(Omega))
+                logger.info("Running with Coriolis Omega = {:.3e}".format(self.Omega))
 
         return self.namespace, (max_dt, t_buoy, t_rot)
 
