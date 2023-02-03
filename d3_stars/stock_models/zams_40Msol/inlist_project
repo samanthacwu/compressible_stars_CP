@@ -18,17 +18,17 @@
   ! kap options
   ! see kap/defaults/kap.defaults
   use_Type2_opacities = .true.
-  Zbase = 0.006
+  Zbase = 0.014
 
 / ! end of kap namelist
 
 &controls
 
-      initial_mass = 15
+      initial_mass = 40
 
       ! MAIN PARAMS
       mixing_length_alpha = 1.6
-      initial_z = 0.006
+      initial_z = 0.014
       do_conv_premix = .true.
       use_Ledoux_criterion = .true.
 
