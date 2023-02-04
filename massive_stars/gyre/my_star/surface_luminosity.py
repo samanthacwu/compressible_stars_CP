@@ -104,7 +104,7 @@ for ell in ell_list:
 
     print(om)
     deltaL_d_L = transfer_root_lum*np.sqrt(wave_luminosity(om/(2*np.pi), ell))/Lum
-    total_signal += 10**(interp1d(np.log10(om/(2*np.pi)), np.log10(deltaL_d_L), bounds_error=False, fill_value=-10000)(np.log10(plot_freqs))) #/ ell
+    total_signal += 10**(interp1d(np.log10(om/(2*np.pi)), np.log10(deltaL_d_L), bounds_error=False, fill_value=-10000)(np.log10(plot_freqs))) / ell
     plt.loglog(om/(2*np.pi), deltaL_d_L/ell, label='ell={}'.format(ell))
     plt.ylim(1e-13, 1e-2)
     plt.ylabel(r'$\delta L / L_*$')
