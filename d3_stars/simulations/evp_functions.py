@@ -360,8 +360,8 @@ def transfer_function(om, values, u_dual, field_outer, r_range, rho, ell):
     k_h = np.sqrt(ell * (ell + 1)) / r_range
     leading_amp = 2*np.pi*r_range**2*rho
     bulk_to_bound_force = np.sqrt(2) * om / k_h #times ur -> comes later.
-    Amp = leading_amp * bulk_to_bound_force * np.conj(u_dual) * ( (1/ (om - values)) + (1/ (-np.conj(om) - values)))
-    T = np.sum( np.abs(np.sum(Amp * field_outer * dr, axis=0)), axis=0) / np.sum(dr)
+    Amp = leading_amp * bulk_to_bound_force * np.conj(u_dual) * ( (field_outer/ (om - values)) + (-np.conj(field_outer)/ (-np.conj(om) - values)))
+    T = np.sum( np.abs(np.sum(Amp * dr, axis=0)), axis=0) / np.sum(dr)
     return T
 
 def calculate_refined_transfer(om, *args):
