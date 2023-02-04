@@ -318,7 +318,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
-def transfer_function(om, values, u_dual, field_outer, r_range, rho, ell):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -338,29 +338,64 @@ def transfer_function(om, values, u_dual, field_outer, r_range, rho, ell):
         The surface value of each eigenfunction for the field that the transfer function is being calculated for (entropy, luminosity, etc.)
      r_range : NumPy array (float64)
         The radial coordinates of delta-function forcings that the transfer function is evaluated for.
-     rho : NumPy array (float64)
-        The mass density evaluated at each radial coordinate in r_range.
      ell : float
         The spherical harmonic degree
+     rho_func : function
+        A function of the mass density to be evaluated at each radial coordinate in r_range.
+     chi_rad_func : function
+        A function of chi_rad to be evaluated at each radial coordinate in r_range.
+     N2_max : float64
+        Maximal value of N^2 achieved in the domain
+     gamma : float
+        Adiabatic index
 
     Outputs:
     --------
      T : NumPy array (complex128)
-        The transfer function, which must be multiplied by the radial velocity field related to the convective driving.
+        The transfer function, which must be multiplied by sqrt(wave luminosity).
     """
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
     dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
-    rho                 = rho[None, :, None]
     om                   = om[None, None, :] 
     values           = values[:, None, None]
     u_dual           = u_dual[:, :,    None]
     field_outer = field_outer[:, None, None]
+    om = np.array(om*np.ones_like(r_range), dtype=np.complex128)
+
+    #Get structure variables
+    chi_rad = chi_rad_func(r_range.max())
+    rho = rho_func(r_range)
+
+    #Get wavenumbers
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-    leading_amp = 2*np.pi*r_range**2*rho
-    bulk_to_bound_force = np.sqrt(2) * om / k_h #times ur -> comes later.
-    Amp = leading_amp * bulk_to_bound_force * np.conj(u_dual) * ( (field_outer/ (om - values)) + (-np.conj(field_outer)/ (-np.conj(om) - values)))
+    k_r_low_diss  = np.array(-np.sqrt(N2_max/om**2 - 1).real*k_h, dtype=np.complex128)
+    k_r_high_diss = (((-1)**(3/4) / np.sqrt(2))\
+                          *np.sqrt(-2*1j*k_h**2 - (om/chi_rad) + np.sqrt((om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(om)) )).real
+    k_r_err = np.abs(1 - k_r_low_diss/k_r_high_diss)
+
+    #patch high-dissipation and low-dissipation k_r values
+    k_r = np.copy(k_r_high_diss)
+    bool_arr = k_r_err < 1e-2
+    if np.sum(bool_arr) > 0:
+        om_switch = om[bool_arr][0]
+        above = om >= om_switch
+        above = above[np.unravel_index(above, k_r.shape)]
+        k_r[above] = k_r_low_diss[above]
+
+    k2 = k_r**2 + k_h**2
+
+    #Calculate transfer
+    inner_prod = 4*np.pi*r_range**2*rho * np.conj(u_dual)
+    bulk_to_bound_force = om / k_h #times ur -> comes later.
+
+    R_d_mucp = (gamma-1)/gamma
+#    root_lum_to_ur = (om/np.sqrt(N2_max))*np.sqrt(np.array((k_r/k_h)/(4*np.pi*r_range**2), dtype=np.complex128))\
+#                    *np.sqrt(R_d_mucp/rho)
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128).real)**(-1)
+
+    Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * ( (field_outer/ (om - values)) + (np.conj(field_outer)/ (-np.conj(om) - values)))
     T = np.sum( np.abs(np.sum(Amp * dr, axis=0)), axis=0) / np.sum(dr)
     return T
 

@@ -34,6 +34,8 @@ out_dir, out_file = name_star()
 #fit_wave_flux = False
 fit_wave_flux = True
 
+fudge_factor = 0.5
+
 #args = docopt(__doc__)
 with h5py.File(out_file, 'r') as f:
     rB = f['r_B'][()]
@@ -85,8 +87,9 @@ if fit_wave_flux:
             error = []
             for j, alpha in enumerate(possible_alphas):
                 for k, beta in enumerate(possible_betas):
-                    A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / ells[None,:]**(beta))[good_freqs[:,None]*good_ells[None,:]])
-                    fit = A * freqs[:,None]**alpha * ells[None,:]**beta
+                    kh = np.sqrt(ells[None,:]*(ells[None,:]+1))
+                    A = np.mean((wave_luminosity / freqs[:,None]**(alpha) / kh**(beta))[good_freqs[:,None]*good_ells[None,:]])
+                    fit = A * freqs[:,None]**alpha * kh**beta
                     error.append(np.mean( np.abs(1 - (np.log10(fit) / np.log10(wave_luminosity))[good_freqs[:,None]*good_ells[None,:]])))
                     info.append((A, alpha, beta))
             print(info, error)
@@ -109,13 +112,14 @@ if fit_wave_flux:
 #        plt.show()
 
 else:
-#    radius_str = '1.25'
-    radius_str = '1.1'
+    radius_str = '1.25'
     wave_lums = dict()
     with h5py.File('../twoRcore_re4e3_damping/wave_flux/wave_luminosities.h5', 'r') as lum_file:
-        wave_lums['freqs'] = lum_file['freqs'][()]
+        wave_lums['freqs'] = freqs = lum_file['freqs'][()]
         wave_lums['ells'] = lum_file['ells'][()].ravel()
         wave_lums['lum'] = lum_file['wave_luminosity(r={})'.format(radius_str)][0,:]
+        radius_str = '1.1'
+        wave_lums['lum'][freqs < 2e-2] = lum_file['wave_luminosity(r={})'.format(radius_str)][0,:][freqs < 2e-2,:]
 
 freqs = np.logspace(-3, 0, 1000)
 t_freqs = np.logspace(np.log10(freqs.min()), np.log10(freqs.max()), 100000)
@@ -137,7 +141,6 @@ for ell in range(1, Lmax+1):
     try:
         print('plotting ell = {}'.format(ell))
         with h5py.File('eigenvalues/transfer_ell{:03d}_eigenvalues.h5'.format(ell), 'r') as ef:
-            transfer_func = ef['transfer_ur'][()]
             transfer_func_root_lum = ef['transfer_root_lum'][()]
             transfer_freq = ef['om'][()]/(2*np.pi)
             transfer_interp = lambda f: 10**interp1d(np.log10(transfer_freq), np.log10(transfer_func_root_lum), bounds_error=False, fill_value=-1e99)(np.log10(f))
@@ -157,7 +160,7 @@ for ell in range(1, Lmax+1):
 #        plt.loglog(t_freqs, kh2*(N2plateau/(2*np.pi*t_freqs)**2 - 1))
 #        plt.axvline(N2plateau**(1/2)/(2*np.pi))
 #        plt.show()
-        fudge =  1/2
+        fudge =  fudge_factor
         surface_s1_power = lambda f: fudge * np.conj(transfer_interp(f))*transfer_interp(f) * wave_luminosity(f)
 
 
@@ -176,16 +179,16 @@ for ell in range(1, Lmax+1):
         plt.clf()
         ell_vals.append(ell)
     except:
-#        raise
+        raise
         print("no eigenvalues for ell = {}".format(ell))
         
 ell_vals = np.array(ell_vals)
 powers = np.array(powers)
 print(powers.shape)
 sim_sum_power = np.sum(surface_power[:,1:ell_vals[-1]+1], axis=1)
-sim_sum_hemisphere_power = np.sum((surface_power/surface_ells)[:,1:ell_vals[-1]+1], axis=1)
+sim_sum_hemisphere_power = np.sum((surface_power/surface_ells**2)[:,1:ell_vals[-1]+1], axis=1)
 sum_ells_power = np.sum(powers, axis=0)
-sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None], axis=0)
+sum_ells_hemisphere_power = np.sum(powers/ell_vals[:,None]**2, axis=0)
 #plt.loglog(surface_freqs, sim_sum_power, c='orange', lw=1)
 plt.loglog(surface_freqs, sim_sum_hemisphere_power, c='orange', lw=0.5)
 #plt.loglog(t_freqs, sum_ells_power, c='k', label=r'$\sum_{\ell} P_\ell$', lw=1)
