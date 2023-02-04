@@ -49,4 +49,4 @@ dynamics['wall_hours'] = 47.5
 dynamics['buoy_end_time'] = 100
 dynamics['sponge'] = True 
 dynamics['tau_factor'] = 1
-dynamics['rotation_time'] = 3
+dynamics['rotation_time'] = 10
