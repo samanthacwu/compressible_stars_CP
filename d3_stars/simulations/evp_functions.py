@@ -318,7 +318,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
-def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, include_neg=True):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -365,7 +365,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     om = np.array(om*np.ones_like(r_range), dtype=np.complex128)
 
     #Get structure variables
-    chi_rad = chi_rad_func(r_range.max())
+    chi_rad = chi_rad_func(r_range)
     rho = rho_func(r_range)
 
     #Get wavenumbers
@@ -395,11 +395,15 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 #                    *np.sqrt(R_d_mucp/rho)
     root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128).real)**(-1)
 
-    Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * ( (field_outer/ (om - values)) + (np.conj(field_outer)/ (-np.conj(om) - values)))
-    T = np.sum( np.abs(np.sum(Amp * dr, axis=0)), axis=0) / np.sum(dr)
+    if include_neg:
+        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * ( (field_outer/ (om - values)) + (np.conj(field_outer)/ (-np.conj(om) - values)))
+    else:
+        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * field_outer/ (om - values)
+
+    T = np.abs(np.sum( np.sum(Amp * dr, axis=0), axis=0) / np.sum(dr))
     return T
 
-def calculate_refined_transfer(om, *args):
+def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
     """
     Iteratively calculates the transfer function by calling transfer_function()
 
@@ -419,7 +423,8 @@ def calculate_refined_transfer(om, *args):
     T = transfer_function(om, *args)
 
     peaks = 1
-    while peaks > 0:
+    iters = 0
+    while peaks > 0 and iters < max_iters:
         i_peaks = []
         for i in range(2,len(om)-2):
             if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
@@ -437,7 +442,7 @@ def calculate_refined_transfer(om, *args):
             om_high = om[i+1]
             om_new = np.concatenate([om_new,np.linspace(om_low,om_high,10)])
 
-        T_new = transfer_function(om_new, *args)
+        T_new = transfer_function(om_new, *args, **kwargs)
 
 #        print([om[i] for i in i_peaks])
         om = np.concatenate([om,om_new])
@@ -448,6 +453,7 @@ def calculate_refined_transfer(om, *args):
 #        if args[-1] > 0:
 #            plt.loglog(om, T)
 #            plt.show()
+        iters += 1
 
     return om, T
 
