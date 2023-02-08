@@ -92,7 +92,7 @@ for ell in ell_list:
     plt.loglog(om/(2*np.pi), transfer_root_lum, label='ell={}'.format(ell))
 
 plt.figure()
-wave_luminosity = lambda f, l: 1e-15*f**(-7.5)*l**3
+wave_luminosity = lambda f, l: 3e-11*f**(-6.5)*np.sqrt(l*(l+1))**4
 #wave_luminosity = lambda f, l: 1e-19*f**(-8)*np.sqrt(l*(l+1))**5
 for ell in ell_list:
     print("ell = %i" % ell)
@@ -143,12 +143,12 @@ for i in range(len(star_names)):
     plt.axes(obs_axs[i])
     plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
     plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
-    alphanu = (alpha0[i] / (1 + (plot_freqs/nu_char[i])**gamma[i]) + Cw[i]) * 1e-6 #mags
+    alphanu = (alpha0[i] / (1 + (plot_freqs/nu_char[i])**gamma[i]) + Cw[i]) #mags
     plt.loglog(plot_freqs, alphanu, color=color)
     plt.loglog(plot_freqs, total_signal, lw=2, c='k')#, label=r'15 $M_{\odot}$ LMC sim')
     plt.loglog(plot_freqs, total_signal + Cw[i], c='grey')#, label='sim + white noise')
     obs_axs[i].text(0.98, 0.88, star_names[i], ha='right', transform=obs_axs[i].transAxes, color=color)
-    plt.ylim(1e-1, 3e1)
+    plt.ylim(1e-1, 1e4)
     plt.ylabel(r'$\Delta m$')
     plt.xlabel(r'frequency (1/day)')
     plt.xlim(3e-2, 1e1)

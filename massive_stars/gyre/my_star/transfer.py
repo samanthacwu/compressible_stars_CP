@@ -47,9 +47,9 @@ rhos     = 10**(p.logRho[::-1]) #g/cm^3
 opacity = p.opacity[::-1] #cm^2 / g
 cp      = p.cp[::-1] #erg / K / g
 chi_rads = 16 * sigma_SB * T**3 / (3 * rhos**2 * cp * opacity)
-rho = interpolate.interp1d(r.flatten()/r.max(), rhos.flatten())
-chi_rad = interpolate.interp1d(r.flatten()/r.max(), chi_rads.flatten())
-N2 = interpolate.interp1d(r.flatten()/r.max(), bruntN2.flatten())
+rho = interpolate.interp1d(r.flatten(), rhos.flatten())
+chi_rad = interpolate.interp1d(r.flatten(), chi_rads.flatten())
+N2 = interpolate.interp1d(r.flatten(), bruntN2.flatten())
 
 core_cz_radius = find_core_cz_radius(mesa_LOG)
 r0 = 0.9 * core_cz_radius
@@ -70,9 +70,10 @@ for ell in ell_list:
         r = f['r'][()]
         x = f['x'][()]
         uh_duals = f['u_h_dual'][()]
-        values = f['omega'][()]
-        hz_values = f['freq'][()] * 1e-6 #Hz
-        Lum_amplitudes = f['dF_mumags_Red'][()].squeeze()
+        values = 2*np.pi*f['freq'][()]
+#        Lum_amplitudes = f['dF_mumags_Red'][()].squeeze()
+#        Lum_amplitudes = -2.5/np.log(10)*1e6*f['delta_L_dL_top'][()].squeeze()
+        Lum_amplitudes = -2.5*1e6*f['delta_L_dL_top'][()].squeeze() #need to retrieve old form using this
         depths = f['depth'][()]
 
         smooth_oms = f['smooth_oms'][()]
@@ -85,11 +86,12 @@ for ell in ell_list:
     om = np.logspace(np.log10(om0), np.log10(om1), num=2000, endpoint=True) 
 
     #Get forcing radius and dual basis evaluated there.
-    x_range = np.linspace(x[r <r0][-1], x[r > r1][0], num=100, endpoint=True)
-    uh_dual_interp = interpolate.interp1d(x, uh_duals[:,:], axis=-1)(x_range)
+    r_range = np.linspace(r0, r1, num=100, endpoint=True)
+#    x_range = np.linspace(x[r <r0][-1], x[r > r1][0], num=100, endpoint=True)
+    uh_dual_interp = interpolate.interp1d(r, uh_duals[:,:], axis=-1)(r_range)
 
     #Calculate and store transfer function
-    good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, Lum_amplitudes, x_range, ell, rho, chi_rad, N2(0.5), gamma, include_neg=False, max_iters=5)#, min_refinement_om=4e-5)
+    good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, Lum_amplitudes, r_range, ell, rho, chi_rad, N2(0.5*r.max()), gamma, include_neg=False, max_iters=5)#, min_refinement_om=4e-5)
 
     if plot:
         plt.loglog(good_om/(2*np.pi),good_T.real, color='black', label='transfer')
@@ -99,7 +101,7 @@ for ell in ell_list:
         plt.show()
 #
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'w') as f:
-        f['om'] = good_om * (hz_values.real.max()/values.real.max())
+        f['om'] = good_om
         f['transfer_root_lum'] = good_T 
 
 

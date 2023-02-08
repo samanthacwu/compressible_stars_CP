@@ -153,6 +153,7 @@ class GyreMSGPostProcessor:
                 this_row = summary[(summary['l'] == ell)*(summary['n_pg'] == header['n_pg'])]
                 for k in ['freq', 'omega', 'xi_r_ref', 'lag_L_ref']:
                     data[k][i] = np.array(this_row[k],dtype=np.complex128)[0]
+            data['freq'] *= 1e-6 #conversion to Hz. (cgs)
 
 
             # Extract radial displacement and Lagrangian luminosity perturbation
@@ -256,17 +257,16 @@ class GyreMSGPostProcessor:
                 data_mode = summary.data
 
                 data['depth'][i] = calculate_optical_depths(np.array([data['freq'][i]*1e-6,]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-                data['xi_r_eigfunc'][i,:] = data_mode['Rexi_r'] + 1j*data_mode['Imxi_r'] #units of r/R
-                data['xi_h_eigfunc'][i,:] = data_mode['Rexi_h'] + 1j*data_mode['Imxi_h'] #units of r/R
-                data['lag_L_eigfunc'][i,:] = data_mode['Relag_L'] + 1j*data_mode['Imlag_L'] #units of L/L_star
+                data['xi_r_eigfunc'][i,:] = self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
+                data['xi_h_eigfunc'][i,:] = self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
+                data['lag_L_eigfunc'][i,:] = self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #units of L/L_star
           
-            #Is this off by 2\pi? u = dt(xi) by defn.
-
-            data['u_r_eigfunc'] = -1j*data['omega'][:,None]*data['xi_r_eigfunc']
-            data['u_h_eigfunc'] = -1j*data['omega'][:,None]*data['xi_h_eigfunc']
-            data['L_top'] = data['lag_L_eigfunc'][:,-1]
+            #u = dt(xi) = -i om u by defn.
+            data['u_r_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
+            data['u_h_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc']
+            data['delta_L_dL_top'] = data['lag_L_eigfunc'][:,-1]/self.L
           
-            smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real*1e-6).min())-3, np.log10(np.abs(data['freq'].real*1e-6).max())+1, 100)
+            smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real).min())-3, np.log10(np.abs(data['freq'].real).max())+1, 100)
             smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)
             data['smooth_oms'] = smooth_oms
             data['smooth_depths'] = smooth_depths
@@ -285,8 +285,8 @@ class GyreMSGPostProcessor:
           (because the actual angular velocity has two components and is uh = xi_h * f * grad(Y_ell,m)) [so grad_h is the angular part of the gradient without any 1/r factor]
           but when you take <uh, uh> you can integrate-by-parts on one of the grad's to turn it into laplacian(Y_ell,m)=-(ell(ell+1)) Y_ell,m
           """
-          dx = np.gradient(self.x)
-          return np.sum(dx*4*np.pi*self.x**2*self.rho*(np.conj(ur_1)*ur_2+self.ell*(self.ell+1)*np.conj(uh_1)*uh_2),axis=-1)
+          dr = np.gradient(self.r)
+          return np.sum(dr*4*np.pi*self.r**2*self.rho*(np.conj(ur_1)*ur_2+self.ell*(self.ell+1)*np.conj(uh_1)*uh_2),axis=-1)
         
         IP_matrix = np.zeros((len(data['n_pg']),len(data['n_pg'])),dtype=np.complex128)
         for i in range(len(ur)):
@@ -346,7 +346,7 @@ for ell in ell_list:
                   MSG_DIR = os.environ['MSG_DIR'],
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
-    data_dicts = post.evaluate_magnitudes(observer=(np.pi/3,np.pi/6),m=0)
+    data_dicts = post.evaluate_magnitudes(observer=(0,np.pi/6),m=0)
     post.sort_eigenfunctions()
     data_dicts = post.calculate_duals()
 
