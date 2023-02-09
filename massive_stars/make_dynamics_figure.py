@@ -94,10 +94,10 @@ with turb_plotter.my_sync:
                 d['xx'] = full_rr*np.cos(full_pp)
                 d['yy'] = full_rr*np.sin(full_pp)
 
-        fig = plt.figure(figsize=(7.5, 3))
-        ax1 = fig.add_axes([0, 0, 0.3, 0.9], polar=False)
-        ax2 = fig.add_axes([0.35, 0, 0.3, 0.9], polar=False)
-        ax3 = fig.add_axes([0.7, 0, 0.3, 0.9], polar=False)
+        fig = plt.figure(figsize=(7.5, 2.7))
+        ax1 = fig.add_axes([0, 0, 0.3, 0.88], polar=False)
+        ax2 = fig.add_axes([0.35, 0, 0.3, 0.88], polar=False)
+        ax3 = fig.add_axes([0.7, 0, 0.3, 0.88], polar=False)
         cax1 = fig.add_axes([0.05, 0.97, 0.2, 0.03])
         cax2 = fig.add_axes([0.575, 0.97, 0.2, 0.03])
         plots = []
@@ -151,9 +151,9 @@ with turb_plotter.my_sync:
                 ax2.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
                 phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
-                xy2_top = (0, outline_r)
+                xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
-                xy2_bot = (0, -outline_r)
+                xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
                                                   axesA=ax, axesB=ax2, color="black", lw=0.5)
@@ -162,9 +162,9 @@ with turb_plotter.my_sync:
                 ax3.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
                 phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
-                xy2_top = (0, outline_r)
+                xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
-                xy2_bot = (0, -outline_r)
+                xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
                                                   axesA=ax, axesB=ax3, color="black", lw=0.5)
