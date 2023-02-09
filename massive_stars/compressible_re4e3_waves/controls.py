@@ -39,7 +39,7 @@ eigenvalue = OrderedDict()
 eigenvalue['hires_factor'] = 1.5
     
 #highest spherical harmonic degree to solve EVP at
-eigenvalue['Lmax'] = 64
+eigenvalue['Lmax'] = 32
 
 dynamics = OrderedDict()
 

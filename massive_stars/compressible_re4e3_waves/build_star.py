@@ -18,4 +18,4 @@ if __name__ == '__main__':
     from docopt import docopt
     args = docopt(__doc__)
 
-    build_nccs(plot_nccs=not(args['--no_plot']))
+    build_nccs(plot_nccs=not(args['--no_plot']), reapply_grad_s_filter=True)

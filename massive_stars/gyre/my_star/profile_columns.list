@@ -143,7 +143,7 @@
    !logS ! log10(specific entropy)
    !logS_per_baryon ! log10(specific entropy per baryon / kerg)
 
-   !pressure ! total pressure at center of zone (pgas + prad)
+   pressure ! total pressure at center of zone (pgas + prad)
    !prad ! radiation pressure at center of zone
    !pgas ! gas pressure at center of zone (electrons and ions)
    !logPgas ! log10(pgas)
@@ -158,7 +158,7 @@
    cp ! specific heat at constant total pressure
 
    !log_CpT
-   !gamma1 ! dlnP_dlnRho at constant S
+   gamma1 ! dlnP_dlnRho at constant S
    !gamma3 ! gamma3 - 1 = dlnT_dlnRho at constant S
    !gam ! plasma interaction parameter (> 160 or so means starting crystallization)
    !free_e ! free_e is mean number of free electrons per nucleon
@@ -166,7 +166,7 @@
    !chiRho ! dlnP_dlnRho at constant T
    !chiT ! dlnP_dlnT at constant Rho
 
-   !csound ! sound speed
+   csound ! sound speed
    !log_csound
    !csound_face ! sound speed (was previously called csound_at_face)
    !cs_at_cell_bdy ! sound speed at cell boundary (csound is at cell center)

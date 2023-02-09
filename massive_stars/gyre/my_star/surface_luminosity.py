@@ -76,7 +76,7 @@ star_log_Ell  = ell[mn == this_model]
 
 
 #Calculate transfer functions
-Lmax = 10
+Lmax = 1
 ell_list = np.arange(1, Lmax+1)
 eig_dir = 'gyre_output'
 plot_freqs = np.logspace(-7, -4, 10000)
@@ -92,7 +92,7 @@ for ell in ell_list:
     plt.loglog(om/(2*np.pi), transfer_root_lum, label='ell={}'.format(ell))
 
 plt.figure()
-wave_luminosity = lambda f, l: 1e-15*f**(-7.5)*l**3
+wave_luminosity = lambda f, l: 3e-11*f**(-6.5)*np.sqrt(l*(l+1))**4
 #wave_luminosity = lambda f, l: 1e-19*f**(-8)*np.sqrt(l*(l+1))**5
 for ell in ell_list:
     print("ell = %i" % ell)
@@ -103,10 +103,10 @@ for ell in ell_list:
         transfer_root_lum = f['transfer_root_lum'][()].real
 
     print(om)
-    deltaL_d_L = transfer_root_lum*np.sqrt(wave_luminosity(om/(2*np.pi), ell))/Lum
-    total_signal += 10**(interp1d(np.log10(om/(2*np.pi)), np.log10(deltaL_d_L), bounds_error=False, fill_value=-10000)(np.log10(plot_freqs))) #/ ell
-    plt.loglog(om/(2*np.pi), deltaL_d_L/ell, label='ell={}'.format(ell))
-    plt.ylim(1e-13, 1e-2)
+    micromag = transfer_root_lum*np.sqrt(wave_luminosity(om/(2*np.pi), ell))
+    total_signal += 10**(interp1d(np.log10(om/(2*np.pi)), np.log10(micromag), bounds_error=False, fill_value=-10000)(np.log10(plot_freqs)))
+    plt.loglog(om/(2*np.pi), micromag, label='ell={}'.format(ell))
+    print(micromag)
     plt.ylabel(r'$\delta L / L_*$')
     plt.xlabel(r'frequency (Hz)')
     plt.xlim(1e-6, 1e-4)
@@ -143,13 +143,13 @@ for i in range(len(star_names)):
     plt.axes(obs_axs[i])
     plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
     plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
-    alphanu = (alpha0[i] / (1 + (plot_freqs/nu_char[i])**gamma[i]) + Cw[i]) * 1e-6 #mags
-    plt.loglog(plot_freqs, alphanu/2.5, color=color)
+    alphanu = (alpha0[i] / (1 + (plot_freqs/nu_char[i])**gamma[i]) + Cw[i]) #mags
+    plt.loglog(plot_freqs, alphanu, color=color)
     plt.loglog(plot_freqs, total_signal, lw=2, c='k')#, label=r'15 $M_{\odot}$ LMC sim')
-    plt.loglog(plot_freqs, total_signal + Cw[i]*1e-6/2.5, c='grey')#, label='sim + white noise')
+    plt.loglog(plot_freqs, total_signal + Cw[i], c='grey')#, label='sim + white noise')
     obs_axs[i].text(0.98, 0.88, star_names[i], ha='right', transform=obs_axs[i].transAxes, color=color)
-    plt.ylim(1e-6, 3e-4)
-    plt.ylabel(r'$\delta L / L_*$')
+    plt.ylim(1e-1, 1e4)
+    plt.ylabel(r'$\Delta m$')
     plt.xlabel(r'frequency (1/day)')
     plt.xlim(3e-2, 1e1)
 plt.savefig('obs_prediction.png', bbox_inches='tight', dpi=300)
