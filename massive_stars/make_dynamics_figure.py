@@ -1,4 +1,5 @@
 import numpy as np
+import h5py
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -16,18 +17,40 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
         return -(one_to_zero(*args, **kwargs) - 1)
 
+
 r_outer = 2
 sponge_function = lambda r: zero_to_one(r, r_outer - 0.15, 0.07)
+
+class MathTextSciFormatter():
+    def __init__(self, fmt="%1.2e"):
+        self.fmt = fmt
+    def __call__(self, x, pos=None):
+        s = self.fmt % x
+        decimal_point = '.'
+        positive_sign = '+'
+        tup = s.split('e')
+        significand = tup[0].rstrip(decimal_point)
+        sign = tup[1][0].replace(positive_sign, '')
+        exponent = tup[1][1:].lstrip('0')
+        if exponent:
+            exponent = '10^{%s%s}' % (sign, exponent)
+        if significand and exponent:
+            s =  r'%s{\times}%s' % (significand, exponent)
+        else:
+            s =  r'%s%s' % (significand, exponent)
+        return "${}$".format(s)
+
+sci_formatter = MathTextSciFormatter(fmt="%1.0e")
 
 
 
 turb_root_dir = 'twoRcore_re3e4_damping/'
-turb_start_file = 10
-wave_start_file = 150
+turb_start_file = 5
+wave_start_file = 140
 wave_root_dir = 'compressible_re1e4_waves/'
 file_dir='slices'
 out_name='dynamics_figure'
-n_files = 10
+n_files = 15
 start_fig = 1
 
 turb_plotter = SlicePlotter(turb_root_dir, file_dir=file_dir, out_name=out_name, start_file=turb_start_file, n_files=n_files)
@@ -43,7 +66,13 @@ for d in [turb_coords, turb_coords_cz, wave_coords]:
     for key in ['r', 'phi', 'rr', 'pp']:
         d[key] = []
 
-true_maxmin = 8e-3
+with h5py.File('twoRcore_re3e4_damping/star/star_512+256_bounds0-2L_Re3.00e+04_de1.5_cutoff1.0e-10.h5', 'r') as f:
+    L_nd = f['L_nd'][()]
+    tau_nd = f['tau_nd'][()]
+    u_nd = L_nd/tau_nd
+
+#true_maxmin = 8e-3 * u_nd
+true_maxmin = 5e4
 
 first = True
 with turb_plotter.my_sync:
@@ -65,10 +94,10 @@ with turb_plotter.my_sync:
                 d['xx'] = full_rr*np.cos(full_pp)
                 d['yy'] = full_rr*np.sin(full_pp)
 
-        fig = plt.figure(figsize=(7.5, 3))
-        ax1 = fig.add_axes([0, 0, 0.3, 0.9], polar=False)
-        ax2 = fig.add_axes([0.35, 0, 0.3, 0.9], polar=False)
-        ax3 = fig.add_axes([0.7, 0, 0.3, 0.9], polar=False)
+        fig = plt.figure(figsize=(7.5, 2.7))
+        ax1 = fig.add_axes([0, 0, 0.3, 0.88], polar=False)
+        ax2 = fig.add_axes([0.35, 0, 0.3, 0.88], polar=False)
+        ax3 = fig.add_axes([0.7, 0, 0.3, 0.88], polar=False)
         cax1 = fig.add_axes([0.05, 0.97, 0.2, 0.03])
         cax2 = fig.add_axes([0.575, 0.97, 0.2, 0.03])
         plots = []
@@ -83,6 +112,7 @@ with turb_plotter.my_sync:
                 data.append(dsets[t][ni,2,:].squeeze())
             data = np.concatenate(data, axis=1)
             if i == 0:
+                data *= u_nd
                 vmin = -true_maxmin
                 vmax = true_maxmin
             else:
@@ -102,11 +132,12 @@ with turb_plotter.my_sync:
                 color2 = ax.pcolormesh(d['xx'], d['yy'], pmask, shading='auto', cmap=t_cmap, vmin=0, vmax=1, rasterized=True)
             if i == 0:
                 cbar = plt.colorbar(plot, cax=cax1, orientation='horizontal')
-                cax1.text(-0.05, 0.5, r'$u_r$', transform=cax1.transAxes, va='center', ha='right')
+                cax1.text(-0.05, 0.5, r'$u_r$ (cm$\,$s$^{-1}$)', transform=cax1.transAxes, va='center', ha='right')
+                cbar.set_ticks((vmin, 0, vmax))
+                cbar.set_ticklabels([sci_formatter(vmin), '0', sci_formatter(vmax)])
             elif i == 1:
                 cbar = plt.colorbar(plot, cax=cax2, orientation='horizontal')
                 cax2.text(-0.05, 0.5, r'$u_r/\sigma(u_r)$', transform=cax2.transAxes, va='center', ha='right')
-            if i in [0, 1]:
                 cbar.set_ticks((vmin, 0, vmax))
                 cbar.set_ticklabels(['{:.2f}'.format(vmin), '0', '{:.2f}'.format(vmax)])
             ax.set_yticks([])
@@ -120,9 +151,9 @@ with turb_plotter.my_sync:
                 ax2.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
                 phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
-                xy2_top = (0, outline_r)
+                xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
-                xy2_bot = (0, -outline_r)
+                xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
                                                   axesA=ax, axesB=ax2, color="black", lw=0.5)
@@ -131,9 +162,9 @@ with turb_plotter.my_sync:
                 ax3.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
                 phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
-                xy2_top = (0, outline_r)
+                xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
-                xy2_bot = (0, -outline_r)
+                xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
                                                   axesA=ax, axesB=ax3, color="black", lw=0.5)
@@ -146,6 +177,7 @@ with turb_plotter.my_sync:
         write_num = turb_plotter.current_file_handle['scales/write_number'][turb_ni] 
         figname = '{:s}/{:s}_{:06d}.png'.format(turb_plotter.out_dir, turb_plotter.out_name, int(write_num+start_fig-1))
         fig.savefig(figname, dpi=300, bbox_inches='tight')
+        plt.close(fig)
 
         first = False
 
