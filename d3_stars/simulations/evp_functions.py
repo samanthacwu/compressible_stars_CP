@@ -359,48 +359,41 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
     om                   = om[None, None, :] 
-    values           = values[:, None, None]
     u_dual           = u_dual[:, :,    None]
-    field_outer = field_outer[:, None, None]
+    values           = values[:, None]
+    field_outer = field_outer[:, None]
     om = np.array(om*np.ones_like(r_range), dtype=np.complex128)
+
+    delta = 1/dr
+    rho = rho_func(r_range)
+    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1) / r_range.size
 
     #Get structure variables
     chi_rad = chi_rad_func(r_range)
-    rho = rho_func(r_range)
-
     #Get wavenumbers
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-    k_r_low_diss  = np.array(-np.sqrt(N2_max/om**2 - 1).real*k_h, dtype=np.complex128)
-    k_r_high_diss = (((-1)**(3/4) / np.sqrt(2))\
-                          *np.sqrt(-2*1j*k_h**2 - (om/chi_rad) + np.sqrt((om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(om)) )).real
-    k_r_err = np.abs(1 - k_r_low_diss/k_r_high_diss)
-
-    #patch high-dissipation and low-dissipation k_r values
-    k_r = np.copy(k_r_high_diss)
-    bool_arr = k_r_err < 1e-2
-    if np.sum(bool_arr) > 0:
-        om_switch = om[bool_arr][0]
-        above = om >= om_switch
-        above = above[np.unravel_index(above, k_r.shape)]
-        k_r[above] = k_r_low_diss[above]
-
+    k_r = (((-1)**(3/4) / np.sqrt(2))\
+                       *np.sqrt(-2*1j*k_h**2 - (om/chi_rad) + np.sqrt((om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(om)) ))
     k2 = k_r**2 + k_h**2
 
     #Calculate transfer
-    inner_prod = 4*np.pi*r_range**2*rho * np.conj(u_dual)
-    bulk_to_bound_force = om / k_h #times ur -> comes later.
-
     R_d_mucp = (gamma-1)/gamma
-#    root_lum_to_ur = (om/np.sqrt(N2_max))*np.sqrt(np.array((k_r/k_h)/(4*np.pi*r_range**2), dtype=np.complex128))\
-#                    *np.sqrt(R_d_mucp/rho)
-    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128).real)**(-1)
+    bulk_to_bound_force = om / k_h #times ur -> comes later.
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
+    Amp_pos = inner_prod(u_dual, delta*bulk_to_bound_force * root_lum_to_ur)
 
+
+    u_dual_neg = -np.conj(u_dual)
+    bulk_to_bound_force_neg = om / k_h #times ur -> comes later.
+    root_lum_to_ur_neg = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
+    Amp_neg = inner_prod(u_dual_neg, delta*bulk_to_bound_force_neg * root_lum_to_ur_neg)
+    om = om[:,0,:]
+
+    Amp = Amp_pos * field_outer/ (om - values)
     if include_neg:
-        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * ( (field_outer/ (om - values)) + (np.conj(field_outer)/ (-np.conj(om) - values)))
-    else:
-        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * field_outer/ (om - values)
+        Amp += Amp_neg * np.conj(field_outer) / (om - np.conj(-values))
+    T = np.abs(np.sum(Amp, axis=0))
 
-    T = np.abs(np.sum( np.sum(Amp * dr, axis=0), axis=0) / np.sum(dr))
     return T
 
 def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
@@ -428,6 +421,8 @@ def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
         i_peaks = []
         for i in range(2,len(om)-2):
             if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
+#        for i in range(1,len(om)-1):
+#            if (T[i]>T[i-1]) and (T[i]>T[i+1]):
                 delta_m = np.abs(T[i]-T[i-1])/T[i]
                 delta_p = np.abs(T[i]-T[i+1])/T[i]
                 if delta_m > 0.01 or delta_p > 0.01:
