@@ -354,46 +354,61 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
      T : NumPy array (complex128)
         The transfer function, which must be multiplied by sqrt(wave luminosity).
     """
+    Nmax = 30
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
     dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
-    om                   = om[None, None, :] 
-    u_dual           = u_dual[:, :,    None]
-    values           = values[:, None]
-    field_outer = field_outer[:, None]
-    om = np.array(om*np.ones_like(r_range), dtype=np.complex128)
-
-    delta = 1/dr
-    rho = rho_func(r_range)
-    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1) / r_range.size
+    big_om                   = om[None, None, :] 
+    u_dual           = u_dual[:Nmax, :, None]
+    values           = values[:Nmax, None] #no rf
+    field_outer = field_outer[:Nmax, None] #no rf
+    om               = om[None, :]
 
     #Get structure variables
     chi_rad = chi_rad_func(r_range)
+    rho = rho_func(r_range)
+    R_d_mucp = (gamma-1)/gamma
+
     #Get wavenumbers
     k_h = np.sqrt(ell * (ell + 1)) / r_range
+#    k_r = np.sqrt(N2_max/big_om**2 - 1)*k_h
     k_r = (((-1)**(3/4) / np.sqrt(2))\
-                       *np.sqrt(-2*1j*k_h**2 - (om/chi_rad) + np.sqrt((om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(om)) ))
+                       *np.sqrt(-2*1j*k_h**2 - (big_om/chi_rad) + np.sqrt((big_om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(big_om)) )).real
     k2 = k_r**2 + k_h**2
 
     #Calculate transfer
-    R_d_mucp = (gamma-1)/gamma
-    bulk_to_bound_force = om / k_h #times ur -> comes later.
-    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
-    Amp_pos = inner_prod(u_dual, delta*bulk_to_bound_force * root_lum_to_ur)
+    bulk_to_bound_force = big_om / k_h #times ur -> comes later.
+#    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(k_r * big_om * R_d_mucp / (rho * N2_max))
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(big_om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
 
-
-    u_dual_neg = -np.conj(u_dual)
-    bulk_to_bound_force_neg = om / k_h #times ur -> comes later.
-    root_lum_to_ur_neg = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
-    Amp_neg = inner_prod(u_dual_neg, delta*bulk_to_bound_force_neg * root_lum_to_ur_neg)
-    om = om[:,0,:]
-
-    Amp = Amp_pos * field_outer/ (om - values)
-    if include_neg:
-        Amp += Amp_neg * np.conj(field_outer) / (om - np.conj(-values))
-    T = np.abs(np.sum(Amp, axis=0))
-
+    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
+    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
+    T_pieces = np.zeros((om.size, r_range.size))
+#    plt.figure()
+#    import matplotlib as mpl
+#    cmap = mpl.cm.viridis
+#    norm = mpl.colors.Normalize(vmin=0, vmax=values.size)
+#    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+    for i in range(r_range.size):
+        delta = np.zeros_like(r_range)
+        delta[:,i,:] = 1/dr[:,i,:]
+        IP = inner_prod(bulk_to_bound_force*root_lum_to_ur*u_dual, delta) #for sqrt wave flux
+        Eig = IP * field_outer / ((values - om)*(values + om))
+        Eig_cos = (Eig*om).real
+        Eig_sin = (Eig*(-1j)*values).real
+#        Eig = IP * field_outer / ((values - om))
+#        for j in range(values.size):
+#            plt.loglog(om.ravel()/(2*np.pi), Eig[j,:], c=sm.to_rgba(j))
+#            plt.loglog(om.ravel()/(2*np.pi), -Eig[j,:], ls='--', c=sm.to_rgba(j))
+        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0))
+#        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
+#        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k')
+#        plt.xlim(3e-3, 1e-1)
+#        plt.ylim(3e-1, 3e2)
+#        plt.colorbar(sm)
+#        plt.show()
+    T = np.mean(np.abs(T_pieces), axis=1)
     return T
 
 def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
@@ -582,7 +597,7 @@ class StellarEVP():
 
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -590,7 +605,7 @@ class StellarEVP():
         logger.info('setting up sparse solve for ell = {}'.format(ell))
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -649,7 +664,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-7, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
+    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -763,7 +778,7 @@ class StellarEVP():
                 grid_space = (False,False)
                 elements = (np.array((i,)),np.array((j,)))
                 m, this_ell = self.bases['B'].sphere_basis.elements_to_groups(grid_space, elements)
-                if this_ell == self.ell and m == 1:
+                if this_ell == self.ell and m == 0:
                     good[i,j] = True
 
         integ_energy_op = None
