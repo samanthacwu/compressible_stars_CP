@@ -167,7 +167,7 @@ def clean_eigvecs(fieldname, bases_keys, namespace, scales=None, shift=True):
 
     return full_ef, pieces
 
-def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None):
+def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None, discard_cond_cutoff=None):
     """
     Calculate the dual basis of the velocity eigenvectors.
     """
@@ -187,21 +187,31 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None):
 
     n_modes = vel_efs.shape[0]
     IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+    cond = 0
+    discard = 0
     for i in range(n_modes):
         vel_efs_pieces_0 = split_eigfunc_list(vel_ef_list[i])
-        if i % 1 == 0: logger.info("duals {}/{}".format(i, n_modes))
+        if i % 1 == 0: logger.info("duals {}/{}; cond: {:.1e}".format(i, n_modes, cond))
         for j in range(n_modes):
             vel_efs_pieces_1 = split_eigfunc_list(vel_ef_list[j])
             IP_matrix[i,j] = IP(vel_efs_pieces_0, vel_efs_pieces_1)
+        cond = np.linalg.cond(IP_matrix[:i+1,:i+1])
+        if discard_cond_cutoff is not None and cond > discard_cond_cutoff:
+            discard += 1
+        if max_cond is not None and i > 0:
+            if cond > max_cond:
+                n_modes = i
+                IP_matrix = IP_matrix[:n_modes,:n_modes]
+                break
     cond = np.linalg.cond(IP_matrix)
-    while max_cond is not None and cond > max_cond:
-        n_modes -= 1
-        IP_matrix = IP_matrix[:n_modes, :n_modes]
-        cond = np.linalg.cond(IP_matrix)
+#    while max_cond is not None and cond > max_cond:
+#        n_modes -= 1
+#        IP_matrix = IP_matrix[:n_modes, :n_modes]
+#        cond = np.linalg.cond(IP_matrix)
 
     vel_efs = vel_efs[:n_modes,:]
 
-    logger.info('dual IP matrix cond, nmodes: {:.3e},  {}'.format(cond, n_modes))
+    logger.info('dual IP matrix cond, nmodes, discard: {:.3e},  {}, {}'.format(cond, n_modes, discard))
     IP_inv = np.linalg.inv(IP_matrix)
 
     vel_shape = vel_efs.shape[2:]
@@ -227,7 +237,7 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None):
             logger.info('{}, {}'.format(np.sum(IP_check[i,:].real), IP_check[i,i].real))
         raise ValueError("Something went wrong in calculating the dual basis.")
 
-    return vel_duals
+    return vel_duals, discard
 
 def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file, variables, ell=1):
     #Calculate 'optical depths' of each mode.
@@ -329,7 +339,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
-def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, include_neg=True):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -365,14 +375,19 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
      T : NumPy array (complex128)
         The transfer function, which must be multiplied by sqrt(wave luminosity).
     """
+    if discard_num > 0:
+        u_dual = u_dual[:-discard_num]
+        values = values[:-discard_num]
+        field_outer = field_outer[:-discard_num]
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
-    dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
+#    dr = np.gradient(r_range)[None, :, None]
+    dr = np.ones_like(r_range)
     big_om                   = om[None, None, :] 
     u_dual           = u_dual[:, :, None]
-    values           = values[:, None] #no rf
-    field_outer = field_outer[:, None] #no rf
+    values           = values[:, None, None] #no rf
+    field_outer = field_outer[:, None, None] #no rf
     om               = om[None, :]
 
     #Get structure variables
@@ -392,38 +407,50 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 #    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(k_r * big_om * R_d_mucp / (rho * N2_max))
     root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(big_om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
 
-    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
-    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
-    T_pieces = np.zeros((om.size, r_range.size))
-#    plt.figure()
-#    import matplotlib as mpl
-#    cmap = mpl.cm.viridis
-#    norm = mpl.colors.Normalize(vmin=0, vmax=values.size)
-#    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-    for i in range(r_range.size):
-        delta = np.zeros_like(r_range)
-        delta[:,i,:] = 1/dr[:,i,:]
-        IP = inner_prod(bulk_to_bound_force*root_lum_to_ur*u_dual, delta) #for sqrt wave flux
-        Eig = IP * field_outer / ((values - om)*(values + om))
-        Eig_cos = (Eig*om).real
-        Eig_sin = (Eig*(-1j)*values).real
-        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) #do I need to shift amplitude to account for action of fourier transform?
-#        Eig = IP * field_outer / ((values - om))
-#        for j in range(values.size):
-#            plt.loglog(om.ravel()/(2*np.pi), Eig_sin[j,:], c=sm.to_rgba(j))
-#            plt.loglog(om.ravel()/(2*np.pi), -Eig_sin[j,:], ls='--', c=sm.to_rgba(j))
-#        T_pieces[:,i] = np.abs(np.real(np.sum(Eig,axis=0)))
-#        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
-#        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k', lw=1)
-##        T_pieces[:,i] = np.abs(np.imag(np.sum(Eig,axis=0)))
-##        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='grey', lw=1)
-###        plt.xlim(3e-3, 1e-1)
-###        plt.ylim(3e-1, 3e2)
-#        plt.xlim(3e-3, 3e-2)
-#        plt.ylim(3e-3, 3e2)
-#        plt.colorbar(sm)
-#        plt.show()
-    T = np.mean(np.abs(T_pieces), axis=1)
+    inner_prod = 4*np.pi*r_range**2*rho*np.conj(bulk_to_bound_force*root_lum_to_ur*u_dual) * dr
+    Eig = inner_prod * field_outer / ((values - big_om)*(values + big_om))
+    Eig_cos = (Eig*big_om).real
+    Eig_sin = (Eig*(-1j)*values).real
+
+    T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
+    T = np.mean(np.abs(T_pieces), axis=0) #get mean as function of radius
+#
+#    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
+#    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
+#    T_pieces = np.zeros((om.size, r_range.size))
+##    plt.figure()
+##    import matplotlib as mpl
+##    cmap = mpl.cm.viridis
+###    norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
+##    norm = mpl.colors.Normalize(vmin=0, vmax=values.size)
+##    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+#    for i in range(r_range.size):
+#        delta = np.zeros_like(r_range)
+#        delta[:,i,:] = 1/dr[:,i,:]
+#        IP = inner_prod(bulk_to_bound_force*root_lum_to_ur*u_dual, delta) #for sqrt wave flux
+#        Eig = IP * field_outer / ((values - om)*(values + om))
+#        Eig_cos = (Eig*om).real
+#        Eig_sin = (Eig*(-1j)*values).real
+#        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) #do I need to shift amplitude to account for action of fourier transform?
+###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], color=sm.to_rgba(r_range.ravel()[i]))
+###        Eig = IP * field_outer / ((values - om))
+##        for j in range(values.size):
+##            plt.loglog(om.ravel()/(2*np.pi), Eig_cos[j,:], c=sm.to_rgba(j))
+##            plt.loglog(om.ravel()/(2*np.pi), -Eig_cos[j,:], ls='--', c=sm.to_rgba(j))
+###        T_pieces[:,i] = np.abs(np.real(np.sum(Eig,axis=0)))
+###        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
+##        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k', lw=1)
+###        T_pieces[:,i] = np.abs(np.imag(np.sum(Eig,axis=0)))
+###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='grey', lw=1)
+####        plt.xlim(3e-3, 1e-1)
+####        plt.ylim(3e-1, 3e2)
+##        plt.xlim(1e-2, 3e-1)
+##        plt.ylim(3e-3, 3e2)
+##        plt.colorbar(sm)
+##        plt.show()
+##    plt.colorbar(sm)
+##    plt.show()
+#    T = np.mean(np.abs(T_pieces), axis=1) #get mean as function of radius
     return T
 
 def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
@@ -443,7 +470,7 @@ def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
         Same as for transfer_function()
     """
 
-    T = transfer_function(om, *args)
+    T = transfer_function(om, *args, **kwargs)
 
     peaks = 1
     iters = 0
@@ -453,8 +480,8 @@ def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
             if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
 #        for i in range(1,len(om)-1):
 #            if (T[i]>T[i-1]) and (T[i]>T[i+1]):
-                delta_m = np.abs(T[i]-T[i-1])/T[i]
-                delta_p = np.abs(T[i]-T[i+1])/T[i]
+                delta_m = np.abs(T[i]-T[i-2])/T[i]
+                delta_p = np.abs(T[i]-T[i+2])/T[i]
                 if delta_m > 0.01 or delta_p > 0.01:
                     i_peaks.append(i)
 
@@ -770,7 +797,7 @@ class StellarEVP():
                 vector_diff = np.max(np.abs(mode_KE1/mode_KE2 - 1))
                 if vector_diff < np.sqrt(cutoff):
 
-                    logger.info('good evalue {} w/ vdiff {} and czfrac {}, czKE {}, modeKE {}'.format(v1, vector_diff, cz_KE_frac.real, cz_KE1, mode_KE1))
+                    logger.info('good evalue {} w/ vdiff {} and czfrac {}'.format(v1, vector_diff, cz_KE_frac.real))
 #                    tots = []
 #                    czs = []
 #                    for i in range(len(cz_KE_ops)):
@@ -939,7 +966,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None, zero_phi=False, cleanup=True, max_cond=None):
+    def get_duals(self, ell=None, zero_phi=False, cleanup=True, max_cond=None, discard_cond_cutoff=None):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -982,7 +1009,7 @@ class StellarEVP():
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
 
-        duals = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP, max_cond=max_cond)
+        duals, discard = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP, max_cond=max_cond, discard_cond_cutoff=discard_cond_cutoff)
 #        pos_evalues = evalues.real > 0
 #        pos_indices = np.where(pos_evalues)[0]
 #        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
@@ -1014,6 +1041,7 @@ class StellarEVP():
 #                for k in f['pieces'].keys():
 #                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
                 df['velocity_duals'] = duals
+                df['discard'] = discard
         if cleanup:
             #remove large pre-dual file.
             os.remove('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell))
