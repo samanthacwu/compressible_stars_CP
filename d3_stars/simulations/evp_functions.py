@@ -149,21 +149,25 @@ def clean_eigvecs(fieldname, bases_keys, namespace, scales=None, shift=True):
         else:
             field.change_scales((1,1,1))
 
-        if shift:
-            if vector:
-                #Getting argmax then indexing ensures we're not off by a negative sign flip.
-                ix = np.unravel_index(np.argmax(np.abs(field['g'][2,:])), field['g'][2,:].shape)
-                divisor = field['g'][2,:][ix]
-            else:
-                ix = np.unravel_index(np.argmax(np.abs(field['g'])), field['g'].shape)
-                divisor = field['g'][ix]
-
-            field['g'] /= divisor
         pieces.append(field)
     arrays = [p['g'] for p in pieces]
-    return np.concatenate(arrays, axis=-1), pieces
+    full_ef = np.concatenate(arrays, axis=-1)
+    if shift:
+        if vector:
+            #Getting argmax then indexing ensures we're not off by a negative sign flip.
+            ix = np.unravel_index(np.argmax(np.abs(full_ef[2,:])), full_ef[2,:].shape)
+            divisor = full_ef[2,:][ix]
+        else:
+            ix = np.unravel_index(np.argmax(np.abs(full_ef)), full_ef.shape)
+            divisor = full_ef[ix]
 
-def calculate_duals(vel_ef_list, bases, dist, IP=None):
+        full_ef /= divisor
+        for i in range(len(pieces)):
+            pieces[i]['g'] /= divisor
+
+    return full_ef, pieces
+
+def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None):
     """
     Calculate the dual basis of the velocity eigenvectors.
     """
@@ -189,8 +193,15 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None):
         for j in range(n_modes):
             vel_efs_pieces_1 = split_eigfunc_list(vel_ef_list[j])
             IP_matrix[i,j] = IP(vel_efs_pieces_0, vel_efs_pieces_1)
+    cond = np.linalg.cond(IP_matrix)
+    while max_cond is not None and cond > max_cond:
+        n_modes -= 1
+        IP_matrix = IP_matrix[:n_modes, :n_modes]
+        cond = np.linalg.cond(IP_matrix)
 
-    logger.info('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
+    vel_efs = vel_efs[:n_modes,:]
+
+    logger.info('dual IP matrix cond, nmodes: {:.3e},  {}'.format(cond, n_modes))
     IP_inv = np.linalg.inv(IP_matrix)
 
     vel_shape = vel_efs.shape[2:]
@@ -354,15 +365,14 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
      T : NumPy array (complex128)
         The transfer function, which must be multiplied by sqrt(wave luminosity).
     """
-    Nmax = 30
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
     dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
     big_om                   = om[None, None, :] 
-    u_dual           = u_dual[:Nmax, :, None]
-    values           = values[:Nmax, None] #no rf
-    field_outer = field_outer[:Nmax, None] #no rf
+    u_dual           = u_dual[:, :, None]
+    values           = values[:, None] #no rf
+    field_outer = field_outer[:, None] #no rf
     om               = om[None, :]
 
     #Get structure variables
@@ -397,15 +407,20 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
         Eig = IP * field_outer / ((values - om)*(values + om))
         Eig_cos = (Eig*om).real
         Eig_sin = (Eig*(-1j)*values).real
+        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) #do I need to shift amplitude to account for action of fourier transform?
 #        Eig = IP * field_outer / ((values - om))
 #        for j in range(values.size):
-#            plt.loglog(om.ravel()/(2*np.pi), Eig[j,:], c=sm.to_rgba(j))
-#            plt.loglog(om.ravel()/(2*np.pi), -Eig[j,:], ls='--', c=sm.to_rgba(j))
-        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0))
+#            plt.loglog(om.ravel()/(2*np.pi), Eig_sin[j,:], c=sm.to_rgba(j))
+#            plt.loglog(om.ravel()/(2*np.pi), -Eig_sin[j,:], ls='--', c=sm.to_rgba(j))
+#        T_pieces[:,i] = np.abs(np.real(np.sum(Eig,axis=0)))
 #        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
-#        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k')
-#        plt.xlim(3e-3, 1e-1)
-#        plt.ylim(3e-1, 3e2)
+#        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k', lw=1)
+##        T_pieces[:,i] = np.abs(np.imag(np.sum(Eig,axis=0)))
+##        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='grey', lw=1)
+###        plt.xlim(3e-3, 1e-1)
+###        plt.ylim(3e-1, 3e2)
+#        plt.xlim(3e-3, 3e-2)
+#        plt.ylim(3e-3, 3e2)
 #        plt.colorbar(sm)
 #        plt.show()
     T = np.mean(np.abs(T_pieces), axis=1)
@@ -664,7 +679,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-6, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
+    def check_eigen(self, cutoff=1e-4, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -681,21 +696,22 @@ class StellarEVP():
         scales = (1,1,self.hires_factor)
         dist   = self.hires_EVP.dist
         coords = self.hires_EVP.coords
-        tot_KE_op = cz_KE_op = None
+        cz_KE_ops = []
+        tot_KE_ops = []
         for bn, basis in self.hires_EVP.bases.items():
             namespace['cz_envelope_{}'.format(bn)] = cz_envelope = dist.Field(bases=basis)
             namespace['cz_envelope_{}'.format(bn)]['g'] = one_to_zero(namespace['r_{}'.format(bn)], r_cz, width=cz_width)
             namespace['evp_u_{}'.format(bn)] = u = dist.VectorField(coords, bases=basis)
             namespace['conj_u_{}'.format(bn)] = conj_u = dist.VectorField(coords, bases=basis)
-            
             rho = namespace['rho0_{}'.format(bn)]
-            
-            if tot_KE_op is None:
-                tot_KE_op = d3.integ(rho*conj_u@u/2)
-                cz_KE_op = d3.integ(cz_envelope*(rho*conj_u@u)/2)
-            else:
-                tot_KE_op += d3.integ(rho*conj_u@u/2)
-                cz_KE_op  += d3.integ(cz_envelope*(rho*conj_u@u)/2)
+           
+            cz_KE_ops.append(d3.integ(cz_envelope*rho*conj_u@u/2))
+            tot_KE_ops.append(d3.integ(rho*conj_u@u/2))
+        cz_KE_op = 0
+        tot_KE_op = 0
+        for i in range(len(cz_KE_ops)):
+            cz_KE_op += cz_KE_ops[i]
+            tot_KE_op += tot_KE_ops[i]
 
         logger.info('finding good eigenvalues with cutoff {}'.format(cutoff))
 
@@ -726,7 +742,7 @@ class StellarEVP():
             if cz_KE_frac.real > 0.5:
                 logger.debug('skipping eigenvalue {}; located in CZ'.format(v1))
                 continue
-            elif cz_KE_frac.real < 1e-4:
+            elif cz_KE_frac.real < 1e-8:
                 logger.debug('skipping eigenvalue {}; spurious mode without evanescent tail'.format(v1))
                 continue
 
@@ -753,7 +769,14 @@ class StellarEVP():
 
                 vector_diff = np.max(np.abs(mode_KE1/mode_KE2 - 1))
                 if vector_diff < np.sqrt(cutoff):
-                    logger.info('good evalue {} w/ vdiff {} and czfrac {}'.format(v1, vector_diff, cz_KE_frac.real))
+
+                    logger.info('good evalue {} w/ vdiff {} and czfrac {}, czKE {}, modeKE {}'.format(v1, vector_diff, cz_KE_frac.real, cz_KE1, mode_KE1))
+#                    tots = []
+#                    czs = []
+#                    for i in range(len(cz_KE_ops)):
+#                        czs.append(cz_KE_ops[i].evaluate()['g'].ravel()[0].real)
+#                        tots.append(tot_KE_ops[i].evaluate()['g'].ravel()[0].real)
+#                    logger.info('cz ops: {}, tot ops: {}'.format(czs, tots))
                     good_values.append(i)
                     if max_modes is not None and len(good_values) == max_modes:
                         logger.info('reached {} modes == max modes; breaking'.format(max_modes))
@@ -916,7 +939,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None, zero_phi=False, cleanup=True):
+    def get_duals(self, ell=None, zero_phi=False, cleanup=True, max_cond=None):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -959,7 +982,7 @@ class StellarEVP():
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
 
-        duals = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP)
+        duals = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP, max_cond=max_cond)
 #        pos_evalues = evalues.real > 0
 #        pos_indices = np.where(pos_evalues)[0]
 #        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
@@ -976,7 +999,18 @@ class StellarEVP():
             with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'w') as df:
                 for k in f.keys():
                     if k == 'pieces': continue
-                    df.create_dataset(k, data=f[k])
+                    if k in ['r', 'rho_full', 'depths', 'smooth_oms', 'smooth_depths', 'bruntN2', 'tau_nd', 'm_nd', 'L_nd', 'T_nd', 'rho_nd', 's_nd']:
+                        df.create_dataset(k, data=f[k])
+                        continue
+                    found = False
+                    for i, bn in enumerate(self.bases_keys):
+                        if k in ['r_{}'.format(bn), 'rho_{}'.format(bn)]:
+                            df.create_dataset(k, data=f[k])
+                            found = True
+                    if found:
+                        continue
+                    print(k)
+                    df.create_dataset(k, data=f[k][:duals.shape[0]])
 #                for k in f['pieces'].keys():
 #                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
                 df['velocity_duals'] = duals
