@@ -11,6 +11,7 @@ import numpy as np
 from docopt import docopt
 import dedalus.public as d3
 from mpi4py import MPI
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -339,7 +340,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
-def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0, plot=False):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -413,7 +414,17 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     Eig_sin = (Eig*(-1j)*values).real
 
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
-    T = np.mean(np.abs(T_pieces), axis=0) #get mean as function of radius
+    T = 10**np.mean(np.log10(T_pieces), axis=0) #get mean as function of radius
+    if plot:
+        cmap = mpl.cm.viridis
+        norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+        fig = plt.figure()
+        ax1 = fig.add_subplot(1,1,1)
+        for i in range(T_pieces.shape[0]):
+            ax1.loglog(om.ravel()/(2*np.pi), T_pieces[i,:], c=sm.to_rgba(r_range.ravel()[i]))
+        plt.show()
+
 #
 #    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
 #    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
@@ -453,7 +464,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 #    T = np.mean(np.abs(T_pieces), axis=1) #get mean as function of radius
     return T
 
-def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
+def calculate_refined_transfer(om, *args, max_iters=10, plot=False, **kwargs):
     """
     Iteratively calculates the transfer function by calling transfer_function()
 
@@ -470,18 +481,20 @@ def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
         Same as for transfer_function()
     """
 
-    T = transfer_function(om, *args, **kwargs)
+    T = transfer_function(om, *args, plot=plot, **kwargs)
 
     peaks = 1
     iters = 0
     while peaks > 0 and iters < max_iters:
         i_peaks = []
-        for i in range(2,len(om)-2):
-            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
-#        for i in range(1,len(om)-1):
-#            if (T[i]>T[i-1]) and (T[i]>T[i+1]):
-                delta_m = np.abs(T[i]-T[i-2])/T[i]
-                delta_p = np.abs(T[i]-T[i+2])/T[i]
+#        for i in range(2,len(om)-2):
+#            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
+#                delta_m = np.abs(T[i]-T[i-2])/T[i]
+#                delta_p = np.abs(T[i]-T[i+2])/T[i]
+        for i in range(1,len(om)-1):
+            if (T[i]>T[i-1]) and (T[i]>T[i+1]):
+                delta_m = np.abs(T[i]-T[i-1])/T[i]
+                delta_p = np.abs(T[i]-T[i+1])/T[i]
                 if delta_m > 0.01 or delta_p > 0.01:
                     i_peaks.append(i)
 
@@ -769,7 +782,7 @@ class StellarEVP():
             if cz_KE_frac.real > 0.5:
                 logger.debug('skipping eigenvalue {}; located in CZ'.format(v1))
                 continue
-            elif cz_KE_frac.real < 1e-8:
+            elif cz_KE_frac.real < 1e-12:
                 logger.debug('skipping eigenvalue {}; spurious mode without evanescent tail'.format(v1))
                 continue
 
@@ -785,12 +798,12 @@ class StellarEVP():
             if goodness < cutoff:
                 self.hires_EVP.solver.set_state(0, self.hires_EVP.subsystem)
                 ef_u2, ef_u2_pieces = clean_eigvecs('u', self.hires_EVP.bases_keys, self.hires_EVP.namespace)
+                print([np.max(np.abs(ef_u2[ind,:])) for ind in range(3)])
                 for j, basis in enumerate(self.hires_EVP.bases):
                     bn = self.bases_keys[j]
-                    evp_u = namespace['evp_u_{}'.format(bn)]
-                    u = namespace['u_{}'.format(bn)]
+                    u = namespace['evp_u_{}'.format(bn)]
                     conj_u = namespace['conj_u_{}'.format(bn)]
-                    evp_u['g'] = u['g']
+                    u['g'] = ef_u2_pieces[j]['g']
                     conj_u['g'] = np.conj(u['g']) 
                 mode_KE2 = tot_KE_op.evaluate()['g'].ravel()[0].real
 
@@ -888,6 +901,9 @@ class StellarEVP():
                 for data in piece_tuple:
                     data['g'][:] /= shift
 
+            print('u mags', [np.max(np.abs(ef_u[ind,:])) for ind in range(3)])
+            print('s1 mags', [np.max(np.abs(ef_s1[:]))])
+
             vec_slices = (slice(None), slice(ix[0], ix[0]+1), slice(ix[1], ix[1]+1), slice(None))
             scalar_slices = vec_slices[1:]
 
@@ -966,7 +982,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None, zero_phi=False, cleanup=True, max_cond=None, discard_cond_cutoff=None):
+    def get_duals(self, ell=None, cleanup=False, max_cond=None, discard_cond_cutoff=None):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -988,40 +1004,37 @@ class StellarEVP():
         dist = self.dist
         work_fields = []
         conj_work_fields = []
+        ip_elements = []
         int_field = None
         for bn, basis in self.bases.items():
             work_fields.append(dist.VectorField(self.coords, bases=basis))
             conj_work_fields.append(dist.VectorField(self.coords, bases=basis))
+            r = self.namespace['r_{}'.format(bn)]
+            dr = np.gradient(r, axis=-1)
+            ip_elements.append(4*np.pi*r**2*dr*np.exp(self.namespace['ln_rho0_{}'.format(bn)]['g'][0,0,:]))
+
             if int_field is None:
                 int_field = d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
             else:
                 int_field += d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
 
-        def IP(velocity_list1, velocity_list2):
+        def IP_fast(velocity_list1, velocity_list2):
+            """ Integrate the bra-ket of two eigenfunctions of velocity. """
+            ip = 0
+            for i, bn in enumerate(self.bases.keys()):
+                ip += np.sum(ip_elements[i]*np.conj(velocity_list1[i])*velocity_list2[i])
+            return ip
+
+        def IP_slow(velocity_list1, velocity_list2):
             """ Integrate the bra-ket of two eigenfunctions of velocity. """
             for i, bn in enumerate(self.bases.keys()):
                 velocity1 = velocity_list1[i]
                 velocity2 = velocity_list2[i]
-                if zero_phi:
-                    velocity1[0,:] = 0
-                    velocity2[0,:] = 0
                 conj_work_fields[i]['g'] = np.conj(velocity1)
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
 
-        duals, discard = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP, max_cond=max_cond, discard_cond_cutoff=discard_cond_cutoff)
-#        pos_evalues = evalues.real > 0
-#        pos_indices = np.where(pos_evalues)[0]
-#        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
-#        neg_evalues = evalues.real < 0
-#        neg_indices = np.where(neg_evalues)[0]
-#        neg_velocity_duals = calculate_duals(velocity_eigenfunctions[neg_indices,:], self.bases, dist, IP=IP)
-#        duals = np.zeros((evalues.size, *tuple(neg_velocity_duals.shape[1:])), dtype=neg_velocity_duals.dtype)
-#        for i, ev in enumerate(evalues):
-#            if ev.real > 0:
-#                duals[i,:] = pos_velocity_duals[ev == evalues[pos_evalues]]
-#            elif ev.real < 0:
-#                duals[i,:] = neg_velocity_duals[ev == evalues[neg_evalues]]
+        duals, discard = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP_fast, max_cond=max_cond, discard_cond_cutoff=discard_cond_cutoff)
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'r') as f:
             with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'w') as df:
                 for k in f.keys():
@@ -1036,10 +1049,7 @@ class StellarEVP():
                             found = True
                     if found:
                         continue
-                    print(k)
                     df.create_dataset(k, data=f[k][:duals.shape[0]])
-#                for k in f['pieces'].keys():
-#                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
                 df['velocity_duals'] = duals
                 df['discard'] = discard
         if cleanup:

@@ -6,7 +6,7 @@ import h5py
 
 from dedalus.tools.general import natural_sort
 
-files = natural_sort(glob.glob('eigenvalues/ell*.h5'))
+files = natural_sort(glob.glob('eigenvalues/dual*ell*.h5'))
 
 from scipy.special import erf
 def one_to_zero(x, x0, width=0.1):
@@ -41,6 +41,9 @@ for file in files:
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
+    if 'ell001' in file: continue
+
+
     with h5py.File(file, 'r') as f:
         r = f['r'][()].ravel().real
         evalues = f['good_evalues'][()]
@@ -56,11 +59,17 @@ for file in files:
 
 
     for i, ev in enumerate(evalues):
+        print('evalue: {:.7e}'.format(ev))
+    for i, ev in enumerate(evalues):
         print('plotting {:.7e}'.format(ev))
+        renorm_ind = np.argmax(np.abs(efs_u[i,2,:]))
+        ax3.axvline(r[renorm_ind])
         ax1.plot(r, rho**(-1/2)*r**(1/2)*N2_scale**(-1/4)*efs_enth[i,:].real, label='real')
         ax1.plot(r, rho**(-1/2)*r**(1/2)*N2_scale**(-1/4)*efs_enth[i,:].imag, label='imag')
-        ax2.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].real, label='real')
-        ax2.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].imag, label='imag')
+#        ax2.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].real, label='real')
+#        ax2.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].imag, label='imag')
+        ax2.plot(r, rho*np.sum(np.conj(efs_u[i,:])*efs_u[i,:], axis=0), label='real')
+        ax2.plot(r, rho*np.sum(np.conj(efs_u[i,:])*efs_u[i,:], axis=0), label='imag')
         ax3.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,2,:].real, label='real')
         ax3.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,2,:].imag, label='imag')
 
@@ -75,12 +84,15 @@ for file in files:
 #        ax6.plot(r, bruntN2, lw=2)
 #        ax6.plot(r, S*r**(2+brunt_pow_adj), c='orange', ls='--', label=r'${{{}}} r^{{{}}}$'.format(S, 2+brunt_pow_adj))
 #        ax6.legend()
-        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].real, label='real')
-        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].imag, label='imag')
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].real, c='blue', label='real')
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,1,:].imag, c='orange', label='imag')
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].real, c='blue',   ls='--')
+        ax6.plot(r, rho**(1/2)*r**(3/2)*N2_scale**(1/4)*efs_u[i,0,:].imag, c='orange', ls='--')
 
         ax1.legend()
         ax1.set_ylabel(r'$r^{1/2}(N^2)^{-1/4} \,\rho^{{-1/2}}\, h_{\rm fluc}$')
-        ax2.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_\phi$')
+#        ax2.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_\phi$')
+        ax2.set_ylabel(r'mode KE')
         ax3.set_ylabel(r'$r^{3/2}(N^2)^{1/4}\,\rho^{{1/2}}\,u_r$')
         ax4.set_ylabel(r'Lum = $4\pi r^2 u_r^* h_{\rm fluc}$')
         ax5.set_ylabel(r'$r^{1/2}(N^2)^{-3/4}\rho^{{1/2}}\,s$')

@@ -34,7 +34,7 @@ out_dir, out_file = name_star()
 #fit_wave_flux = False
 fit_wave_flux = True
 
-fudge_factor = 0.5
+fudge_factor = 1
 
 #args = docopt(__doc__)
 with h5py.File(out_file, 'r') as f:
@@ -69,10 +69,10 @@ if fit_wave_flux:
     fit_freq_range = (4e-2, 1e-1)
     fit_ell_range = (1, 4)
     fig = plt.figure()
-#    possible_alphas = [-13/2]
-#    possible_betas = [4]
-    possible_alphas = [-11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -7.25, -15/2]
-    possible_betas = [2.5, 2.75, 3, 3.25, 3.5, 3.75, 4]
+    possible_alphas = [-13/2]
+    possible_betas = [4]
+#    possible_alphas = [-11/2, -5.75, -6, -6.25, -13/2, -6.75, -7, -7.25, -7.5]
+#    possible_betas = [2.5, 2.75, 3, 3.25, 3.5, 3.75, 4]
     fit_A = []
     fit_alpha = []
     fit_beta  = []
