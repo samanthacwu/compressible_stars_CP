@@ -95,16 +95,16 @@ with turb_plotter.my_sync:
                 d['yy'] = full_rr*np.sin(full_pp)
 
         fig = plt.figure(figsize=(7.5, 2.7))
-        ax1 = fig.add_axes([0, 0, 0.3, 0.88], polar=False)
-        ax2 = fig.add_axes([0.35, 0, 0.3, 0.88], polar=False)
-        ax3 = fig.add_axes([0.7, 0, 0.3, 0.88], polar=False)
-        cax1 = fig.add_axes([0.05, 0.97, 0.2, 0.03])
-        cax2 = fig.add_axes([0.575, 0.97, 0.2, 0.03])
+        axCore = fig.add_axes([0.7, 0, 0.3, 0.88], polar=False)
+        axDamp = fig.add_axes([0.35, 0, 0.3, 0.88], polar=False)
+        axFull = fig.add_axes([0, 0, 0.3, 0.88], polar=False)
+        caxCore = fig.add_axes([0.75, 0.97, 0.2, 0.03])
+        caxDamp = fig.add_axes([0.225, 0.97, 0.2, 0.03])
         plots = []
 
 
 
-        for ax, d, dsets, ni, tasks, i in zip((ax1, ax2, ax3), (turb_coords_cz, turb_coords, wave_coords), \
+        for ax, d, dsets, ni, tasks, i in zip((axCore, axDamp, axFull), (turb_coords_cz, turb_coords, wave_coords), \
                                     (turb_dsets, turb_dsets, wave_dsets), (turb_ni, turb_ni, wave_ni), \
                                     (turb_tasks_cz, turb_tasks, wave_tasks), (0, 1, 2)):
             data = []
@@ -131,13 +131,13 @@ with turb_plotter.my_sync:
                 t_cmap = ListedColormap(t_cmap)
                 color2 = ax.pcolormesh(d['xx'], d['yy'], pmask, shading='auto', cmap=t_cmap, vmin=0, vmax=1, rasterized=True)
             if i == 0:
-                cbar = plt.colorbar(plot, cax=cax1, orientation='horizontal')
-                cax1.text(-0.05, 0.5, r'$u_r$ (cm$\,$s$^{-1}$)', transform=cax1.transAxes, va='center', ha='right')
+                cbar = plt.colorbar(plot, cax=caxCore, orientation='horizontal')
+                caxCore.text(-0.05, 0.5, r'$u_r$ (cm$\,$s$^{-1}$)', transform=caxCore.transAxes, va='center', ha='right')
                 cbar.set_ticks((vmin, 0, vmax))
                 cbar.set_ticklabels([sci_formatter(vmin), '0', sci_formatter(vmax)])
             elif i == 1:
-                cbar = plt.colorbar(plot, cax=cax2, orientation='horizontal')
-                cax2.text(-0.05, 0.5, r'$u_r/\sigma(u_r)$', transform=cax2.transAxes, va='center', ha='right')
+                cbar = plt.colorbar(plot, cax=caxDamp, orientation='horizontal')
+                caxDamp.text(-0.05, 0.5, r'$u_r/\sigma(u_r)$', transform=caxDamp.transAxes, va='center', ha='right')
                 cbar.set_ticks((vmin, 0, vmax))
                 cbar.set_ticklabels(['{:.2f}'.format(vmin), '0', '{:.2f}'.format(vmax)])
             ax.set_yticks([])
@@ -148,27 +148,29 @@ with turb_plotter.my_sync:
             outline_phi = np.linspace(0, 2.1*np.pi, 1000)
             ax.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
             if i == 0:
-                ax2.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
-                phi_1 = np.pi*0.45
+                axDamp.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
+                phi_1 = np.pi*0.55
+#                phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
                 xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
                 xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
-                                                  axesA=ax, axesB=ax2, color="black", lw=0.5)
-                    ax2.add_artist(con)
+                                                  axesA=ax, axesB=axDamp, color="black", lw=0.5)
+                    axDamp.add_artist(con)
             if i == 1:
-                ax3.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
-                phi_1 = np.pi*0.45
+                axFull.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5)
+                phi_1 = np.pi*0.55
+#                phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
                 xy2_top = xy1_top #(0, outline_r)
                 xy1_bot = outline_r*np.array((np.cos(-phi_1), np.sin(-phi_1)))
                 xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
-                                                  axesA=ax, axesB=ax3, color="black", lw=0.5)
-                    ax3.add_artist(con)
+                                                  axesA=ax, axesB=axFull, color="black", lw=0.5)
+                    axFull.add_artist(con)
 
 
             ax.set_xlim(-outline_r*1.01, outline_r*1.01)
