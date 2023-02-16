@@ -1,6 +1,7 @@
 """
 This file reads in gyre eigenfunctions, calculates the velocity and velocity dual basis, and outputs in a clean format so that it's ready to be fed into the transfer function calculation.
 """
+from collections import OrderedDict
 import re
 import os
 
@@ -15,6 +16,7 @@ import matplotlib.pyplot as plt
 from scipy import linalg
 from scipy.interpolate import interp1d
 import scipy.special as ss
+from d3_stars.simulations.star_builder import find_core_cz_radius
 
 Rsun_to_cm = 6.957e10
 sigma_SB = 5.67037442e-05 #cgs
@@ -76,6 +78,8 @@ class GyreMSGPostProcessor:
         self.mesa_pulse_file = mesa_pulse_file
         self.mesa_LOG_file = mesa_LOG_file
         self.filters = filters
+        self.core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)
+        self.data_dict = OrderedDict()
 
         # Load the MSG photometric grids (this code taken from the 
         # Python walkthrough in the MSG docs)
@@ -135,77 +139,70 @@ class GyreMSGPostProcessor:
             self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
             print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
 
-    def evaluate_magnitudes(self, observer=(np.pi/3,np.pi/6),m=0):
-        self.data_dicts = []
-        for file_list, summary_file in zip((self.pos_details, self.neg_details),(self.pos_summary, self.neg_summary)):
-            # Read summary file from GYRE
-            summary = pg.read_output(summary_file)
-            data = dict()
-            for k in ['l', 'n_pg',]:
-                data[k] = np.zeros(len(file_list))
-            for k in ['freq', 'omega', 'xi_r_ref', 'lag_L_ref']:
-                data[k] = np.zeros(len(file_list), dtype=np.complex128)
+    def evaluate_magnitudes(self):
+        file_list = self.pos_details
+        summary_file = self.pos_summary
+        # Read summary file from GYRE
+        summary = pg.read_output(summary_file)
+        data = self.data_dict
 
-            for i,filename in enumerate(file_list):
-                header = tomso.gyre.load_summary(filename).header
-                data['l'][i] = ell
-                data['n_pg'][i] = header['n_pg']
-                this_row = summary[(summary['l'] == ell)*(summary['n_pg'] == header['n_pg'])]
-                for k in ['freq', 'omega', 'xi_r_ref', 'lag_L_ref']:
-                    data[k][i] = np.array(this_row[k],dtype=np.complex128)[0]
-            data['freq'] *= 1e-6 #conversion to Hz. (cgs)
+        # Extract radial displacement and Lagrangian luminosity perturbation
+        # amplitudes (note that these are complex quantities)
+        data['Delta_R'] = data['xi_r_ref']  # xi_r/R
+        data['Delta_L'] = data['lag_L_ref'] # deltaL/L
 
+        # Evaluate the effective temperature perturbation (via
+        # Stefan-Boltmann law)
+        data['Delta_T'] = 0.25*(data['Delta_L'] - 2*data['Delta_R']) # deltaTeff/Teff
 
-            # Extract radial displacement and Lagrangian luminosity perturbation
-            # amplitudes (note that these are complex quantities)
-            data['Delta_R'] = data['xi_r_ref']  # xi_r/R
-            data['Delta_L'] = data['lag_L_ref'] # deltaL/L
+        # Evaluate the effective gravity perturbation (via equation 8
+        # of Townsend 2003)
+        omega = data['omega'].real
+        data['Delta_g'] = -(2 + omega**2)*data['Delta_R']
 
-            # Evaluate the effective temperature perturbation (via
-            # Stefan-Boltmann law)
-            data['Delta_T'] = 0.25*(data['Delta_L'] - 2*data['Delta_R']) # deltaTeff/Teff
+        # Inspect the Delta's
+        print('Delta_R: {}'.format(data['Delta_R']))
+        print('Delta_T: {}'.format(data['Delta_T']))
+        print('Delta_g: {}'.format(data['Delta_g']))
 
-            # Evaluate the effective gravity perturbation (via equation 8
-            # of Townsend 2003)
-            omega = data['omega'].real
-            data['Delta_g'] = -(2 + omega**2)*data['Delta_R']
+        # Evaluate the spherical harmonic at the observer location
+        # (note that sph_harm has back-to-front angle labeling!)
 
-            # Inspect the Delta's
-            print('Delta_R: {}'.format(data['Delta_R']))
-            print('Delta_T: {}'.format(data['Delta_T']))
-            print('Delta_g: {}'.format(data['Delta_g']))
+        
+        #get Y_l per eqn 8 of Townsend 2002
+#        Ylm = ss.sph_harm(m, self.ell, phi_obs, theta_obs)
+        ms  = np.linspace(-self.ell, self.ell, 2*self.ell + 1)[:,None,None]
+        phi = np.linspace(0, np.pi, 100)[None,:,None]
+        dphi = np.gradient(phi.ravel())[None,:,None]
+        theta = np.linspace(0, np.pi, 100)[None,None,:]
+        dtheta = np.gradient(theta.ravel())[None,None,:]
+        Y_l = (1/(2*self.ell+1))*(1/(4*np.pi))*np.sum(np.sum(np.sum(dtheta*dphi*np.sin(theta)*np.abs(ss.sph_harm(ms, self.ell, phi, theta)),axis=1),axis=1),axis=0)
+        print('this ell:', self.ell, Y_l)
 
-            # Evaluate the spherical harmonic at the observer location
-            # (note that sph_harm has back-to-front angle labeling!)
+        # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
 
-            theta_obs, phi_obs = observer
-            Ylm = ss.sph_harm(m, self.ell, phi_obs, theta_obs)
+        dff_R = {}
+        dff_T = {}
+        dff_G = {}
+        dF = {}
+        dF_mumag_dict = dict()
 
-            # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
+        for filter in self.filters:
+            
+            dff_R[filter] = (2+ell)*(1-ell)*self.I_l[filter]/self.I_0[filter]*Y_l
+            dff_T[filter] = self.dI_l_dlnTeff[filter]/self.I_0[filter]*Y_l
+            dff_G[filter] = self.dI_l_dlng[filter]/self.I_0[filter]*Y_l
 
-            dff_R = {}
-            dff_T = {}
-            dff_G = {}
-            dF = {}
-            dF_mumag_dict = dict()
+            # Evaluate a light curve in each filter (eqn. 11 of Townsend 2003)
+            dF[filter] = ((data['Delta_R']*dff_R[filter] +
+                           data['Delta_T']*dff_T[filter] +
+                           data['Delta_g']*dff_G[filter]))
 
-            for filter in self.filters:
-                
-                dff_R[filter] = (2+ell)*(1-ell)*self.I_l[filter]/self.I_0[filter]*Ylm
-                dff_T[filter] = self.dI_l_dlnTeff[filter]/self.I_0[filter]*Ylm
-                dff_G[filter] = self.dI_l_dlng[filter]/self.I_0[filter]*Ylm
-
-                # Evaluate a light curve in each filter (eqn. 11 of Townsend 2003)
-                dF[filter] = ((data['Delta_R']*dff_R[filter] +
-                               data['Delta_T']*dff_T[filter] +
-                               data['Delta_g']*dff_G[filter]))
-
-                # Convert to micromag using Pogson's law
-                dF_mumag = -2.5/np.log(10)*dF[filter]*1E6
-                dF_mumag_dict[filter] = dF_mumag
-            data['dF_mumags'] = dF_mumag_dict
-            self.data_dicts.append(data)
-        return self.data_dicts
+            # Convert to micromag using Pogson's law
+            dF_mumag = -2.5/np.log(10)*dF[filter]*1E6
+            dF_mumag_dict[filter] = dF_mumag
+        data['dF_mumags'] = dF_mumag_dict
+        return self.data_dict
 
 
     def sort_eigenfunctions(self):
@@ -238,127 +235,192 @@ class GyreMSGPostProcessor:
         lambS1 = np.sqrt(1*(1+1))*np.sqrt(Gamma_1/(V*c_1))
         chi_rad = 10**(interp1d(r_mesa, np.log10(chi_rad_mesa), bounds_error=False, fill_value='extrapolate')(self.r))
 
-        #re-dimensionalize
+        #re-dimensionalize -- double-check this and compare omega, freq.
         mid_r = self.r[len(self.r)//2]
-        bruntN2 *= 10**(interp1d(r_mesa, np.log10(bruntN2_mesa))(mid_r)) / bruntN2[len(self.r)//2]
-        lambS1 *= 10**(interp1d(r_mesa, np.log10(lambS1_mesa))(mid_r)) / lambS1[len(self.r)//2]
+        self.gyre_tau_nd = 1/np.sqrt(10**(interp1d(r_mesa, np.log10(bruntN2_mesa))(mid_r)) / bruntN2[len(self.r)//2])
+        bruntN2 /= self.gyre_tau_nd**2
+        lambS1 /= self.gyre_tau_nd
 
         #data_dicts already has 'freq', 'omega', 'xi_r_ref', 'lag_L_ref', 'l', 'n_pg'
-        iter = 0
-        for file_list, summary_file in zip((self.pos_details, self.neg_details),(self.pos_summary, self.neg_summary)):
-            data = self.data_dicts[iter]
-            for field in ['xi_r_eigfunc', 'xi_h_eigfunc', 'lag_L_eigfunc', 'u_r_eigfunc', 'u_h_eigfunc']:
-                data[field] = np.zeros((len(data['n_pg']), len(self.x)), dtype=np.complex128) 
-            data['depth'] = np.zeros(len(data['n_pg']))
-            for i,filename in enumerate(file_list):
-                print('reading eigenfunctions from {}'.format(filename))
-                summary = tomso.gyre.load_summary(filename)
-                header = summary.header
-                data_mode = summary.data
+        file_list = self.pos_details
+        summary_file = self.pos_summary
+        data = self.data_dict
+        for field in ['xi_r_eigfunc', 'xi_h_eigfunc', 'lag_L_eigfunc', 'u_r_eigfunc', 'u_h_eigfunc']:
+            data[field] = np.zeros((len(file_list), len(self.x)), dtype=np.complex128) 
+        for field in ['freq', 'omega', 'lag_L_ref', 'xi_r_ref']:
+            data[field] = np.zeros((len(file_list)), dtype=np.complex128) 
+        for field in ['depth', 'n_pg', 'l']:
+            data[field] = np.zeros(len(file_list))
+        for i,filename in enumerate(file_list):
+            print('reading eigenfunctions from {}'.format(filename))
+            summary = tomso.gyre.load_summary(filename)
+            header = summary.header
+            data_mode = summary.data
 
-                data['depth'][i] = calculate_optical_depths(np.array([data['freq'][i]*1e-6,]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-                data['xi_r_eigfunc'][i,:] = self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
-                data['xi_h_eigfunc'][i,:] = self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
-                data['lag_L_eigfunc'][i,:] = self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #units of L/L_star
-          
-            #u = dt(xi) = -i om u by defn.
-            data['u_r_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
-            data['u_h_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc']
-            data['delta_L_dL_top'] = data['lag_L_eigfunc'][:,-1]/self.L
-          
-            smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real).min())-3, np.log10(np.abs(data['freq'].real).max())+1, 100)
-            smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)
-            data['smooth_oms'] = smooth_oms
-            data['smooth_depths'] = smooth_depths
-            iter += 1
-        return data_dicts
+            data['n_pg'][i] = header['n_pg']
+            data['l'][i] = header['l']
 
-    def calculate_duals(self):
-        data = self.data_dicts[0]
+            data['freq'][i] = 1e-6*(header['Refreq'] + 1j*header['Imfreq']) #cgs
+            data['omega'][i] = (header['Reomega'] + 1j*header['Imomega'])
+            data['lag_L_ref'][i] = (header['Relag_L_ref'] + 1j*header['Imlag_L_ref'])
+            data['xi_r_ref'][i] = (header['Rexi_r_ref'] + 1j*header['Imxi_r_ref'])
+
+            data['depth'][i] = calculate_optical_depths(np.array([1e-6*data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
+            data['xi_r_eigfunc'][i,:] = self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
+            data['xi_h_eigfunc'][i,:] = self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
+            data['lag_L_eigfunc'][i,:] = self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #arbitrary amplitude; cgs units
+#            print(2*np.pi*data['freq'], data['omega']/self.gyre_tau_nd) #these should be the same.
+        print(data['n_pg'], data['l'], data['lag_L_ref'], data['lag_L_eigfunc'][:,-1])
+      
+        #u = dt(xi) = -i om u by defn.
+        #eigenfunctions are dimensional but of arbitrary amplitude.
+        data['u_r_eigfunc'] = 2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
+        data['u_h_eigfunc'] = 2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc'] * (np.sqrt(self.ell*(self.ell+1))) #over r??
+        data['delta_L_dL_top'] = data['lag_L_ref']#data['lag_L_eigfunc'][:,-1]/self.L
+      
+        smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real).min())-3, np.log10(np.abs(data['freq'].real).max())+1, 100)
+        smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)
+        data['smooth_oms'] = smooth_oms
+        data['smooth_depths'] = smooth_depths
+        
+        return self.data_dict
+
+    def calculate_duals(self, max_cond=1e10):
+        data = self.data_dict
         ur = data['u_r_eigfunc']
         uh = data['u_h_eigfunc']
-      
+
+        self.dr = np.gradient(self.r)
+        self.dx = np.gradient(self.x)
         def IP(ur_1,ur_2,uh_1,uh_2):
-          """
-          Per daniel:
-          for the inner product, you need the ell(ell+1) because what gyre calls uh is actually uh/sqrt(ell(ell+1)).
-          (because the actual angular velocity has two components and is uh = xi_h * f * grad(Y_ell,m)) [so grad_h is the angular part of the gradient without any 1/r factor]
-          but when you take <uh, uh> you can integrate-by-parts on one of the grad's to turn it into laplacian(Y_ell,m)=-(ell(ell+1)) Y_ell,m
-          """
-          dr = np.gradient(self.r)
-          return np.sum(dr*4*np.pi*self.r**2*self.rho*(np.conj(ur_1)*ur_2+self.ell*(self.ell+1)*np.conj(uh_1)*uh_2),axis=-1)
-        
-        IP_matrix = np.zeros((len(data['n_pg']),len(data['n_pg'])),dtype=np.complex128)
-        for i in range(len(ur)):
-          if i % 10 == 0: print(i)
-          for j in range(len(ur)):
-            IP_matrix[i,j] = IP(ur[i],ur[j],uh[i],uh[j])
-
-        print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
-        
+            """
+            Per daniel:
+            for the inner product, you need the ell(ell+1) because what gyre calls uh is actually uh/sqrt(ell(ell+1)).
+            (because the actual angular velocity has two components and is uh = xi_h * f * grad(Y_ell,m)) [so grad_h is the angular part of the gradient without any 1/r factor]
+            but when you take <uh, uh> you can integrate-by-parts on one of the grad's to turn it into laplacian(Y_ell,m)=-(ell(ell+1)) Y_ell,m
+            """
+            dr = self.dr
+            r = self.r
+            return np.sum(dr*4*np.pi*r**2*self.rho*(np.conj(ur_1)*ur_2+np.conj(uh_1)*uh_2),axis=-1)
+       
+        n_modes = ur.shape[0]
+        IP_matrix = np.zeros((ur.shape[0], ur.shape[0]),dtype=np.complex128)
+        for i in range(ur.shape[0]):
+            if i % 10 == 0: print(i)
+            for j in range(ur.shape[0]):
+                IP_matrix[i,j] = IP(ur[i],ur[j],uh[i],uh[j])
+            cond = np.linalg.cond(IP_matrix[:i+1,:i+1])
+            if max_cond is not None and i > 0:
+                if cond > max_cond:
+                    n_modes = i
+                    IP_matrix = IP_matrix[:n_modes,:n_modes]
+                    break
+        print('dual IP matrix cond: {:.3e}; n_modes: {}/{}'.format(cond, n_modes, ur.shape[0]))
+        cond = np.linalg.cond(IP_matrix[:i+1,:i+1]) 
         IP_inv = linalg.inv(IP_matrix)
-        
-        data['u_r_dual'] = np.conj(IP_inv)@ur
-        data['u_h_dual'] = np.conj(IP_inv)@uh
-        self.data_dicts[1]['u_r_dual'] = np.conj(data['u_r_dual'])
-        self.data_dicts[1]['u_h_dual'] = np.conj(data['u_h_dual'])
-        return self.data_dicts
 
-Lmax = 1
+        ur = ur[:n_modes]
+        uh = uh[:n_modes]
+        for k in self.data_dict.keys():
+            if k == 'dF_mumags':
+                for sk in self.data_dict[k]:
+                    self.data_dict[k][sk] = self.data_dict[k][sk][:n_modes]
+            elif 'smooth' not in k:
+                self.data_dict[k] = self.data_dict[k][:n_modes]
+
+
+        data['u_r_dual'] = u_r_dual = np.conj(IP_inv)@ur
+        data['u_h_dual'] = u_h_dual = np.conj(IP_inv)@uh
+
+
+        #Check that velocity duals were evaluated correctly
+        IP_check = np.zeros_like(IP_matrix)
+        for i in range(ur.shape[0]):
+            for j in range(ur.shape[0]):
+                IP_check[i,j] = IP(u_r_dual[i], ur[j], u_h_dual[i], uh[j])
+        I_matrix = np.eye(IP_matrix.shape[0])
+
+        if np.allclose(I_matrix.real, IP_check.real, rtol=1e-6, atol=1e-6):
+            print('duals properly calculated')
+        else:
+            print('error in dual calculation')
+            import sys
+            sys.exit()
+        return self.data_dict
+
+Lmax = 5
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
     om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
 
     pulse_file = 'LOGS/profile47.data.GYRE'
     mesa_LOG = 'LOGS/profile47.data'
-    pos_mode_base = './gyre_output/pos_mode_ell{:03d}_m+00_n{:06d}.txt'
+    pos_mode_base = './gyre_output/mode_ell{:03d}_m+00_n{:06d}.txt'
     neg_mode_base = pos_mode_base.replace('pos', 'neg')
     pos_files = []
     neg_files = []
 
-    neg_summary_file='gyre_output/neg_ell{:02d}_summary.txt'.format(ell)
-    pos_summary_file='gyre_output/pos_ell{:02d}_summary.txt'.format(ell)
-    neg_summary = pg.read_output(neg_summary_file)
+    max_n_pg = 100
+    do_negative = False
+    pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
     pos_summary = pg.read_output(pos_summary_file)
+    neg_summary_file = None
 
-    neg_ell = neg_summary['l']
-    neg_n_pg = neg_summary['n_pg']
+    #sort eigenvalues by 1/freq
+    sorting = np.argsort(pos_summary['freq'].real**(-1))
+    pos_summary = pos_summary[sorting]
+
+
+
+    good_freqs = []
+    counted_n_pgs = []
     for row in pos_summary:
-        ell = row['l']
+        this_ell = row['l']
+        if this_ell != ell: continue
         n_pg = row['n_pg']
-        freq = row['freq']
-        found_negative = (ell in neg_ell)*(n_pg in neg_n_pg)
-        if found_negative:
-            neg_freq = neg_summary[(neg_ell == ell)*(n_pg == neg_n_pg)]['freq']
-            if len(neg_freq) > 1:
-                print("skipping {}; too many negative frequencies".format(freq))
-                continue
-            good = (1 - neg_freq.imag/freq.imag < 1e-10)*(1 + neg_freq.real/freq.real < 1e-10)
-            if good:
-                pos_files.append(pos_mode_base.format(ell, n_pg))
-                neg_files.append(neg_mode_base.format(ell, n_pg))
-
-    pos_files = pos_files[::-1]
-    neg_files = neg_files[::-1]
+        #Check consistency...
+        if np.abs(n_pg) > max_n_pg: continue
+        if n_pg in counted_n_pgs: continue
+        counted_n_pgs.append(n_pg)
+        pos_files.append(pos_mode_base.format(ell, n_pg))
+        good_freqs.append(complex(row['freq']))
 
     post = GyreMSGPostProcessor(ell, pos_summary_file, pos_files, neg_summary_file, neg_files, pulse_file, mesa_LOG,
                   specgrid='OSTAR2002', filters=['Red',],
                   MSG_DIR = os.environ['MSG_DIR'],
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
-    data_dicts = post.evaluate_magnitudes(observer=(0,np.pi/6),m=0)
     post.sort_eigenfunctions()
-    data_dicts = post.calculate_duals()
-
-    print(data_dicts[0])
+    data_dicts = post.evaluate_magnitudes()
+    data_dict = post.calculate_duals()
+#    print(data_dicts[0]['freq'], data_dicts[1]['freq'])
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'w') as f:
-        for k in data_dicts[0].keys():
-            if k == 'dF_mumags':
-                f[k+'_Red'] = np.concatenate((data_dicts[0][k]['Red'], data_dicts[1][k]['Red']), axis=0)
-            else:
-                f[k] = np.concatenate((data_dicts[0][k], data_dicts[1][k]), axis=0)
+        if do_negative:
+            for k in data_dict.keys():
+                if k == 'dF_mumags':
+                    f[k+'_Red'] = np.concatenate((data_dict[k]['Red'], data_dict[k]['Red']), axis=0)
+                else:
+                    f[k] = np.concatenate((data_dict[k], data_dict[k]), axis=0)
+        else:
+            for k in data_dict.keys():
+                if k == 'dF_mumags':
+                    f[k+'_Red'] = data_dict[k]['Red']
+                else:
+                    f[k] = data_dict[k]
+
         f['r'] = post.r
         f['x'] = post.x
         f['rho'] = post.rho
 
+    #Plot saved eigenvalue spectrum
+    with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'r') as f:
+        freqs = f['freq'][()]
+
+    fig = plt.figure()
+    plt.scatter(freqs.real, -freqs.imag)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('f (Hz)')
+    plt.ylabel(r'$\gamma/(2\pi)$ (Hz)')
+    plt.savefig('evalue_spectrum.png', dpi=300)

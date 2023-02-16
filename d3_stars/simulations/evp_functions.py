@@ -11,6 +11,7 @@ import numpy as np
 from docopt import docopt
 import dedalus.public as d3
 from mpi4py import MPI
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
@@ -149,21 +150,25 @@ def clean_eigvecs(fieldname, bases_keys, namespace, scales=None, shift=True):
         else:
             field.change_scales((1,1,1))
 
-        if shift:
-            if vector:
-                #Getting argmax then indexing ensures we're not off by a negative sign flip.
-                ix = np.unravel_index(np.argmax(np.abs(field['g'][2,:])), field['g'][2,:].shape)
-                divisor = field['g'][2,:][ix]
-            else:
-                ix = np.unravel_index(np.argmax(np.abs(field['g'])), field['g'].shape)
-                divisor = field['g'][ix]
-
-            field['g'] /= divisor
         pieces.append(field)
     arrays = [p['g'] for p in pieces]
-    return np.concatenate(arrays, axis=-1), pieces
+    full_ef = np.concatenate(arrays, axis=-1)
+    if shift:
+        if vector:
+            #Getting argmax then indexing ensures we're not off by a negative sign flip.
+            ix = np.unravel_index(np.argmax(np.abs(full_ef[2,:])), full_ef[2,:].shape)
+            divisor = full_ef[2,:][ix]
+        else:
+            ix = np.unravel_index(np.argmax(np.abs(full_ef)), full_ef.shape)
+            divisor = full_ef[ix]
 
-def calculate_duals(vel_ef_list, bases, dist, IP=None):
+        full_ef /= divisor
+        for i in range(len(pieces)):
+            pieces[i]['g'] /= divisor
+
+    return full_ef, pieces
+
+def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None, discard_cond_cutoff=None):
     """
     Calculate the dual basis of the velocity eigenvectors.
     """
@@ -183,14 +188,31 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None):
 
     n_modes = vel_efs.shape[0]
     IP_matrix = np.zeros((n_modes, n_modes), dtype=np.complex128)
+    cond = 0
+    discard = 0
     for i in range(n_modes):
         vel_efs_pieces_0 = split_eigfunc_list(vel_ef_list[i])
-        if i % 1 == 0: logger.info("duals {}/{}".format(i, n_modes))
+        if i % 1 == 0: logger.info("duals {}/{}; cond: {:.1e}".format(i, n_modes, cond))
         for j in range(n_modes):
             vel_efs_pieces_1 = split_eigfunc_list(vel_ef_list[j])
             IP_matrix[i,j] = IP(vel_efs_pieces_0, vel_efs_pieces_1)
+        cond = np.linalg.cond(IP_matrix[:i+1,:i+1])
+        if discard_cond_cutoff is not None and cond > discard_cond_cutoff:
+            discard += 1
+        if max_cond is not None and i > 0:
+            if cond > max_cond:
+                n_modes = i
+                IP_matrix = IP_matrix[:n_modes,:n_modes]
+                break
+    cond = np.linalg.cond(IP_matrix)
+#    while max_cond is not None and cond > max_cond:
+#        n_modes -= 1
+#        IP_matrix = IP_matrix[:n_modes, :n_modes]
+#        cond = np.linalg.cond(IP_matrix)
 
-    logger.info('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
+    vel_efs = vel_efs[:n_modes,:]
+
+    logger.info('dual IP matrix cond, nmodes, discard: {:.3e},  {}, {}'.format(cond, n_modes, discard))
     IP_inv = np.linalg.inv(IP_matrix)
 
     vel_shape = vel_efs.shape[2:]
@@ -216,7 +238,7 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None):
             logger.info('{}, {}'.format(np.sum(IP_check[i,:].real), IP_check[i,i].real))
         raise ValueError("Something went wrong in calculating the dual basis.")
 
-    return vel_duals
+    return vel_duals, discard
 
 def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file, variables, ell=1):
     #Calculate 'optical depths' of each mode.
@@ -318,7 +340,7 @@ def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file,
     return depths, smooth_oms, smooth_depths
 
 
-def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, include_neg=True):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0, plot=False):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -354,56 +376,109 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
      T : NumPy array (complex128)
         The transfer function, which must be multiplied by sqrt(wave luminosity).
     """
+    if discard_num > 0:
+        u_dual = u_dual[:-discard_num]
+        values = values[:-discard_num]
+        field_outer = field_outer[:-discard_num]
     #The none's expand dims
     #dimensionality is [omega', rf, omega]
-    dr = np.gradient(r_range)[None, :, None]
     r_range         = r_range[None, :, None]
-    om                   = om[None, None, :] 
-    values           = values[:, None, None]
-    u_dual           = u_dual[:, :,    None]
-    field_outer = field_outer[:, None, None]
-    om = np.array(om*np.ones_like(r_range), dtype=np.complex128)
+#    dr = np.gradient(r_range)[None, :, None]
+    dr = np.ones_like(r_range)
+    big_om                   = om[None, None, :] 
+    u_dual           = u_dual[:, :, None]
+    values           = values[:, None, None] #no rf
+    field_outer = field_outer[:, None, None] #no rf
+    om               = om[None, :]
 
     #Get structure variables
     chi_rad = chi_rad_func(r_range)
     rho = rho_func(r_range)
+    R_d_mucp = (gamma-1)/gamma
 
     #Get wavenumbers
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-    k_r_low_diss  = np.array(-np.sqrt(N2_max/om**2 - 1).real*k_h, dtype=np.complex128)
-    k_r_high_diss = (((-1)**(3/4) / np.sqrt(2))\
-                          *np.sqrt(-2*1j*k_h**2 - (om/chi_rad) + np.sqrt((om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(om)) )).real
-    k_r_err = np.abs(1 - k_r_low_diss/k_r_high_diss)
-
-    #patch high-dissipation and low-dissipation k_r values
-    k_r = np.copy(k_r_high_diss)
-    bool_arr = k_r_err < 1e-2
-    if np.sum(bool_arr) > 0:
-        om_switch = om[bool_arr][0]
-        above = om >= om_switch
-        above = above[np.unravel_index(above, k_r.shape)]
-        k_r[above] = k_r_low_diss[above]
-
+#    k_r = np.sqrt(N2_max/big_om**2 - 1)*k_h
+    k_r = (((-1)**(3/4) / np.sqrt(2))\
+                       *np.sqrt(-2*1j*k_h**2 - (big_om/chi_rad) + np.sqrt((big_om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(big_om)) )).real
     k2 = k_r**2 + k_h**2
 
     #Calculate transfer
-    inner_prod = 4*np.pi*r_range**2*rho * np.conj(u_dual)
-    bulk_to_bound_force = om / k_h #times ur -> comes later.
+    bulk_to_bound_force = big_om / k_h #times ur -> comes later.
+#    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(k_r * big_om * R_d_mucp / (rho * N2_max))
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(big_om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
 
-    R_d_mucp = (gamma-1)/gamma
-#    root_lum_to_ur = (om/np.sqrt(N2_max))*np.sqrt(np.array((k_r/k_h)/(4*np.pi*r_range**2), dtype=np.complex128))\
-#                    *np.sqrt(R_d_mucp/rho)
-    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128).real)**(-1)
+    inner_prod = 4*np.pi*r_range**2*rho*np.conj(bulk_to_bound_force*root_lum_to_ur*u_dual) * dr
+    Eig = inner_prod * field_outer / ((values - big_om)*(values + big_om))
+    Eig_cos = (Eig*big_om).real
+    Eig_sin = (Eig*(-1j)*values).real
 
-    if include_neg:
-        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * ( (field_outer/ (om - values)) + (np.conj(field_outer)/ (-np.conj(om) - values)))
-    else:
-        Amp = inner_prod * bulk_to_bound_force * root_lum_to_ur * field_outer/ (om - values)
+    T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
+    T = 10**np.mean(np.log10(T_pieces), axis=0) #get mean as function of radius
+    if plot:
+        cmap = mpl.cm.viridis
+        norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+        fig = plt.figure()
+        ax1 = fig.add_subplot(1,1,1)
+        for i in range(T_pieces.shape[0]):
+            ax1.loglog(om.ravel()/(2*np.pi), T_pieces[i,:], c=sm.to_rgba(r_range.ravel()[i]))
+        cmap = mpl.cm.plasma
+        norm = mpl.colors.Normalize(vmin=0, vmax=Eig_cos.shape[0])
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+        fig = plt.figure()
+        ax1 = fig.add_subplot(2,1,1)
+        ax2 = fig.add_subplot(2,1,2)
+        for i in range(Eig_cos.shape[0]):
+            ax1.loglog(om.ravel()/(2*np.pi),  Eig_cos[i,0,:], c=sm.to_rgba(i))
+            ax1.loglog(om.ravel()/(2*np.pi), -Eig_cos[i,0,:], ls='--', c=sm.to_rgba(i))
+            ax1.set_ylabel('cos')
+            ax2.loglog(om.ravel()/(2*np.pi),  Eig_sin[i,0,:], c=sm.to_rgba(i))
+            ax2.loglog(om.ravel()/(2*np.pi), -Eig_sin[i,0,:], ls='--', c=sm.to_rgba(i))
+            ax2.set_ylabel('sin')
+        
+        plt.show()
 
-    T = np.abs(np.sum( np.sum(Amp * dr, axis=0), axis=0) / np.sum(dr))
+#
+#    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
+#    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
+#    T_pieces = np.zeros((om.size, r_range.size))
+##    plt.figure()
+##    import matplotlib as mpl
+##    cmap = mpl.cm.viridis
+###    norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
+##    norm = mpl.colors.Normalize(vmin=0, vmax=values.size)
+##    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+#    for i in range(r_range.size):
+#        delta = np.zeros_like(r_range)
+#        delta[:,i,:] = 1/dr[:,i,:]
+#        IP = inner_prod(bulk_to_bound_force*root_lum_to_ur*u_dual, delta) #for sqrt wave flux
+#        Eig = IP * field_outer / ((values - om)*(values + om))
+#        Eig_cos = (Eig*om).real
+#        Eig_sin = (Eig*(-1j)*values).real
+#        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) #do I need to shift amplitude to account for action of fourier transform?
+###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], color=sm.to_rgba(r_range.ravel()[i]))
+###        Eig = IP * field_outer / ((values - om))
+##        for j in range(values.size):
+##            plt.loglog(om.ravel()/(2*np.pi), Eig_cos[j,:], c=sm.to_rgba(j))
+##            plt.loglog(om.ravel()/(2*np.pi), -Eig_cos[j,:], ls='--', c=sm.to_rgba(j))
+###        T_pieces[:,i] = np.abs(np.real(np.sum(Eig,axis=0)))
+###        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
+##        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k', lw=1)
+###        T_pieces[:,i] = np.abs(np.imag(np.sum(Eig,axis=0)))
+###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='grey', lw=1)
+####        plt.xlim(3e-3, 1e-1)
+####        plt.ylim(3e-1, 3e2)
+##        plt.xlim(1e-2, 3e-1)
+##        plt.ylim(3e-3, 3e2)
+##        plt.colorbar(sm)
+##        plt.show()
+##    plt.colorbar(sm)
+##    plt.show()
+#    T = np.mean(np.abs(T_pieces), axis=1) #get mean as function of radius
     return T
 
-def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
+def calculate_refined_transfer(om, *args, max_iters=10, plot=False, **kwargs):
     """
     Iteratively calculates the transfer function by calling transfer_function()
 
@@ -420,14 +495,18 @@ def calculate_refined_transfer(om, *args, max_iters=10, **kwargs):
         Same as for transfer_function()
     """
 
-    T = transfer_function(om, *args)
+    T = transfer_function(om, *args, plot=plot, **kwargs)
 
     peaks = 1
     iters = 0
     while peaks > 0 and iters < max_iters:
         i_peaks = []
-        for i in range(2,len(om)-2):
-            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
+#        for i in range(2,len(om)-2):
+#            if (T[i]>T[i-1] and T[i] > T[i-2]) and (T[i]>T[i+1] and T[i] > T[i+2]):
+#                delta_m = np.abs(T[i]-T[i-2])/T[i]
+#                delta_p = np.abs(T[i]-T[i+2])/T[i]
+        for i in range(1,len(om)-1):
+            if (T[i]>T[i-1]) and (T[i]>T[i+1]):
                 delta_m = np.abs(T[i]-T[i-1])/T[i]
                 delta_p = np.abs(T[i]-T[i+1])/T[i]
                 if delta_m > 0.01 or delta_p > 0.01:
@@ -587,7 +666,7 @@ class StellarEVP():
 
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -595,7 +674,7 @@ class StellarEVP():
         logger.info('setting up sparse solve for ell = {}'.format(ell))
         for sbsys in self.solver.subsystems:
             ss_m, ss_ell, r_couple = sbsys.group
-            if ss_ell == ell and ss_m == 1:
+            if ss_ell == ell and ss_m == 0:
                 self.subsystem = sbsys
                 break
 
@@ -654,7 +733,7 @@ class StellarEVP():
 
         return self.solver
 
-    def check_eigen(self, cutoff=1e-7, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
+    def check_eigen(self, cutoff=1e-4, r_cz=1, cz_width=0.05, depth_cutoff=None, max_modes=None):
         """
         Compare eigenvalues and eigenvectors between a hi-res and lo-res solve.
         Only keep the solutions that match to within the specified cutoff between the two cases.
@@ -671,21 +750,22 @@ class StellarEVP():
         scales = (1,1,self.hires_factor)
         dist   = self.hires_EVP.dist
         coords = self.hires_EVP.coords
-        tot_KE_op = cz_KE_op = None
+        cz_KE_ops = []
+        tot_KE_ops = []
         for bn, basis in self.hires_EVP.bases.items():
             namespace['cz_envelope_{}'.format(bn)] = cz_envelope = dist.Field(bases=basis)
             namespace['cz_envelope_{}'.format(bn)]['g'] = one_to_zero(namespace['r_{}'.format(bn)], r_cz, width=cz_width)
             namespace['evp_u_{}'.format(bn)] = u = dist.VectorField(coords, bases=basis)
             namespace['conj_u_{}'.format(bn)] = conj_u = dist.VectorField(coords, bases=basis)
-            
             rho = namespace['rho0_{}'.format(bn)]
-            
-            if tot_KE_op is None:
-                tot_KE_op = d3.integ(rho*conj_u@u/2)
-                cz_KE_op = d3.integ(cz_envelope*(rho*conj_u@u)/2)
-            else:
-                tot_KE_op += d3.integ(rho*conj_u@u/2)
-                cz_KE_op  += d3.integ(cz_envelope*(rho*conj_u@u)/2)
+           
+            cz_KE_ops.append(d3.integ(cz_envelope*rho*conj_u@u/2))
+            tot_KE_ops.append(d3.integ(rho*conj_u@u/2))
+        cz_KE_op = 0
+        tot_KE_op = 0
+        for i in range(len(cz_KE_ops)):
+            cz_KE_op += cz_KE_ops[i]
+            tot_KE_op += tot_KE_ops[i]
 
         logger.info('finding good eigenvalues with cutoff {}'.format(cutoff))
 
@@ -716,7 +796,7 @@ class StellarEVP():
             if cz_KE_frac.real > 0.5:
                 logger.debug('skipping eigenvalue {}; located in CZ'.format(v1))
                 continue
-            elif cz_KE_frac.real < 1e-4:
+            elif cz_KE_frac.real < 1e-12:
                 logger.debug('skipping eigenvalue {}; spurious mode without evanescent tail'.format(v1))
                 continue
 
@@ -732,18 +812,25 @@ class StellarEVP():
             if goodness < cutoff:
                 self.hires_EVP.solver.set_state(0, self.hires_EVP.subsystem)
                 ef_u2, ef_u2_pieces = clean_eigvecs('u', self.hires_EVP.bases_keys, self.hires_EVP.namespace)
+                print([np.max(np.abs(ef_u2[ind,:])) for ind in range(3)])
                 for j, basis in enumerate(self.hires_EVP.bases):
                     bn = self.bases_keys[j]
-                    evp_u = namespace['evp_u_{}'.format(bn)]
-                    u = namespace['u_{}'.format(bn)]
+                    u = namespace['evp_u_{}'.format(bn)]
                     conj_u = namespace['conj_u_{}'.format(bn)]
-                    evp_u['g'] = u['g']
+                    u['g'] = ef_u2_pieces[j]['g']
                     conj_u['g'] = np.conj(u['g']) 
                 mode_KE2 = tot_KE_op.evaluate()['g'].ravel()[0].real
 
                 vector_diff = np.max(np.abs(mode_KE1/mode_KE2 - 1))
                 if vector_diff < np.sqrt(cutoff):
+
                     logger.info('good evalue {} w/ vdiff {} and czfrac {}'.format(v1, vector_diff, cz_KE_frac.real))
+#                    tots = []
+#                    czs = []
+#                    for i in range(len(cz_KE_ops)):
+#                        czs.append(cz_KE_ops[i].evaluate()['g'].ravel()[0].real)
+#                        tots.append(tot_KE_ops[i].evaluate()['g'].ravel()[0].real)
+#                    logger.info('cz ops: {}, tot ops: {}'.format(czs, tots))
                     good_values.append(i)
                     if max_modes is not None and len(good_values) == max_modes:
                         logger.info('reached {} modes == max modes; breaking'.format(max_modes))
@@ -768,7 +855,7 @@ class StellarEVP():
                 grid_space = (False,False)
                 elements = (np.array((i,)),np.array((j,)))
                 m, this_ell = self.bases['B'].sphere_basis.elements_to_groups(grid_space, elements)
-                if this_ell == self.ell and m == 1:
+                if this_ell == self.ell and m == 0:
                     good[i,j] = True
 
         integ_energy_op = None
@@ -827,6 +914,9 @@ class StellarEVP():
             for piece_tuple in [ef_u_pieces, ef_s1_pieces, ef_ln_rho1_pieces, ef_enth_fluc_pieces]:
                 for data in piece_tuple:
                     data['g'][:] /= shift
+
+            print('u mags', [np.max(np.abs(ef_u[ind,:])) for ind in range(3)])
+            print('s1 mags', [np.max(np.abs(ef_s1[:]))])
 
             vec_slices = (slice(None), slice(ix[0], ix[0]+1), slice(ix[1], ix[1]+1), slice(None))
             scalar_slices = vec_slices[1:]
@@ -906,7 +996,7 @@ class StellarEVP():
                     f['rho_nd'] = nccf['rho_nd'][()] 
                     f['s_nd']   = nccf['s_nd'][()]   
 
-    def get_duals(self, ell=None, zero_phi=False, cleanup=True):
+    def get_duals(self, ell=None, cleanup=False, max_cond=None, discard_cond_cutoff=None):
         if ell is not None:
             self.ell = ell
         full_velocity_eigenfunctions_pieces = []
@@ -928,48 +1018,54 @@ class StellarEVP():
         dist = self.dist
         work_fields = []
         conj_work_fields = []
+        ip_elements = []
         int_field = None
         for bn, basis in self.bases.items():
             work_fields.append(dist.VectorField(self.coords, bases=basis))
             conj_work_fields.append(dist.VectorField(self.coords, bases=basis))
+            r = self.namespace['r_{}'.format(bn)]
+            dr = np.gradient(r, axis=-1)
+            ip_elements.append(4*np.pi*r**2*dr*np.exp(self.namespace['ln_rho0_{}'.format(bn)]['g'][0,0,:]))
+
             if int_field is None:
                 int_field = d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
             else:
                 int_field += d3.integ(self.namespace['rho0_{}'.format(bn)]*conj_work_fields[-1]@work_fields[-1])
 
-        def IP(velocity_list1, velocity_list2):
+        def IP_fast(velocity_list1, velocity_list2):
+            """ Integrate the bra-ket of two eigenfunctions of velocity. """
+            ip = 0
+            for i, bn in enumerate(self.bases.keys()):
+                ip += np.sum(ip_elements[i]*np.conj(velocity_list1[i])*velocity_list2[i])
+            return ip
+
+        def IP_slow(velocity_list1, velocity_list2):
             """ Integrate the bra-ket of two eigenfunctions of velocity. """
             for i, bn in enumerate(self.bases.keys()):
                 velocity1 = velocity_list1[i]
                 velocity2 = velocity_list2[i]
-                if zero_phi:
-                    velocity1[0,:] = 0
-                    velocity2[0,:] = 0
                 conj_work_fields[i]['g'] = np.conj(velocity1)
                 work_fields[i]['g'] = velocity2
             return int_field.evaluate()['g'].min()
 
-        duals = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP)
-#        pos_evalues = evalues.real > 0
-#        pos_indices = np.where(pos_evalues)[0]
-#        pos_velocity_duals = calculate_duals(velocity_eigenfunctions[pos_indices,:], self.bases, dist, IP=IP)
-#        neg_evalues = evalues.real < 0
-#        neg_indices = np.where(neg_evalues)[0]
-#        neg_velocity_duals = calculate_duals(velocity_eigenfunctions[neg_indices,:], self.bases, dist, IP=IP)
-#        duals = np.zeros((evalues.size, *tuple(neg_velocity_duals.shape[1:])), dtype=neg_velocity_duals.dtype)
-#        for i, ev in enumerate(evalues):
-#            if ev.real > 0:
-#                duals[i,:] = pos_velocity_duals[ev == evalues[pos_evalues]]
-#            elif ev.real < 0:
-#                duals[i,:] = neg_velocity_duals[ev == evalues[neg_evalues]]
+        duals, discard = calculate_duals(velocity_eigenfunctions, self.bases, dist, IP=IP_fast, max_cond=max_cond, discard_cond_cutoff=discard_cond_cutoff)
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'r') as f:
             with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell), 'w') as df:
                 for k in f.keys():
                     if k == 'pieces': continue
-                    df.create_dataset(k, data=f[k])
-#                for k in f['pieces'].keys():
-#                    df.create_dataset('pieces/'+k, data=f['pieces/'+k])
+                    if k in ['r', 'rho_full', 'depths', 'smooth_oms', 'smooth_depths', 'bruntN2', 'tau_nd', 'm_nd', 'L_nd', 'T_nd', 'rho_nd', 's_nd']:
+                        df.create_dataset(k, data=f[k])
+                        continue
+                    found = False
+                    for i, bn in enumerate(self.bases_keys):
+                        if k in ['r_{}'.format(bn), 'rho_{}'.format(bn)]:
+                            df.create_dataset(k, data=f[k])
+                            found = True
+                    if found:
+                        continue
+                    df.create_dataset(k, data=f[k][:duals.shape[0]])
                 df['velocity_duals'] = duals
+                df['discard'] = discard
         if cleanup:
             #remove large pre-dual file.
             os.remove('{:s}/ell{:03d}_eigenvalues.h5'.format(self.out_dir, self.ell))

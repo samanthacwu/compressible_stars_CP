@@ -46,8 +46,8 @@
 /
 
 &num
-!  diff_scheme = 'MAGNUS_GL2' 
-  diff_scheme = 'COLLOC_GL2' 
+  diff_scheme = 'MAGNUS_GL2' 
+!  diff_scheme = 'COLLOC_GL2' 
   n_iter_max = 200
 /
 
@@ -57,7 +57,7 @@
   freq_max_units = 'UHZ'
   freq_min = 0.3        ! Minimum frequency to scan from
   freq_max = 100        ! Maximum frequency to scan to
-  n_freq = 3000          ! Number of frequency points in scan
+  n_freq = 5000          ! Number of frequency points in scan
 /
 
 &grid
@@ -72,8 +72,8 @@
 
 &nad_output
   summary_file_format = 'TXT'
-  summary_file = './gyre_output/summary.txt'                         ! File name for summary file
-  summary_item_list = 'l,n_pg,freq,freq_units,E_norm' ! Items to appear in summary file
+  summary_file = './gyre_output/summary_ell01-05.txt'                         ! File name for summary file
+  summary_item_list = 'l,n_pg,freq,freq_units,E_norm,xi_r_ref,lag_L_ref,omega' ! Items to appear in summary file
   detail_file_format = 'TXT'
   detail_template = 'gyre_output/mode_ell%L_m%M_n%N.txt'
   detail_item_list = 'j,l,n_pg,n_p,n_g,eta,omega,freq,x,x_ref,f_T,xi_r,xi_r_ref,xi_h,xi_h_ref,lag_L,lag_L_ref,dW_dx,dE_dx,H,L_star,R_star,M_star,T,M_r,rho,P,prop_type,V_2,As,c_1,Gamma_1'
