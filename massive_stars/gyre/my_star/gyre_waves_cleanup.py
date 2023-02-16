@@ -293,11 +293,12 @@ class GyreMSGPostProcessor:
         
         return data_dicts
 
-    def calculate_duals(self, dict_ind=0):
+    def calculate_duals(self, dict_ind=0, max_cond=1e3):
         data = self.data_dicts[dict_ind]
         ur = data['u_r_eigfunc']
         uh = data['u_h_eigfunc']
-      
+
+        dr = np.gradient(self.r)
         def IP(ur_1,ur_2,uh_1,uh_2):
           """
           Per daniel:
@@ -305,21 +306,37 @@ class GyreMSGPostProcessor:
           (because the actual angular velocity has two components and is uh = xi_h * f * grad(Y_ell,m)) [so grad_h is the angular part of the gradient without any 1/r factor]
           but when you take <uh, uh> you can integrate-by-parts on one of the grad's to turn it into laplacian(Y_ell,m)=-(ell(ell+1)) Y_ell,m
           """
-          dr = np.gradient(self.r)
           return np.sum(dr*4*np.pi*self.r**2*self.rho*(np.conj(ur_1)*ur_2+np.conj(uh_1)*uh_2),axis=-1)
         
         IP_matrix = np.zeros((ur.shape[0], ur.shape[0]),dtype=np.complex128)
         for i in range(ur.shape[0]):
-          if i % 10 == 0: print(i)
-          for j in range(ur.shape[0]):
-            IP_matrix[i,j] = IP(ur[i],ur[j],uh[i],uh[j])
-
-        print('dual IP matrix cond: {:.3e}'.format(np.linalg.cond(IP_matrix)))
-        
+            if i % 10 == 0: print(i)
+            for j in range(ur.shape[0]):
+                IP_matrix[i,j] = IP(ur[i],ur[j],uh[i],uh[j])
+            cond = np.linalg.cond(IP_matrix[:i+1,:i+1])
+            if max_cond is not None and i > 0:
+                if cond > max_cond:
+                    n_modes = i
+                    IP_matrix = IP_matrix[:n_modes,:n_modes]
+                    break
+        print('dual IP matrix cond: {:.3e}; n_modes: {}/{}'.format(cond, n_modes, ur.shape[0]))
+        cond = np.linalg.cond(IP_matrix[:i+1,:i+1]) 
         IP_inv = linalg.inv(IP_matrix)
-        
+
+        ur = ur[:n_modes]
+        uh = uh[:n_modes]
+        for k in self.data_dicts[dict_ind].keys():
+            if k == 'dF_mumags':
+                for sk in self.data_dicts[dict_ind][k]:
+                    self.data_dicts[dict_ind][k][sk] = self.data_dicts[dict_ind][k][sk][:n_modes]
+            elif 'smooth' not in k:
+                self.data_dicts[dict_ind][k] = self.data_dicts[dict_ind][k][:n_modes]
+
+
+        print(self.data_dicts[dict_ind].keys())
         data['u_r_dual'] = u_r_dual = np.conj(IP_inv)@ur
         data['u_h_dual'] = u_h_dual = np.conj(IP_inv)@uh
+
 
         #Check that velocity duals were evaluated correctly
         IP_check = np.zeros_like(IP_matrix)
@@ -327,15 +344,13 @@ class GyreMSGPostProcessor:
             for j in range(ur.shape[0]):
                 IP_check[i,j] = IP(u_r_dual[i], ur[j], u_h_dual[i], uh[j])
         I_matrix = np.eye(IP_matrix.shape[0])
-                    
+
         if np.allclose(I_matrix.real, IP_check.real, rtol=1e-6, atol=1e-6):
             print('duals properly calculated')
         else:
             print('error in dual calculation')
             import sys
             sys.exit()
-        print(np.abs(u_h_dual))
-        print(np.abs(uh))
         return self.data_dicts
 
 Lmax = 1
@@ -350,7 +365,7 @@ for ell in ell_list:
     pos_files = []
     neg_files = []
 
-    max_n_pg = 30
+    max_n_pg = 100
     do_negative = False
     pos_summary_file='gyre_output/pos_ell{:02d}_summary.txt'.format(ell)
     pos_summary = pg.read_output(pos_summary_file)
@@ -419,6 +434,10 @@ for ell in ell_list:
 #            print(i, 'h_dual', np.allclose(data_dicts[0]['u_h_dual'][i], -np.conj(data_dicts[1]['u_h_dual'][i])))
 #            print(i, 'delta_L_dL_top', np.isclose(data_dicts[0]['delta_L_dL_top'][i], np.conj(data_dicts[1]['delta_L_dL_top'][i])))
 #            print(i, 'dF_mumags', np.isclose(data_dicts[0]['dF_mumags']['Red'][i], np.conj(data_dicts[1]['dF_mumags']['Red'][i])))
+
+    plt.figure()
+    plt.loglog(data_dicts[0]['freq'].real, -data_dicts[0]['freq'].imag, lw=0, marker='o')
+    plt.show()
 
     with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format('gyre_output', ell), 'w') as f:
         if do_negative:
