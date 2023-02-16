@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
 
     #Calculate transfer functions
-    Lmax = 1
+    Lmax = 5
     ell_list = np.arange(1, Lmax+1)
     eig_dir = 'gyre_output'
     for ell in ell_list:

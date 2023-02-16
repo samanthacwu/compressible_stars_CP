@@ -76,10 +76,10 @@ star_log_Ell  = ell[mn == this_model]
 
 
 #Calculate transfer functions
-Lmax = 1
+Lmax = 5
 ell_list = np.arange(1, Lmax+1)
 eig_dir = 'gyre_output'
-plot_freqs = np.logspace(-7, -4, 10000)
+plot_freqs = np.logspace(-7, -3, 10000)
 total_signal = np.zeros_like(plot_freqs)
 
 for ell in ell_list:
@@ -109,46 +109,43 @@ for ell in ell_list:
     print(micromag)
     plt.ylabel(r'$\delta L / L_*$')
     plt.xlabel(r'frequency (Hz)')
-    plt.xlim(1e-6, 1e-4)
+    plt.xlim(3e-7, 1e-4)
+plt.loglog(plot_freqs, total_signal, c='k')
 plt.legend()
 plt.savefig('obs_ell_contributions.png', bbox_inches='tight')
 
 plot_freqs *= 60*60*24 #1/s -> 1/day
 
 fig = plt.figure(figsize=(8,4))
-ax1 = fig.add_subplot(2,3,1)
-ax2 = fig.add_subplot(2,3,2)
-ax3 = fig.add_subplot(2,3,3)
-ax4 = fig.add_subplot(2,3,4)
-ax5 = fig.add_subplot(2,3,5)
-ax6 = fig.add_subplot(2,3,6)
+ax1 = fig.add_subplot(1,2,1)
+ax2 = fig.add_subplot(1,2,2)
 
 plt.subplots_adjust(hspace=0.5, wspace=0.7)
 
-
 log10Teff = [4.46, 4.47, 4.41, 4.26, 4.25]
 log10LdLsol = [3.31, 3.06, 2.95, 2.44, 2.61]
-obs_axs = [ax2, ax3, ax4, ax5, ax6]
 ax1.scatter(star_log_Teff, star_log_Ell, c='k', marker='*')
-ax1.set_xlim(4.6, 4.1)
+ax1.set_xlim(4.6, 4.05)
 ax1.set_ylim(2.4, 3.4)
 ax1.set_ylabel(r'$\mathrm{log}_{10}(\mathcal{L}/\mathcal{L}_{\odot})$')
 ax1.set_xlabel(r'$\mathrm{log}_{10}(T_{\rm eff})$')
+
+plt.axes(ax2)
+plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
+plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
+ax2.text(0.12, 0.1, 'Estimated wave signal', ha='left')
+ax2.text(0.2, 5e2, 'Observed red noise', ha='left', va='center')
 
 from palettable.colorbrewer.qualitative import Dark2_5
 for i in range(len(star_names)):
     color = Dark2_5.mpl_colors[i]
     ax1.scatter(log10Teff[i], log10LdLsol[i], color=color)
     #focus on proper subplot
-    plt.axes(obs_axs[i])
-    plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
-    plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
     alphanu = (alpha0[i] / (1 + (plot_freqs/nu_char[i])**gamma[i]) + Cw[i]) #mags
     plt.loglog(plot_freqs, alphanu, color=color)
     plt.loglog(plot_freqs, total_signal, lw=2, c='k')#, label=r'15 $M_{\odot}$ LMC sim')
-    plt.loglog(plot_freqs, total_signal + Cw[i], c='grey')#, label='sim + white noise')
-    obs_axs[i].text(0.98, 0.88, star_names[i], ha='right', transform=obs_axs[i].transAxes, color=color)
-    plt.ylim(1e-1, 1e4)
+    ax1.text(log10Teff[i]*0.995, log10LdLsol[i], star_names[i], ha='left', color=color)
+    plt.ylim(1e-3, 1e3)
     plt.ylabel(r'$\Delta m$')
     plt.xlabel(r'frequency (1/day)')
     plt.xlim(3e-2, 1e1)

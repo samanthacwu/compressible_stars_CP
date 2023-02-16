@@ -139,7 +139,7 @@ class GyreMSGPostProcessor:
             self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
             print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
 
-    def evaluate_magnitudes(self, observer=(np.pi/3,np.pi/6),m=0):
+    def evaluate_magnitudes(self):
         file_list = self.pos_details
         summary_file = self.pos_summary
         # Read summary file from GYRE
@@ -168,8 +168,16 @@ class GyreMSGPostProcessor:
         # Evaluate the spherical harmonic at the observer location
         # (note that sph_harm has back-to-front angle labeling!)
 
-        theta_obs, phi_obs = observer
-        Ylm = ss.sph_harm(m, self.ell, phi_obs, theta_obs)
+        
+        #get Y_l per eqn 8 of Townsend 2002
+#        Ylm = ss.sph_harm(m, self.ell, phi_obs, theta_obs)
+        ms  = np.linspace(-self.ell, self.ell, 2*self.ell + 1)[:,None,None]
+        phi = np.linspace(0, np.pi, 100)[None,:,None]
+        dphi = np.gradient(phi.ravel())[None,:,None]
+        theta = np.linspace(0, np.pi, 100)[None,None,:]
+        dtheta = np.gradient(theta.ravel())[None,None,:]
+        Y_l = (1/(2*self.ell+1))*(1/(4*np.pi))*np.sum(np.sum(np.sum(dtheta*dphi*np.sin(theta)*np.abs(ss.sph_harm(ms, self.ell, phi, theta)),axis=1),axis=1),axis=0)
+        print('this ell:', self.ell, Y_l)
 
         # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
 
@@ -181,9 +189,9 @@ class GyreMSGPostProcessor:
 
         for filter in self.filters:
             
-            dff_R[filter] = (2+ell)*(1-ell)*self.I_l[filter]/self.I_0[filter]*Ylm
-            dff_T[filter] = self.dI_l_dlnTeff[filter]/self.I_0[filter]*Ylm
-            dff_G[filter] = self.dI_l_dlng[filter]/self.I_0[filter]*Ylm
+            dff_R[filter] = (2+ell)*(1-ell)*self.I_l[filter]/self.I_0[filter]*Y_l
+            dff_T[filter] = self.dI_l_dlnTeff[filter]/self.I_0[filter]*Y_l
+            dff_G[filter] = self.dI_l_dlng[filter]/self.I_0[filter]*Y_l
 
             # Evaluate a light curve in each filter (eqn. 11 of Townsend 2003)
             dF[filter] = ((data['Delta_R']*dff_R[filter] +
@@ -340,27 +348,23 @@ class GyreMSGPostProcessor:
             sys.exit()
         return self.data_dict
 
-Lmax = 1
+Lmax = 5
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
     om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
 
     pulse_file = 'LOGS/profile47.data.GYRE'
     mesa_LOG = 'LOGS/profile47.data'
-    pos_mode_base = './gyre_output/pos_mode_ell{:03d}_m+00_n{:06d}.txt'
+    pos_mode_base = './gyre_output/mode_ell{:03d}_m+00_n{:06d}.txt'
     neg_mode_base = pos_mode_base.replace('pos', 'neg')
     pos_files = []
     neg_files = []
 
     max_n_pg = 100
     do_negative = False
-    pos_summary_file='gyre_output/pos_ell{:02d}_summary.txt'.format(ell)
+    pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
     pos_summary = pg.read_output(pos_summary_file)
-    if do_negative:
-        neg_summary_file='gyre_output/neg_ell{:02d}_summary.txt'.format(ell)
-        neg_summary = pg.read_output(neg_summary_file)
-    else:
-        neg_summary_file = None
+    neg_summary_file = None
 
     #sort eigenvalues by 1/freq
     sorting = np.argsort(pos_summary['freq'].real**(-1))
@@ -369,39 +373,17 @@ for ell in ell_list:
 
 
     good_freqs = []
-    if do_negative:
-        neg_ell = neg_summary['l']
-        neg_n_pg = neg_summary['n_pg']
-        for row in pos_summary:
-            ell = row['l']
-            n_pg = row['n_pg']
-            if np.abs(n_pg) > max_n_pg: continue
-            freq = row['freq']
-            found_negative = (ell in neg_ell)*(n_pg in neg_n_pg)
-            if found_negative:
-                neg_freq = neg_summary[(neg_ell == ell)*(n_pg == neg_n_pg)]['freq']
-                if len(neg_freq) > 1:
-                    print("skipping {}; too many negative frequencies".format(freq))
-                    continue
-                good = np.isclose(freq, -np.conj(neg_freq))
-                if good:
-                    pos_files.append(pos_mode_base.format(ell, n_pg))
-                    neg_files.append(neg_mode_base.format(ell, n_pg))
-
-    else:
-        counted_n_pgs = []
-        for row in pos_summary:
-#            plt.loglog(pos_summary['freq'].real, -pos_summary['freq'].imag, marker='x', lw=0)
-#            plt.axvline(row['freq'].real)
-#            plt.show()
-            ell = row['l']
-            n_pg = row['n_pg']
-            #Check consistency...
-            if np.abs(n_pg) > max_n_pg: continue
-            if n_pg in counted_n_pgs: continue
-            counted_n_pgs.append(n_pg)
-            pos_files.append(pos_mode_base.format(ell, n_pg))
-            good_freqs.append(complex(row['freq']))
+    counted_n_pgs = []
+    for row in pos_summary:
+        this_ell = row['l']
+        if this_ell != ell: continue
+        n_pg = row['n_pg']
+        #Check consistency...
+        if np.abs(n_pg) > max_n_pg: continue
+        if n_pg in counted_n_pgs: continue
+        counted_n_pgs.append(n_pg)
+        pos_files.append(pos_mode_base.format(ell, n_pg))
+        good_freqs.append(complex(row['freq']))
 
     post = GyreMSGPostProcessor(ell, pos_summary_file, pos_files, neg_summary_file, neg_files, pulse_file, mesa_LOG,
                   specgrid='OSTAR2002', filters=['Red',],
@@ -409,7 +391,7 @@ for ell in ell_list:
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
     post.sort_eigenfunctions()
-    data_dicts = post.evaluate_magnitudes(observer=(0,np.pi/6),m=0)
+    data_dicts = post.evaluate_magnitudes()
     data_dict = post.calculate_duals()
 #    print(data_dicts[0]['freq'], data_dicts[1]['freq'])
 
