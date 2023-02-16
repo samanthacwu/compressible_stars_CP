@@ -27,7 +27,7 @@ matplotlib.use('Agg')
 from matplotlib.ticker import FormatStrFormatter
 import pyvista as pv
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp2d
+from scipy.interpolate import interp2d, interp1d
 
 #TODO: Add outer shell, make things prettier!
 def build_s2_vertices(phi, theta):
@@ -79,14 +79,19 @@ if not plotter.idle:
                 phi_keys.append(k)
             if k[0] == 'theta':
                 theta_keys.append(k)
-    shell_field1 = 'shell(s1_B,r=1)'
-    shell_field2 = 'shell(s1_S1,r=R)'
+#    shell_field1 = 'shell(s1_B,r=1)'
+#    shell_field2 = 'shell(s1_S1,r=R)'
+    shell_field1 = 'shell(u_B,r=1)'
+    shell_field2 = 'shell(u_S1,r=R)'
 #    r_max = 3.38*0.75
 #    shell_field = 'shell(s1_S1,r=0.75R)'
     phi_vals = ['0.00', '1.57', '3.14', '4.71']
-    fields = ['equator(s1_B)', 'equator(s1_S1)', shell_field1, shell_field2] \
-            + ['meridian(s1_B,phi={})'.format(phi) for phi in phi_vals] \
-            + ['meridian(s1_S1,phi={})'.format(phi) for phi in phi_vals]
+#    fields = ['equator(s1_B)', 'equator(s1_S1)', shell_field1, shell_field2] \
+#            + ['meridian(s1_B,phi={})'.format(phi) for phi in phi_vals] \
+#            + ['meridian(s1_S1,phi={})'.format(phi) for phi in phi_vals]
+    fields = ['equator(u_B)', 'equator(u_S1)', shell_field1, shell_field2] \
+            + ['meridian(u_B,phi={})'.format(phi) for phi in phi_vals] \
+            + ['meridian(u_S1,phi={})'.format(phi) for phi in phi_vals]
     bases  = ['r', 'phi', 'theta']
 
 
@@ -156,10 +161,10 @@ if not plotter.idle:
             if first:
                 theta = match_basis(dsets[shell_field], 'theta')
                 phi   = match_basis(dsets[shell_field], 'phi')
-                phi_de   = match_basis(dsets['equator(s1_B)'], 'phi')
-                theta_de = match_basis(dsets['meridian(s1_B,phi=0.00)'], 'theta')
-                rB_de    = match_basis(dsets['meridian(s1_B,phi=0.00)'], 'r')
-                rS1_de   = match_basis(dsets['meridian(s1_S1,phi=0.00)'], 'r')
+                phi_de   = match_basis(dsets['equator(u_B)'], 'phi')
+                theta_de = match_basis(dsets['meridian(u_B,phi=0.00)'], 'theta')
+                rB_de    = match_basis(dsets['meridian(u_B,phi=0.00)'], 'r')
+                rS1_de   = match_basis(dsets['meridian(u_S1,phi=0.00)'], 'r')
                 r_de = r_de_orig = np.concatenate((rB_de, rS1_de), axis=-1)
                 dphi = phi[1] - phi[0]
                 dphi_de = phi_de[1] - phi_de[0]
@@ -239,12 +244,13 @@ if not plotter.idle:
                 pl.camera.position = np.array((1, -1, 1))*camera_distance
 
             #Get mean properties as f(radius) // Equatorial data
-            mean_s1_B  = np.expand_dims(np.mean(dsets['equator(s1_B)'][ni], axis=0), axis=0)
-            mean_s1_S1 = np.expand_dims(np.mean(dsets['equator(s1_S1)'][ni], axis=0), axis=0)
-            s1_eq_B  = dsets['equator(s1_B)'][ni] - mean_s1_B
-            s1_eq_S1 = dsets['equator(s1_S1)'][ni] - mean_s1_S1
+            mean_s1_B  = np.expand_dims(np.mean(dsets['equator(u_B)'][ni,2], axis=0), axis=0)
+            mean_s1_S1 = np.expand_dims(np.mean(dsets['equator(u_S1)'][ni,2], axis=0), axis=0)
+            s1_eq_B  = dsets['equator(u_B)'][ni,2] - mean_s1_B
+            s1_eq_S1 = dsets['equator(u_S1)'][ni,2] - mean_s1_S1
             radial_s1_mean = np.concatenate((mean_s1_B, mean_s1_S1), axis=-1)
             eq_field_s1 = np.concatenate((s1_eq_B, s1_eq_S1), axis=-1)
+            s1_mean_func = interp1d(r_de_orig, radial_s1_mean.ravel(), bounds_error=False, fill_value='extrapolate')
 
             radial_scaling = np.std(eq_field_s1, axis=0).ravel()
             N = mean_s1_B.size // 10
@@ -272,10 +278,10 @@ if not plotter.idle:
                 mer_0_ind = 3
                 mer_1_ind = 1
 
-            mer_0_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[mer_0_ind])][ni] - mean_s1_B).squeeze()
-            mer_1_s1_B  = (dsets['meridian(s1_B,phi={})'.format(phi_vals[mer_1_ind])][ni] - mean_s1_B).squeeze()
-            mer_0_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[mer_0_ind])][ni] - mean_s1_S1).squeeze()
-            mer_1_s1_S1 = (dsets['meridian(s1_S1,phi={})'.format(phi_vals[mer_1_ind])][ni] - mean_s1_S1).squeeze()
+            mer_0_s1_B  = (dsets['meridian(u_B,phi={})'.format(phi_vals[mer_0_ind])][ni,2] - mean_s1_B).squeeze()
+            mer_1_s1_B  = (dsets['meridian(u_B,phi={})'.format(phi_vals[mer_1_ind])][ni,2] - mean_s1_B).squeeze()
+            mer_0_s1_S1 = (dsets['meridian(u_S1,phi={})'.format(phi_vals[mer_0_ind])][ni,2] - mean_s1_S1).squeeze()
+            mer_1_s1_S1 = (dsets['meridian(u_S1,phi={})'.format(phi_vals[mer_1_ind])][ni,2] - mean_s1_S1).squeeze()
 
 
             #Calculate midpoints meridionally.
@@ -293,9 +299,9 @@ if not plotter.idle:
 #            print('past meridian')
 
             #Get shell slice data
-            s1_S_r095R = dsets[shell_field][ni]
+            s1_S_r095R = dsets[shell_field][ni,2]
             shell_s1 = s1_S_r095R.squeeze()
-            shell_s1 -= np.mean(shell_s1)
+            shell_s1 -= s1_mean_func(r_outer)#np.mean(shell_s1)
             shell_s1 /= np.std(shell_s1)
             s1_shell_data['surfacecolor'] = np.pad(shell_s1, ((0,1), (0,1)), mode='edge')
 #            print('past shell')
@@ -303,7 +309,8 @@ if not plotter.idle:
             if first: #static colorbar
                 minmax_s1 = np.array((2*np.std(eq_field_s1),))
                 plotter.comm.Allreduce(MPI.IN_PLACE, minmax_s1, op=MPI.MAX)
-                cmap = matplotlib.cm.get_cmap('RdBu_r')
+                cmap = matplotlib.cm.get_cmap('PuOr_r')
+#                cmap = matplotlib.cm.get_cmap('RdBu_r')
                 norm = matplotlib.colors.Normalize(vmin=-minmax_s1[0], vmax=minmax_s1[0])
 
                 data_dicts.append([s1_shell_data, s1_mer_data, s1_eq_data])
@@ -316,15 +323,15 @@ if not plotter.idle:
                     z = d['z']
 #                    print(x.shape, d['surfacecolor'].shape, d['pick'].shape)
                     grid = pv.StructuredGrid(x, y, z)
-                    grid['normalized s1'] = d['surfacecolor'].flatten(order="F")
+                    grid['normalized ur'] = d['surfacecolor'].flatten(order="F")
                     grid['mask'] = np.array(d['pick'], int).flatten(order="F")
                     clipped = grid.clip_scalar('mask', value = 0.5, invert=False)
                     d['grid'] = grid
                     d['clipped'] = clipped
-                    pl.add_mesh(clipped, scalars="normalized s1", cmap=cmap, scalar_bar_args=sargs, clim=[-minmax_s1[0], minmax_s1[0]])
+                    pl.add_mesh(clipped, scalars="normalized ur", cmap=cmap, scalar_bar_args=sargs, clim=[-minmax_s1[0], minmax_s1[0]])
                 else:
-                    d['grid']['normalized s1'] = d['surfacecolor'].flatten(order="F")
-                    d['clipped']['normalized s1'] = d['grid'].clip_scalar('mask', value = 0.5, invert=False)['normalized s1']
+                    d['grid']['normalized ur'] = d['surfacecolor'].flatten(order="F")
+                    d['clipped']['normalized ur'] = d['grid'].clip_scalar('mask', value = 0.5, invert=False)['normalized ur']
 
             if not first:
                 pl.update(force_redraw=True)
