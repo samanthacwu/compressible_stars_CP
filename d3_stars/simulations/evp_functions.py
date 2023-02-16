@@ -423,6 +423,20 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
         ax1 = fig.add_subplot(1,1,1)
         for i in range(T_pieces.shape[0]):
             ax1.loglog(om.ravel()/(2*np.pi), T_pieces[i,:], c=sm.to_rgba(r_range.ravel()[i]))
+        cmap = mpl.cm.plasma
+        norm = mpl.colors.Normalize(vmin=0, vmax=Eig_cos.shape[0])
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+        fig = plt.figure()
+        ax1 = fig.add_subplot(2,1,1)
+        ax2 = fig.add_subplot(2,1,2)
+        for i in range(Eig_cos.shape[0]):
+            ax1.loglog(om.ravel()/(2*np.pi),  Eig_cos[i,0,:], c=sm.to_rgba(i))
+            ax1.loglog(om.ravel()/(2*np.pi), -Eig_cos[i,0,:], ls='--', c=sm.to_rgba(i))
+            ax1.set_ylabel('cos')
+            ax2.loglog(om.ravel()/(2*np.pi),  Eig_sin[i,0,:], c=sm.to_rgba(i))
+            ax2.loglog(om.ravel()/(2*np.pi), -Eig_sin[i,0,:], ls='--', c=sm.to_rgba(i))
+            ax2.set_ylabel('sin')
+        
         plt.show()
 
 #
