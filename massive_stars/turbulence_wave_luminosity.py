@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 rv = '1.25'
 hz_to_invday = 24*60*60
 
+with h5py.File('twoRcore_re3e4_damping/wave_flux/wave_luminosities.h5', 'r') as f:
+    freqs_512 = f['cgs_freqs'][()]
+    ells_512  = f['ells'][()].ravel()
+#    power = f['vel_power(r=1.1)'][0,:]
+    lum_512 = f['cgs_wave_luminosity(r={})'.format(rv)][0,:]
+
 with h5py.File('twoRcore_re2e4_damping/wave_flux/wave_luminosities.h5', 'r') as f:
     freqs_384 = f['cgs_freqs'][()]
     ells_384  = f['ells'][()].ravel()
@@ -34,6 +40,7 @@ with h5py.File('twoRcore_re1e3_damping/wave_flux/wave_luminosities.h5', 'r') as 
     lum_96 = f['cgs_wave_luminosity(r={})'.format(rv)][0,:]
 
 
+freqs_512 *= hz_to_invday
 freqs_384 *= hz_to_invday
 freqs_256 *= hz_to_invday
 freqs_128 *= hz_to_invday
@@ -50,8 +57,9 @@ for freq in np.array([3e-6, 5e-6, 1e-5])*hz_to_invday:
     plt.loglog(ells_128, lum_128[freqs_128 > freq, :][0,:],              color=RdPu_6.mpl_colors[2], label=r'Re $\sim$ 800')
     plt.loglog(ells_256, lum_256[freqs_256 > freq, :][0,:],              color=RdPu_6.mpl_colors[3], label=r'Re $\sim$ 2000')
     plt.loglog(ells_384, lum_384[freqs_384 > freq, :][0,:],              color=RdPu_6.mpl_colors[4], label=r'Re $\sim$ 4000')
-    kh = np.sqrt(ells_384*(ells_384+1))
-    plt.loglog(ells_384, 3e-11*(freq/hz_to_invday)**(-6.5)*kh**4, c='k', label=r'$(3\times10^{-11})(f/Hz)^{-6.5}\left[\sqrt{\ell(\ell+1)}\,\right]^{4}$')
+    plt.loglog(ells_512, lum_512[freqs_512 > freq, :][0,:],              color=RdPu_6.mpl_colors[5], label=r'Re $\sim$ 6000')
+    kh = np.sqrt(ells_512*(ells_512+1))
+    plt.loglog(ells_512, 3e-11*(freq/hz_to_invday)**(-6.5)*kh**4, c='k', label=r'$(3\times10^{-11})(f/Hz)^{-6.5}\left[\sqrt{\ell(\ell+1)}\,\right]^{4}$')
     plt.xlim(1e-2, 1e1)
     plt.ylabel('wave luminosity')
     plt.xlabel(r'$\ell$')
@@ -67,6 +75,7 @@ for ell in range(1, 4):
     plt.loglog(freqs_128,     np.abs(lum_128[:, ells_128 == ell]),         color=RdPu_6.mpl_colors[2], label=r'Re $\sim$ 800')
     plt.loglog(freqs_256,     np.abs(lum_256[:, ells_256 == ell]),         color=RdPu_6.mpl_colors[3], label=r'Re $\sim$ 2000')
     plt.loglog(freqs_384,     np.abs(lum_384[:, ells_384 == ell]),         color=RdPu_6.mpl_colors[4], label=r'Re $\sim$ 4000')
+    plt.loglog(freqs_512,     np.abs(lum_512[:, ells_512 == ell]),         color=RdPu_6.mpl_colors[5], label=r'Re $\sim$ 6000')
 #    plt.loglog(freqs_256, 2.14e-28*freqs_256**(-6.5)*ell**2, c='k')
     kh = np.sqrt(ell*(ell+1))
     plt.loglog(freqs_256, 3e-11*(freqs_256/hz_to_invday)**(-6.5)*kh**4, c='k', label=r'$(3\times10^{-11})(f/Hz)^{-6.5}\left[\sqrt{\ell(\ell+1)}\,\right]^{4}$')
@@ -97,11 +106,12 @@ ax1.loglog(freqs_128_low, np.abs(lum_128_low[:, ells_128_low == ell]), color=RdP
 ax1.loglog(freqs_128,     np.abs(lum_128[:, ells_128 == ell]),         color=RdPu_6.mpl_colors[2], label=r'Re $\sim$ 800')
 ax1.loglog(freqs_256,     np.abs(lum_256[:, ells_256 == ell]),         color=RdPu_6.mpl_colors[3], label=r'Re $\sim$ 2000')
 ax1.loglog(freqs_384,     np.abs(lum_384[:, ells_384 == ell]),         color=RdPu_6.mpl_colors[4], label=r'Re $\sim$ 4000')
+ax1.loglog(freqs_512,     np.abs(lum_512[:, ells_512 == ell]),         color=RdPu_6.mpl_colors[5], label=r'Re $\sim$ 6000')
 kh = np.sqrt(ell*(ell+1))
 ax1.loglog(freqs_256, 3e-11*(freqs_256/hz_to_invday)**(-6.5)*kh**4, c='k', label=r'$(3\times10^{-11})(f/Hz)^{-6.5}\left[\sqrt{\ell(\ell+1)}\,\right]^{4}$')
 ax1.set_ylim(1e8, 1e30)
 ax1.set_xlim(1e-2, 2e1)
-ax1.text(0.11, 4e28, r'$f^{-6.5}$', rotation=0)
+ax1.text(0.12, 4e28, r'$f^{-6.5}$', rotation=0)
 ax1.set_xlabel(r'frequency (day$^{-1}$)')
 ax1.set_ylabel(r'Wave Luminosity (erg$\,$s$^{-1}$)')
 
@@ -110,14 +120,16 @@ ax2.loglog(ells_128_low, lum_128_low[freqs_128_low > freq, :][0,:],  color=RdPu_
 ax2.loglog(ells_128, lum_128[freqs_128 > freq, :][0,:],              color=RdPu_6.mpl_colors[2], label=r'Re $\sim$ 800')
 ax2.loglog(ells_256, lum_256[freqs_256 > freq, :][0,:],              color=RdPu_6.mpl_colors[3], label=r'Re $\sim$ 2000')
 ax2.loglog(ells_384, lum_384[freqs_384 > freq, :][0,:],              color=RdPu_6.mpl_colors[4], label=r'Re $\sim$ 4000')
+ax2.loglog(ells_512, lum_512[freqs_512 > freq, :][0,:],              color=RdPu_6.mpl_colors[5], label=r'Re $\sim$ 6000')
 kh = np.sqrt(ells_384*(ells_384+1))
 ax2.loglog(ells_384, 3e-11*(freq/hz_to_invday)**(-6.5)*kh**4, c='k', label=r'$(3\times10^{-11})(f/Hz)^{-6.5}\left[\sqrt{\ell(\ell+1)}\,\right]^{4}$')
 ax2.set_xlim(1, 100)
 ax2.set_ylim(1e8, 1e30)
-ax2.text(20, 3e27, r'$k_h^4=[\ell(\ell+1)]^2$', rotation=0,ha='left')
+ax2.text(25, 3e27, r'$k_h^4=[\ell(\ell+1)]^2$', rotation=0,ha='left')
 ax2.set_xlabel(r'$\ell$')
 
 cb = plt.colorbar(sm, cax=cax, orientation='horizontal')
 cax.text(-0.02, 0.5, 'Re', ha='right', va='center', transform=cax.transAxes)
 
 plt.savefig('wave_luminosity_comparison/turbulence_waveflux_variation.png', dpi=300, bbox_inches='tight')
+plt.savefig('wave_luminosity_comparison/turbulence_waveflux_variation.pdf', dpi=300, bbox_inches='tight')
