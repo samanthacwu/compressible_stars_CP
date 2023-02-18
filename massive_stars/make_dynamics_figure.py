@@ -20,7 +20,7 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
         return -(one_to_zero(*args, **kwargs) - 1)
 
-
+dpi = 300
 r_outer = 2
 sponge_function = lambda r: zero_to_one(r, r_outer - 0.15, 0.07)
 
@@ -186,23 +186,26 @@ with turb_plotter.my_sync:
                 #add grey mask over damping region
                 pmask = sponge_function(np.sqrt(d['xx']**2 +  d['yy']**2))
                 t_cmap = np.ones([256, 4])*0.7
-                t_cmap[:, 3] = np.linspace(0, 0.6, 256)
+                if dpi < 600:
+                    t_cmap[:, 3] = np.linspace(0, 0.25, 256)
+                else:
+                    t_cmap[:, 3] = np.linspace(0, 0.6, 256)
                 t_cmap = ListedColormap(t_cmap)
                 color2 = ax.pcolormesh(d['xx'], d['yy'], pmask, shading='auto', cmap=t_cmap, vmin=0, vmax=1, rasterized=True)
             if i == 0:
                 cbar = plt.colorbar(plot, cax=caxCore, orientation='horizontal')
-                caxCore.text(-0.01, 0.5, r'$u_r$ (cm$\,$s$^{-1}$)', transform=caxCore.transAxes, va='center', ha='right')
+                caxCore.text(-0.02, 0.5, r'$u_r$ (cm$\,$s$^{-1}$)', transform=caxCore.transAxes, va='center', ha='right')
                 cbar.set_ticks((vmin, 0, vmax))
                 cbar.set_ticklabels([sci_formatter(vmin), '0', sci_formatter(vmax)])
             elif i == 1:
                 cbar = plt.colorbar(plot, cax=caxDamp, orientation='horizontal')
-                caxDamp.text(-0.01, 0.5, r'$u_r/\sigma(u_r)$', transform=caxDamp.transAxes, va='center', ha='right')
+                caxDamp.text(-0.02, 0.5, r'$u_r/\sigma(u_r)$', transform=caxDamp.transAxes, va='center', ha='right')
                 cbar.set_ticks((vmin, 0, vmax))
                 cbar.set_ticklabels(['{:.2f}'.format(vmin), '0', '{:.2f}'.format(vmax)])
             elif i == 2:
                 display_norm = matplotlib.colors.Normalize(vmin=0, vmax=1)
                 cbar = matplotlib.colorbar.ColorbarBase(caxStar, cmap=cmap, norm=display_norm, orientation='horizontal')
-                caxStar.text(-0.01, 0.5, r"$T'$ (K)", transform=caxStar.transAxes, va='center', ha='right')
+                caxStar.text(-0.02, 0.5, r"$T'$ (K)", transform=caxStar.transAxes, va='center', ha='right')
                 cbar.set_ticks((0, 0.15, 0.5, 0.85, 1))
                 cbar.set_ticklabels(['{}'.format(vmin),'{}'.format(wavemin), '0', '{}'.format(wavemax), '{}'.format(vmax)])
 
@@ -240,7 +243,7 @@ with turb_plotter.my_sync:
                 xy2_bot = xy1_bot #(0, -outline_r)
                 for xy1, xy2 in zip((xy1_top, xy1_bot),(xy2_top, xy2_bot)):
                     con = ConnectionPatch(xyA=xy1, xyB=xy2, coordsA="data", coordsB="data",
-                                                  axesA=ax, axesB=axFull, color="black", lw=0.5, ls='--')
+                                                  axesA=ax, axesB=axFull, color="black", lw=0.5, ls=(2,(4,4)))
                     axFull.add_artist(con)
 
             if i == 2:
@@ -252,7 +255,7 @@ with turb_plotter.my_sync:
 
         write_num = turb_plotter.current_file_handle['scales/write_number'][turb_ni] 
         figname = '{:s}/{:s}_{:06d}.png'.format(turb_plotter.out_dir, turb_plotter.out_name, int(write_num+start_fig-1))
-        fig.savefig(figname, dpi=1000, bbox_inches='tight')
+        fig.savefig(figname, dpi=dpi, bbox_inches='tight')
         plt.close(fig)
 
         first = False
