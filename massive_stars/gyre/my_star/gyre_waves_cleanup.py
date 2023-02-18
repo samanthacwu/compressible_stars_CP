@@ -274,8 +274,8 @@ class GyreMSGPostProcessor:
       
         #u = dt(xi) = -i om u by defn.
         #eigenfunctions are dimensional but of arbitrary amplitude.
-        data['u_r_eigfunc'] = 2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
-        data['u_h_eigfunc'] = 2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc'] * (np.sqrt(self.ell*(self.ell+1))) #over r??
+        data['u_r_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
+        data['u_h_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc'] * (np.sqrt(self.ell*(self.ell+1))) #over r??
         data['delta_L_dL_top'] = data['lag_L_ref']#data['lag_L_eigfunc'][:,-1]/self.L
       
         smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real).min())-3, np.log10(np.abs(data['freq'].real).max())+1, 100)
@@ -348,7 +348,7 @@ class GyreMSGPostProcessor:
             sys.exit()
         return self.data_dict
 
-Lmax = 5
+Lmax = 20
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
     om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
@@ -362,7 +362,12 @@ for ell in ell_list:
 
     max_n_pg = 100
     do_negative = False
-    pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
+    if ell <= 5:
+        pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
+    elif ell <= 10:
+        pos_summary_file='gyre_output/summary_ell06-10.txt'.format(ell)
+    elif ell <= 20:
+        pos_summary_file='gyre_output/summary_ell11-20.txt'.format(ell)
     pos_summary = pg.read_output(pos_summary_file)
     neg_summary_file = None
 
@@ -379,6 +384,7 @@ for ell in ell_list:
         if this_ell != ell: continue
         n_pg = row['n_pg']
         #Check consistency...
+        if n_pg >= 0: continue
         if np.abs(n_pg) > max_n_pg: continue
         if n_pg in counted_n_pgs: continue
         counted_n_pgs.append(n_pg)

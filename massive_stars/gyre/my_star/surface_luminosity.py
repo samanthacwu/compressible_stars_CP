@@ -11,6 +11,7 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 from configparser import ConfigParser
 
+from read_mist_models import EEP
 import mesa_reader as mr
 import d3_stars
 from d3_stars.defaults import config
@@ -76,11 +77,9 @@ star_log_Ell  = ell[mn == this_model]
 
 
 #Calculate transfer functions
-Lmax = 5
+Lmax = 20
 ell_list = np.arange(1, Lmax+1)
 eig_dir = 'gyre_output'
-plot_freqs = np.logspace(-7, -3, 10000)
-total_signal = np.zeros_like(plot_freqs)
 
 for ell in ell_list:
     print("ell = %i" % ell)
@@ -94,6 +93,8 @@ for ell in ell_list:
 plt.figure()
 wave_luminosity = lambda f, l: 3e-11*f**(-6.5)*np.sqrt(l*(l+1))**4
 #wave_luminosity = lambda f, l: 1e-19*f**(-8)*np.sqrt(l*(l+1))**5
+transfer_oms = []
+transfer_signal = []
 for ell in ell_list:
     print("ell = %i" % ell)
 
@@ -101,15 +102,29 @@ for ell in ell_list:
     with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'r') as f:
         om = f['om'][()]
         transfer_root_lum = f['transfer_root_lum'][()].real
-
-    print(om)
     micromag = transfer_root_lum*np.sqrt(wave_luminosity(om/(2*np.pi), ell))
-    total_signal += 10**(interp1d(np.log10(om/(2*np.pi)), np.log10(micromag), bounds_error=False, fill_value=-10000)(np.log10(plot_freqs)))
+
     plt.loglog(om/(2*np.pi), micromag, label='ell={}'.format(ell))
-    print(micromag)
     plt.ylabel(r'$\delta L / L_*$')
     plt.xlabel(r'frequency (Hz)')
     plt.xlim(3e-7, 1e-4)
+
+    transfer_oms.append(om[np.isfinite(micromag)])
+    transfer_signal.append(micromag[np.isfinite(micromag)])
+
+
+
+plot_freqs = np.logspace(-7, -3, 1000)
+df = np.gradient(plot_freqs)
+total_signal = np.zeros_like(plot_freqs)
+for i in range(plot_freqs.size-1):
+    for oms, signal in zip(transfer_oms, transfer_signal):
+        good = (2*np.pi*plot_freqs[i+1] >= oms)*(2*np.pi*plot_freqs[i] < oms)
+        if np.sum(good) > 0:
+            total_signal[i] += np.max(signal[good])
+good = total_signal > 0
+plot_freqs = plot_freqs[good]
+total_signal = total_signal[good]
 plt.loglog(plot_freqs, total_signal, c='k')
 plt.legend()
 plt.savefig('obs_ell_contributions.png', bbox_inches='tight')
@@ -122,11 +137,27 @@ ax2 = fig.add_subplot(1,2,2)
 
 plt.subplots_adjust(hspace=0.5, wspace=0.7)
 
+
+#Reads in non-rotating mist models.
+#Data: https://waps.cfa.harvard.edu/MIST/model_grids.html (v/vcrit = 0; [Fe/H] = 0) EEP tracks.
+#Read script: https://github.com/jieunchoi/MIST_codes/blob/master/scripts/read_mist_models.py
+for mass in ['00200', '00300', '00500', '01000', '02000', '04000']:
+    model = EEP('../mist/MIST_v1.2_feh_p0.00_afe_p0.0_vvcrit0.0_EEPS/{}M.track.eep'.format(mass), verbose=True)
+    mass = model.minit
+    center_h1 = model.eeps['center_h1']
+    good = (center_h1 < center_h1[0]*0.999)*(center_h1 > 0.02)
+    log_Teff = model.eeps['log_Teff']
+    log_g = model.eeps['log_g']
+    ell = (10**log_Teff)**4.0/(10**log_g)
+    ell = np.log10(ell/ell_sun)
+    ax1.plot(log_Teff[good], ell[good], label=mass, c='k')
+    ax1.text(0.01+log_Teff[good][0], -0.1+ell[good][0], '{:d}'.format(int(mass))+r'$M_{\odot}$', ha='right')
+
 log10Teff = [4.46, 4.47, 4.41, 4.26, 4.25]
 log10LdLsol = [3.31, 3.06, 2.95, 2.44, 2.61]
 ax1.scatter(star_log_Teff, star_log_Ell, c='k', marker='*')
-ax1.set_xlim(4.6, 4.05)
-ax1.set_ylim(2.4, 3.4)
+ax1.set_xlim(4.75, 3.8)
+ax1.set_ylim(0.8, 4.2)
 ax1.set_ylabel(r'$\mathrm{log}_{10}(\mathcal{L}/\mathcal{L}_{\odot})$')
 ax1.set_xlabel(r'$\mathrm{log}_{10}(T_{\rm eff})$')
 
