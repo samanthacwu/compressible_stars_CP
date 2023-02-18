@@ -51,7 +51,7 @@ R_gas = 18.0285 #nondimensional
 
 
 turb_root_dir = 'twoRcore_re3e4_damping/'
-turb_start_file = 5
+turb_start_file = 11#5
 wave_start_file = 1#140
 wave_root_dir = 'compressible_re1e4_waves/'
 file_dir='slices'
@@ -143,7 +143,7 @@ with turb_plotter.my_sync:
             outline_r = d['r'][-1].max()
             if i == 0:
                 outline_r = 1.3
-            outline_phi = np.linspace(0, 2.1*np.pi, 1000)
+            outline_phi = np.linspace(0, 2.0001*np.pi, 1000)
 
             if i == 2:
                 full_star_r = outline_r/fracstar
@@ -234,7 +234,7 @@ with turb_plotter.my_sync:
                                                   axesA=ax, axesB=axDamp, color="black", lw=0.5)
                     axDamp.add_artist(con)
             if i == 1:
-                axFull.plot(outline_r*np.cos(outline_phi), outline_r*np.sin(outline_phi), c='k', lw=0.5, ls='--')
+                axFull.plot(outline_r*np.cos(outline_phi[:-4]), outline_r*np.sin(outline_phi[:-4]), c='k', lw=0.5, ls=(0,(4,4)))
                 phi_1 = np.pi*0.55
 #                phi_1 = np.pi*0.45
                 xy1_top = outline_r*np.array((np.cos(phi_1), np.sin(phi_1)))
