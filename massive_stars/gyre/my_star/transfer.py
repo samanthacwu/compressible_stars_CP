@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
 
     #Calculate transfer functions
-    Lmax = 5
+    Lmax = 20
     ell_list = np.arange(1, Lmax+1)
     eig_dir = 'gyre_output'
     for ell in ell_list:
@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
         #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))*0.95
-        om1 = np.max(values.real)*2
+        om1 = np.max(values.real)*1.1
         om = np.logspace(np.log10(om0), np.log10(om1), num=1000, endpoint=True) 
 
         #Get forcing radius and dual basis evaluated there.
