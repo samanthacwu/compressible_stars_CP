@@ -9,7 +9,7 @@ from d3_stars.simulations.star_builder import find_core_cz_radius
 from d3_stars.gyre.clean_eig import GyreMSGPostProcessor
 
 plot = False
-use_delta_L = True
+use_delta_L = False
 Lmax = 40
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:

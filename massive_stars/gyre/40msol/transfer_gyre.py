@@ -6,10 +6,10 @@ import numpy as np
 import pygyre as pg
 
 from d3_stars.simulations.star_builder import find_core_cz_radius
-from d3_stars.gyre.clean_eig import GyreMSGPostProcessor
+from d3_stars.gyre.clean_eig import GyreMSGPostProcessor, solar_z
 
-plot = False
-use_delta_L = True
+plot = True
+use_delta_L = False
 Lmax = 5
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
@@ -53,7 +53,7 @@ for ell in ell_list:
         good_freqs.append(complex(row['freq']))
 
     post = GyreMSGPostProcessor(ell, pos_summary_file, pos_files, pulse_file, mesa_LOG,
-                  specgrid='OSTAR2002', filters=['Red',],
+                  specgrid='OSTAR2002', filters=['Red',], initial_z=solar_z,
                   MSG_DIR = os.environ['MSG_DIR'],
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
