@@ -128,15 +128,18 @@ class GyreMSGPostProcessor:
         self.dI_l_dlnTeff = {}
         self.dI_l_dlng = {}
 
-        for filter in self.filters:
+        try:
+            for filter in self.filters:
 
-            self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
-            self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
-            print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
+                self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
+                self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
+                print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
 
-            self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'Teff': True})*self.Teff
-            self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
-            print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
+                self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'Teff': True})*self.Teff
+                self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
+                print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
+        except:
+            print('MSG filter broken! Beware trying to get dF_mumag...')
 
     def sort_eigenfunctions(self):
         #TODO: move these background info reading lines up to __init__()
@@ -228,6 +231,20 @@ class GyreMSGPostProcessor:
         return self.data_dict
 
 
+    def get_Y_l(self):
+        #get Y_l per eqn 8 of Townsend 2002
+        data = self.data_dict
+        ms  = np.linspace(-self.ell, self.ell, 2*self.ell + 1)[:,None,None]
+        phi = np.linspace(0, np.pi, 100)[None,:,None]
+        dphi = np.gradient(phi.ravel())[None,:,None]
+        theta = np.linspace(0, np.pi, 100)[None,None,:]
+        dtheta = np.gradient(theta.ravel())[None,None,:]
+        data['Y_l'] = Y_l = (1/(2*self.ell+1))*(1/(4*np.pi))*np.sum(np.sum(np.sum(dtheta*dphi*np.sin(theta)*np.abs(ss.sph_harm(ms, self.ell, phi, theta)),axis=1),axis=1),axis=0)
+        print('this ell:', self.ell, Y_l)
+        with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
+            f['Y_l'] = Y_l
+
+
 
     def evaluate_magnitudes(self):
         file_list = self.pos_details
@@ -257,18 +274,9 @@ class GyreMSGPostProcessor:
 
         # Evaluate the spherical harmonic at the observer location
         # (note that sph_harm has back-to-front angle labeling!)
+        self.get_Y_l()
 
         
-        #get Y_l per eqn 8 of Townsend 2002
-#        Ylm = ss.sph_harm(m, self.ell, phi_obs, theta_obs)
-        ms  = np.linspace(-self.ell, self.ell, 2*self.ell + 1)[:,None,None]
-        phi = np.linspace(0, np.pi, 100)[None,:,None]
-        dphi = np.gradient(phi.ravel())[None,:,None]
-        theta = np.linspace(0, np.pi, 100)[None,None,:]
-        dtheta = np.gradient(theta.ravel())[None,None,:]
-        data['Y_l'] = Y_l = (1/(2*self.ell+1))*(1/(4*np.pi))*np.sum(np.sum(np.sum(dtheta*dphi*np.sin(theta)*np.abs(ss.sph_harm(ms, self.ell, phi, theta)),axis=1),axis=1),axis=0)
-        print('this ell:', self.ell, Y_l)
-
         # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
 
         dff_R = {}
