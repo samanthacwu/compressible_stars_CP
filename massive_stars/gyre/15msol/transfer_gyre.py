@@ -8,6 +8,8 @@ import pygyre as pg
 from d3_stars.simulations.star_builder import find_core_cz_radius
 from d3_stars.gyre.clean_eig import GyreMSGPostProcessor
 
+plot = False
+use_delta_L = True
 Lmax = 40
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
@@ -58,4 +60,4 @@ for ell in ell_list:
     post.sort_eigenfunctions()
     data_dicts = post.evaluate_magnitudes()
     data_dict = post.calculate_duals()
-    post.calculate_transfer(plot=True, use_delta_L=True)
+    post.calculate_transfer(plot=plot, use_delta_L=use_delta_L)
