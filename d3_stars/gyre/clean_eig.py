@@ -347,7 +347,6 @@ class GyreMSGPostProcessor:
         data['u_r_dual'] = u_r_dual = np.conj(IP_inv)@ur
         data['u_h_dual'] = u_h_dual = np.conj(IP_inv)@uh
 
-
         #Check that velocity duals were evaluated correctly
         IP_check = np.zeros_like(IP_matrix)
         for i in range(ur.shape[0]):
@@ -370,8 +369,7 @@ class GyreMSGPostProcessor:
         return self.data_dict
 
     def calculate_transfer(self, use_delta_L=False, plot=False):
-        mesa_LOG = 'LOGS/profile47.data'
-        p = mr.MesaData(mesa_LOG)
+        p = mr.MesaData(self.mesa_LOG_file)
         mass           = (p.mass[::-1] * u.M_sun).cgs
         r              = (p.radius[::-1] * u.R_sun).cgs
         rho            = 10**p.logRho[::-1] * u.g / u.cm**3
@@ -394,7 +392,7 @@ class GyreMSGPostProcessor:
         N2_max = N2_func(r.max()/2).max()
     #    print('N2 vals', N2_max, N2(r.max()/2))
 
-        core_cz_radius = find_core_cz_radius(mesa_LOG)*u.cm
+        core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
         r0 = 0.95 * core_cz_radius
         r1 = 1.05 * core_cz_radius
 
