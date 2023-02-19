@@ -3,37 +3,37 @@
 
 &model
   model_type = 'EVOL'  ! Obtain stellar structure from an evolutionary model
-  file = './LOGS/profile39.data.GYRE'    ! File name of the evolutionary model
+  file = './LOGS/profile43.data.GYRE'    ! File name of the evolutionary model
   file_format = 'MESA' ! File format of the evolutionary model
 /
 
 &mode
   l = 1 ! Harmonic degree
-  n_pg_min = -200
+  n_pg_min = -250
   n_pg_max=-1
   tag = 'lo'
 /
 &mode
   l = 2 ! Harmonic degree
-  n_pg_min = -200
+  n_pg_min = -250
   n_pg_max=-1
   tag = 'lo'
 /
 &mode
   l = 3 ! Harmonic degree
-  n_pg_min = -200
+  n_pg_min = -250
   n_pg_max=-1
   tag = 'hi'
 /
 &mode
   l = 4 ! Harmonic degree
-  n_pg_min = -220
+  n_pg_min = -275
   n_pg_max=-1
   tag = 'hi'
 /
 &mode
   l = 5 ! Harmonic degree
-  n_pg_min = -250
+  n_pg_min = -300
   n_pg_max=-1
   tag = 'hi'
 /

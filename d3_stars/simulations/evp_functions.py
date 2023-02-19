@@ -415,6 +415,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
     T = 10**np.mean(np.log10(T_pieces), axis=0) #get mean as function of radius
+#    T[om.ravel() > N2_max] = 0
     if plot:
         cmap = mpl.cm.viridis
         norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
@@ -478,7 +479,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 #    T = np.mean(np.abs(T_pieces), axis=1) #get mean as function of radius
     return T
 
-def calculate_refined_transfer(om, *args, max_iters=10, plot=False, **kwargs):
+def calculate_refined_transfer(om, *args, max_iters=50, plot=False, **kwargs):
     """
     Iteratively calculates the transfer function by calling transfer_function()
 
