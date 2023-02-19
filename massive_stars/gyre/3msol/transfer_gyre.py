@@ -6,9 +6,9 @@ import numpy as np
 import pygyre as pg
 
 from d3_stars.simulations.star_builder import find_core_cz_radius
-from d3_stars.gyre.clean_eig import GyreMSGPostProcessor
+from d3_stars.gyre.clean_eig import GyreMSGPostProcessor, solar_z
 
-plot = False
+plot = True
 use_delta_L = True
 Lmax = 5
 ell_list = np.arange(1, Lmax+1)
@@ -22,7 +22,7 @@ for ell in ell_list:
     pos_files = []
     neg_files = []
 
-    max_n_pg = 100
+    max_n_pg = 200
     if ell <= 5:
         pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
     elif ell <= 10:
@@ -53,11 +53,12 @@ for ell in ell_list:
         good_freqs.append(complex(row['freq']))
 
     post = GyreMSGPostProcessor(ell, pos_summary_file, pos_files, pulse_file, mesa_LOG,
-                  specgrid='OSTAR2002', filters=['Red',],
+                  specgrid='OSTAR2002', filters=['Red',], initial_z=solar_z,
                   MSG_DIR = os.environ['MSG_DIR'],
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
     post.sort_eigenfunctions()
-    data_dicts = post.evaluate_magnitudes()
-    data_dict = post.calculate_duals()
+    post.get_Y_l()
+#    data_dicts = post.evaluate_magnitudes() #need new specgrid
+    data_dict = post.calculate_duals(max_cond=1e12)
     post.calculate_transfer(plot=plot, use_delta_L=use_delta_L)
