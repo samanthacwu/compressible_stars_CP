@@ -88,7 +88,7 @@ class GyreMSGPostProcessor:
         if specgrid == 'OSTAR2002':
             specgrid_file_name = os.path.join(GRID_DIR, 'sg-OSTAR2002-low.h5')
         else:
-            specgrid_file_name = os.path.join(GRID_DIR, 'sg-demo.h5')
+            specgrid_file_name = os.path.join(GRID_DIR, 'sg-demo-ext.h5')
 
         self.photgrids = {}
         for filter in self.filters:
@@ -128,18 +128,15 @@ class GyreMSGPostProcessor:
         self.dI_l_dlnTeff = {}
         self.dI_l_dlng = {}
 
-        try:
-            for filter in self.filters:
+        for filter in self.filters:
 
-                self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
-                self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
-                print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
+            self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
+            self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
+            print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
 
-                self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'Teff': True})*self.Teff
-                self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
-                print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
-        except:
-            print('MSG filter broken! Beware trying to get dF_mumag...')
+            self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'Teff': True})*self.Teff
+            self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
+            print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
 
     def sort_eigenfunctions(self):
         #TODO: move these background info reading lines up to __init__()
@@ -200,13 +197,13 @@ class GyreMSGPostProcessor:
 
             data['freq'][i] = 1e-6*(header['Refreq'] + 1j*header['Imfreq']) #cgs
             data['omega'][i] = (header['Reomega'] + 1j*header['Imomega'])
-            data['lag_L_ref'][i] = (header['Relag_L_ref'] + 1j*header['Imlag_L_ref'])
-            data['xi_r_ref'][i] = (header['Rexi_r_ref'] + 1j*header['Imxi_r_ref'])
+            data['lag_L_ref'][i] = np.sqrt(4*np.pi)*(header['Relag_L_ref'] + 1j*header['Imlag_L_ref'])
+            data['xi_r_ref'][i]  = np.sqrt(4*np.pi)*(header['Rexi_r_ref'] + 1j*header['Imxi_r_ref'])
 
             data['depth'][i] = calculate_optical_depths(np.array([1e-6*data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-            data['xi_r_eigfunc'][i,:] = self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
-            data['xi_h_eigfunc'][i,:] = self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
-            data['lag_L_eigfunc'][i,:] = self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #arbitrary amplitude; cgs units
+            data['xi_r_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
+            data['xi_h_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
+            data['lag_L_eigfunc'][i,:] = np.sqrt(4*np.pi)*self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #arbitrary amplitude; cgs units
 #            print(2*np.pi*data['freq'], data['omega']/self.gyre_tau_nd) #these should be the same.
         print(data['n_pg'], data['l'], data['lag_L_ref'], data['lag_L_eigfunc'][:,-1])
       
@@ -243,6 +240,7 @@ class GyreMSGPostProcessor:
         print('this ell:', self.ell, Y_l)
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
             f['Y_l'] = Y_l
+        return Y_l
 
 
 
@@ -274,7 +272,7 @@ class GyreMSGPostProcessor:
 
         # Evaluate the spherical harmonic at the observer location
         # (note that sph_harm has back-to-front angle labeling!)
-        self.get_Y_l()
+        Y_l = self.get_Y_l()
 
         
         # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
@@ -304,7 +302,6 @@ class GyreMSGPostProcessor:
             for k, item in dF_mumag_dict.items():
                 data[k] = item
                 f[k] = item
-            f['Y_l'] = Y_l
         return self.data_dict
 
 
@@ -397,7 +394,9 @@ class GyreMSGPostProcessor:
         rho_func = interp1d(r.flatten(), rho.flatten())
         chi_rad_func = interp1d(r.flatten(), chi_rad.flatten())
         N2_func = interp1d(r.flatten(), bruntN2.flatten())
-        N2_max = N2_func(r.max()/2).max()
+        N2_max = N2_func(r[r <= 0.97*r.max()]).max()
+#        plt.semilogy(r.flatten(), N2_func(r.flatten()))
+#        plt.show()
     #    print('N2 vals', N2_max, N2(r.max()/2))
 
         core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
