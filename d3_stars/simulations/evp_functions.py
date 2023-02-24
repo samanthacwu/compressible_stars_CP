@@ -414,7 +414,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     Eig_sin = (Eig*(-1j)*values).real
 
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
-    T = 10**np.mean(np.log10(T_pieces), axis=0) #get mean as function of radius
+    T = np.median(T_pieces, axis=0) #get median as function of radius
 #    T[om.ravel() > N2_max] = 0
     if plot:
         cmap = mpl.cm.viridis
