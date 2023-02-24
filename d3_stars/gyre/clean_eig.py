@@ -9,8 +9,6 @@ import h5py
 import numpy as np
 import pygyre as pg
 import pymsg as pm
-import tomso as tomso
-from tomso import gyre
 import mesa_reader as mr
 import matplotlib.pyplot as plt
 from scipy import linalg
@@ -154,17 +152,15 @@ class GyreMSGPostProcessor:
         chi_rad_mesa = 16 * sigma_SB * T**3 / (3 * rho**2 * cp * opacity)
 
         #Get pulsation & stratification information    
-        summary = tomso.gyre.load_summary(self.pos_details[0])
-        header = summary.header
-        data_mode = summary.data
-        self.rho = data_mode['rho'] #g / cm^3
-        self.x = data_mode['x']
+        pgout = pg.read_output(self.pos_details[0])
+        self.rho = pgout['rho']
+        self.x = pgout['x']
         self.r = self.x*self.R #cm
 
-        V = data_mode['V_2']*self.x**2
-        As = data_mode['As']
-        c_1 = data_mode['c_1']
-        Gamma_1 = data_mode['Gamma_1']
+        V = pgout['V_2']*self.x**2
+        As = pgout['As']
+        c_1 = pgout['c_1']
+        Gamma_1 = pgout['Gamma_1']
 
         bruntN2 = As/c_1
         lambS1 = np.sqrt(1*(1+1))*np.sqrt(Gamma_1/(V*c_1))
@@ -188,24 +184,20 @@ class GyreMSGPostProcessor:
             data[field] = np.zeros(len(file_list))
         for i,filename in enumerate(file_list):
             print('reading eigenfunctions from {}'.format(filename))
-            summary = tomso.gyre.load_summary(filename)
-            header = summary.header
-            data_mode = summary.data
+            pgout = pg.read_output(filename)
 
-            data['n_pg'][i] = header['n_pg']
-            data['l'][i] = header['l']
+            data['n_pg'][i] = pgout.meta['n_pg']
+            data['l'][i]    = pgout.meta['l']
 
-            data['freq'][i] = 1e-6*(header['Refreq'] + 1j*header['Imfreq']) #cgs
-            data['omega'][i] = (header['Reomega'] + 1j*header['Imomega'])
-            data['lag_L_ref'][i] = np.sqrt(4*np.pi)*(header['Relag_L_ref'] + 1j*header['Imlag_L_ref'])
-            data['xi_r_ref'][i]  = np.sqrt(4*np.pi)*(header['Rexi_r_ref'] + 1j*header['Imxi_r_ref'])
+            data['freq'][i] = 1e-6*pgout.meta['freq'] #cgs
+            data['omega'][i] = pgout.meta['omega']
+            data['lag_L_ref'][i] = np.sqrt(4*np.pi)*pgout.meta['lag_L_ref']
+            data['xi_r_ref'][i]  = np.sqrt(4*np.pi)*pgout.meta['xi_r_ref']
 
-            data['depth'][i] = calculate_optical_depths(np.array([1e-6*data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-            data['xi_r_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*(data_mode['Rexi_r'] + 1j*data_mode['Imxi_r']) #arbitrary amplitude; cgs units.
-            data['xi_h_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*(data_mode['Rexi_h'] + 1j*data_mode['Imxi_h']) #arbitrary amplitude; cgs units.
-            data['lag_L_eigfunc'][i,:] = np.sqrt(4*np.pi)*self.L*(data_mode['Relag_L'] + 1j*data_mode['Imlag_L']) #arbitrary amplitude; cgs units
-#            print(2*np.pi*data['freq'], data['omega']/self.gyre_tau_nd) #these should be the same.
-        print(data['n_pg'], data['l'], data['lag_L_ref'], data['lag_L_eigfunc'][:,-1])
+            data['depth'][i] = calculate_optical_depths(np.array([data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
+            data['xi_r_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*pgout['xi_r'] #arbitrary amplitude; cgs units.
+            data['xi_h_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*pgout['xi_h'] #arbitrary amplitude; cgs units.
+            data['lag_L_eigfunc'][i,:] = np.sqrt(4*np.pi)*self.L*pgout['lag_L'] #arbitrary amplitude; cgs units
       
         #u = dt(xi) = -i om u by defn.
         #eigenfunctions are dimensional but of arbitrary amplitude.
@@ -305,7 +297,7 @@ class GyreMSGPostProcessor:
         return self.data_dict
 
 
-    def calculate_duals(self, max_cond=1e8):
+    def calculate_duals(self, max_cond=1e8, max_eigs=1000):
         data = self.data_dict
         ur = data['u_r_eigfunc']
         uh = data['u_h_eigfunc']
@@ -335,6 +327,11 @@ class GyreMSGPostProcessor:
                     n_modes = i
                     IP_matrix = IP_matrix[:n_modes,:n_modes]
                     break
+            if i >= max_eigs:
+                n_modes = i
+                IP_matrix = IP_matrix[:n_modes,:n_modes]
+                break
+
         print('dual IP matrix cond: {:.3e}; n_modes: {}/{}'.format(cond, n_modes, ur.shape[0]))
         cond = np.linalg.cond(IP_matrix[:i+1,:i+1]) 
         IP_inv = linalg.inv(IP_matrix)
@@ -373,7 +370,7 @@ class GyreMSGPostProcessor:
 
         return self.data_dict
 
-    def calculate_transfer(self, use_delta_L=False, plot=False):
+    def calculate_transfer(self, use_delta_L=False, plot=False, N_om=1000):
         p = mr.MesaData(self.mesa_LOG_file)
         mass           = (p.mass[::-1] * u.M_sun).cgs
         r              = (p.radius[::-1] * u.R_sun).cgs
@@ -414,7 +411,7 @@ class GyreMSGPostProcessor:
         #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))*0.95
         om1 = np.max(values.real)*1.1
-        om = np.logspace(np.log10(om0), np.log10(om1), num=1000, endpoint=True) 
+        om = np.logspace(np.log10(om0), np.log10(om1), num=N_om, endpoint=True) 
 
         #Get forcing radius and dual basis evaluated there.
         r_range = np.linspace(r0.value, r1.value, num=50, endpoint=True)
@@ -424,11 +421,13 @@ class GyreMSGPostProcessor:
         good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, lum_amplitudes, r_range, self.ell, rho_func, chi_rad_func, N2_max, gamma, plot=False)
 
         if plot:
+            fig = plt.figure()
             plt.loglog(24*60*60*good_om/(2*np.pi),good_T.real, color='black', label='transfer')
             plt.loglog(24*60*60*good_om/(2*np.pi),good_T.imag, color='black', ls='--')
             plt.xlabel('frequency (inv day)')
             plt.ylabel('T')
-            plt.show()
+            fig.savefig('{:s}/transfer_ell{:03d}_eigenvalues.png'.format(self.output_dir, self.ell), dpi=300, bbox_inches='tight')
+            plt.close(fig)
     #
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
             f['transfer_om'] = good_om
