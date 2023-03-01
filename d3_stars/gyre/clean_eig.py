@@ -132,8 +132,8 @@ class GyreMSGPostProcessor:
             self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
             print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
 
-            self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'Teff': True})*self.Teff
-            self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, 0, deriv={'log(g)': True})/np.log(10)
+            self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'Teff': True})*self.Teff
+            self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'log(g)': True})/np.log(10)
             print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
 
     def sort_eigenfunctions(self):
@@ -189,16 +189,21 @@ class GyreMSGPostProcessor:
             data['n_pg'][i] = pgout.meta['n_pg']
             data['l'][i]    = pgout.meta['l']
 
+#            shift = pgout['xi_r'][-2]
+#            shift = np.abs(shift)/shift
+            shift = 1
+
             data['freq'][i] = 1e-6*pgout.meta['freq'] #cgs
             data['omega'][i] = pgout.meta['omega']
-            data['lag_L_ref'][i] = np.sqrt(4*np.pi)*pgout.meta['lag_L_ref']
-            data['xi_r_ref'][i]  = np.sqrt(4*np.pi)*pgout.meta['xi_r_ref']
+            data['lag_L_ref'][i] = shift*np.sqrt(4*np.pi)*pgout.meta['lag_L_ref']
+            data['xi_r_ref'][i]  = shift*np.sqrt(4*np.pi)*pgout.meta['xi_r_ref']
 
             data['depth'][i] = calculate_optical_depths(np.array([data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-            data['xi_r_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*pgout['xi_r'] #arbitrary amplitude; cgs units.
-            data['xi_h_eigfunc'][i,:]  = np.sqrt(4*np.pi)*self.R*pgout['xi_h'] #arbitrary amplitude; cgs units.
-            data['lag_L_eigfunc'][i,:] = np.sqrt(4*np.pi)*self.L*pgout['lag_L'] #arbitrary amplitude; cgs units
-      
+            print(shift)
+            data['xi_r_eigfunc'][i,:]  = shift*np.sqrt(4*np.pi)*self.R*pgout['xi_r'] #arbitrary amplitude; cgs units.
+            data['xi_h_eigfunc'][i,:]  = shift*np.sqrt(4*np.pi)*self.R*pgout['xi_h'] #arbitrary amplitude; cgs units.
+            data['lag_L_eigfunc'][i,:] = shift*np.sqrt(4*np.pi)*self.L*pgout['lag_L'] #arbitrary amplitude; cgs units
+
         #u = dt(xi) = -i om u by defn.
         #eigenfunctions are dimensional but of arbitrary amplitude.
         data['u_r_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
