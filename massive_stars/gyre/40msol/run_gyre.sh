@@ -2,10 +2,23 @@ export MESASDK_ROOT="/Applications/mesasdk"
 source "$MESASDK_ROOT/bin/mesasdk_init.sh"
 export MESA_DIR="/Users/evananders/software/mesa-r21.12.1"
 export OMP_NUM_THREADS="8"
-export GYRE_DIR="/Users/evananders/software/gyre-6.0.1/"
+export GYRE_DIR="/Users/evananders/software/gyre-7.0/"
 
 mkdir gyre_output/
 rm gyre_output/*
-$GYRE_DIR/bin/gyre  gyre_ell01-05.in
-
-
+$GYRE_DIR/bin/gyre  gyre_ell01.in
+$GYRE_DIR/bin/gyre  gyre_ell02.in
+$GYRE_DIR/bin/gyre  gyre_ell03.in
+$GYRE_DIR/bin/gyre  gyre_ell04.in
+$GYRE_DIR/bin/gyre  gyre_ell05.in
+$GYRE_DIR/bin/gyre  gyre_ell06.in
+$GYRE_DIR/bin/gyre  gyre_ell07.in
+$GYRE_DIR/bin/gyre  gyre_ell08.in
+$GYRE_DIR/bin/gyre  gyre_ell09.in
+$GYRE_DIR/bin/gyre  gyre_ell10.in
+$GYRE_DIR/bin/gyre  gyre_ell11.in
+$GYRE_DIR/bin/gyre  gyre_ell12.in
+$GYRE_DIR/bin/gyre  gyre_ell13.in
+$GYRE_DIR/bin/gyre  gyre_ell14.in
+$GYRE_DIR/bin/gyre  gyre_ell15.in
+$GYRE_DIR/bin/gyre  gyre_ell16.in
