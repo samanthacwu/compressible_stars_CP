@@ -10,54 +10,42 @@ from d3_stars.gyre.clean_eig import GyreMSGPostProcessor, solar_z
 
 plot = True
 use_delta_L = False
-Lmax = 5
+Lmax = 16
 ell_list = np.arange(1, Lmax+1)
 for ell in ell_list:
     om_list = np.logspace(-8, -2, 1000) #Hz * 2pi
 
     pulse_file = 'LOGS/profile53.data.GYRE'
     mesa_LOG = 'LOGS/profile53.data'
-    pos_mode_base = './gyre_output/mode_ell{:03d}_m+00_n{:06d}.txt'
-    neg_mode_base = pos_mode_base.replace('pos', 'neg')
-    pos_files = []
-    neg_files = []
+    mode_base = './gyre_output/mode_id{:05d}_ell{:03d}_m+00_n{:06d}.h5'
+    files = []
 
-    max_n_pg = 100
-    if ell <= 5:
-        pos_summary_file='gyre_output/summary_ell01-05.txt'.format(ell)
-    elif ell <= 10:
-        pos_summary_file='gyre_output/summary_ell06-10.txt'.format(ell)
-    elif ell <= 20:
-        pos_summary_file='gyre_output/summary_ell11-20.txt'.format(ell)
-    elif ell <= 40:
-        pos_summary_file='gyre_output/summary_ell21-40.txt'.format(ell)
-    pos_summary = pg.read_output(pos_summary_file)
-    neg_summary_file = None
+    max_cond = 1e10
+    summary_file='gyre_output/summary_ell{:02d}.txt'.format(ell)
+    summary = pg.read_output(summary_file)
 
     #sort eigenvalues by 1/freq
-    sorting = np.argsort(pos_summary['freq'].real**(-1))
-    pos_summary = pos_summary[sorting]
+    sorting = np.argsort(summary['freq'].real**(-1))
+    summary = summary[sorting]
 
     good_freqs = []
-    counted_n_pgs = []
-    for row in pos_summary:
+    for row in summary:
         this_ell = row['l']
-        if this_ell != ell: continue
+        this_id = row['id']
         n_pg = row['n_pg']
-        #Check consistency...
+        if complex(row['freq']).real < 0:
+            continue
         if n_pg >= 0: continue
-        if np.abs(n_pg) > max_n_pg: continue
-        if n_pg in counted_n_pgs: continue
-        counted_n_pgs.append(n_pg)
-        pos_files.append(pos_mode_base.format(ell, n_pg))
+        if this_ell != ell: continue
+        files.append(mode_base.format(this_id, ell, n_pg))
         good_freqs.append(complex(row['freq']))
 
-    post = GyreMSGPostProcessor(ell, pos_summary_file, pos_files, pulse_file, mesa_LOG,
+    post = GyreMSGPostProcessor(ell, summary_file, files, pulse_file, mesa_LOG,
                   specgrid='OSTAR2002', filters=['Red',], initial_z=solar_z,
                   MSG_DIR = os.environ['MSG_DIR'],
                   GRID_DIR=os.path.join('..','gyre-phot','specgrid'),
                   PASS_DIR=os.path.join('..','gyre-phot','passbands'))
     post.sort_eigenfunctions()
     data_dicts = post.evaluate_magnitudes()
-    data_dict = post.calculate_duals()
-    post.calculate_transfer(plot=plot, use_delta_L=use_delta_L)
+    data_dict = post.calculate_duals(max_cond=max_cond)
+    post.calculate_transfer(plot=plot, use_delta_L=use_delta_L, N_om=3000)
