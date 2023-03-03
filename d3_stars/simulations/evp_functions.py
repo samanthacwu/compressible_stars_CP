@@ -394,19 +394,18 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     #Get structure variables
     chi_rad = chi_rad_func(r_range)
     rho = rho_func(r_range)
-    R_d_mucp = (gamma-1)/gamma
+    cpmu_div_R = gamma/(gamma-1)
 
     #Get wavenumbers
     k_h = np.sqrt(ell * (ell + 1)) / r_range
-#    k_r = np.sqrt(N2_max/big_om**2 - 1)*k_h
     k_r = (((-1)**(3/4) / np.sqrt(2))\
                        *np.sqrt(-2*1j*k_h**2 - (big_om/chi_rad) + np.sqrt((big_om)**3 + 4*1j*k_h**2*chi_rad*N2_max)/(chi_rad*np.sqrt(big_om)) )).real
     k2 = k_r**2 + k_h**2
 
     #Calculate transfer
     bulk_to_bound_force = big_om / k_h #times ur -> comes later.
-#    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(k_r * big_om * R_d_mucp / (rho * N2_max))
-    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*rho))*np.sqrt(np.array(-(big_om + 1j*chi_rad*k2)*k_r/k_h**2,dtype=np.complex128)).real**(-1)
+    P_ur_to_h = rho * (cpmu_div_R) * ((big_om + 1j*chi_rad*k2) / k_h**2) * (-k_r) #assuming H_p -> infinity.
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*P_ur_to_h)).real
 
     inner_prod = 4*np.pi*r_range**2*rho*np.conj(bulk_to_bound_force*root_lum_to_ur*u_dual) * dr
     Eig = inner_prod * field_outer / ((values - big_om)*(values + big_om))
@@ -415,7 +414,6 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
     T = np.median(T_pieces, axis=0) #get median as function of radius
-#    T[om.ravel() > N2_max] = 0
     if plot:
         cmap = mpl.cm.viridis
         norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
@@ -440,43 +438,6 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
         
         plt.show()
 
-#
-#    #Define inner product and take inner product for each radial coordinate, then take average of T calculation.
-#    inner_prod = lambda A, B: np.sum(4*np.pi*r_range**2*rho * np.conj(A) * B * dr, axis=1)
-#    T_pieces = np.zeros((om.size, r_range.size))
-##    plt.figure()
-##    import matplotlib as mpl
-##    cmap = mpl.cm.viridis
-###    norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
-##    norm = mpl.colors.Normalize(vmin=0, vmax=values.size)
-##    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-#    for i in range(r_range.size):
-#        delta = np.zeros_like(r_range)
-#        delta[:,i,:] = 1/dr[:,i,:]
-#        IP = inner_prod(bulk_to_bound_force*root_lum_to_ur*u_dual, delta) #for sqrt wave flux
-#        Eig = IP * field_outer / ((values - om)*(values + om))
-#        Eig_cos = (Eig*om).real
-#        Eig_sin = (Eig*(-1j)*values).real
-#        T_pieces[:,i] = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) #do I need to shift amplitude to account for action of fourier transform?
-###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], color=sm.to_rgba(r_range.ravel()[i]))
-###        Eig = IP * field_outer / ((values - om))
-##        for j in range(values.size):
-##            plt.loglog(om.ravel()/(2*np.pi), Eig_cos[j,:], c=sm.to_rgba(j))
-##            plt.loglog(om.ravel()/(2*np.pi), -Eig_cos[j,:], ls='--', c=sm.to_rgba(j))
-###        T_pieces[:,i] = np.abs(np.real(np.sum(Eig,axis=0)))
-###        T_pieces[:,i] = np.abs(np.sum(Eig,axis=0))
-##        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='k', lw=1)
-###        T_pieces[:,i] = np.abs(np.imag(np.sum(Eig,axis=0)))
-###        plt.loglog(om.ravel()/(2*np.pi), T_pieces[:,i], c='grey', lw=1)
-####        plt.xlim(3e-3, 1e-1)
-####        plt.ylim(3e-1, 3e2)
-##        plt.xlim(1e-2, 3e-1)
-##        plt.ylim(3e-3, 3e2)
-##        plt.colorbar(sm)
-##        plt.show()
-##    plt.colorbar(sm)
-##    plt.show()
-#    T = np.mean(np.abs(T_pieces), axis=1) #get mean as function of radius
     return T
 
 def calculate_refined_transfer(om, *args, max_iters=50, plot=False, **kwargs):
