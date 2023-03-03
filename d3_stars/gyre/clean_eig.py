@@ -126,15 +126,21 @@ class GyreMSGPostProcessor:
         self.dI_l_dlnTeff = {}
         self.dI_l_dlng = {}
 
-        for filter in self.filters:
+        with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'w') as f:
+            for filter in self.filters:
+                self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
+                self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
+                print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
 
-            self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
-            self.I_l[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell)
-            print("I_0, I_l: {:.2e}, {:.2e}".format(self.I_0[filter], self.I_l[filter]))
+                self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'Teff': True})*self.Teff
+                self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'log(g)': True})/np.log(10)
+                print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
 
-            self.dI_l_dlnTeff[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'Teff': True})*self.Teff
-            self.dI_l_dlng[filter] = self.photgrids[filter].D_moment(self.model_x, self.ell, deriv={'log(g)': True})/np.log(10)
-            print("dI_l_dlnTeff, dI_l_dlng: {:.2e}, {:.2e}".format(self.dI_l_dlnTeff[filter], self.dI_l_dlng[filter]))
+                f['I_0_{}'.format(filter)] = self.I_0[filter]
+                f['I_l_{}'.format(filter)] = self.I_l[filter]
+                f['dI_l_dlnTeff_{}'.format(filter)] = self.dI_l_dlnTeff[filter]
+                f['dI_l_dlng_{}'.format(filter)] = self.dI_l_dlng[filter]
+
 
     def sort_eigenfunctions(self):
         #TODO: move these background info reading lines up to __init__()
@@ -215,7 +221,7 @@ class GyreMSGPostProcessor:
         data['smooth_oms'] = smooth_oms
         data['smooth_depths'] = smooth_depths
 
-        with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'w') as f:
+        with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
             for k in data.keys():
                 f[k] = data[k]
             f['r']   = self.r
@@ -396,7 +402,7 @@ class GyreMSGPostProcessor:
         rho_func = interp1d(r.flatten(), rho.flatten())
         chi_rad_func = interp1d(r.flatten(), chi_rad.flatten())
         N2_func = interp1d(r.flatten(), bruntN2.flatten())
-        N2_max = N2_func(r[r <= 0.97*r.max()]).max()
+        N2_max = N2_func(r[r <= 0.93*r.max()]).max() #max value in near-surface sim domain
 #        plt.semilogy(r.flatten(), N2_func(r.flatten()))
 #        plt.show()
     #    print('N2 vals', N2_max, N2(r.max()/2))
@@ -415,7 +421,7 @@ class GyreMSGPostProcessor:
         values = 2*np.pi*self.data_dict['dual_freq']
         #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))*0.95
-        om1 = np.max(values.real)*1.1
+        om1 = np.max(values.real)*1.05
         om = np.logspace(np.log10(om0), np.log10(om1), num=N_om, endpoint=True) 
 
         #Get forcing radius and dual basis evaluated there.
