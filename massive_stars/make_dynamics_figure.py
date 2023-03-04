@@ -2,15 +2,21 @@ import numpy as np
 import h5py
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib import cm
 import matplotlib.pyplot as plt
+#import matplotlib.font_manager
+#print(matplotlib.font_manager.findSystemFonts(fontpaths=None, fontext='ttf'), plt.rcParams['font.family'])
+plt.rcParams['hatch.linewidth'] = 0.25
+plt.rcParams['font.family'] = ['serif']
+#plt.rcParams['font.family'] = ['Times New Roman']
+plt.rcParams['mathtext.fontset'] = 'dejavusans'
+plt.rcParams['mathtext.fontset'] = 'cm'
+plt.rcParams['mathtext.rm'] = 'serif'
+from matplotlib import cm
 from matplotlib.patches import ConnectionPatch
 from matplotlib.colors import ListedColormap
 
 from plotpal.slices import SlicePlotter
 from plotpal.file_reader import match_basis
-
-plt.rcParams['hatch.linewidth'] = 0.25
 
 # Define smooth Heaviside functions
 from scipy.special import erf 
@@ -20,7 +26,7 @@ def one_to_zero(x, x0, width=0.1):
 def zero_to_one(*args, **kwargs):
         return -(one_to_zero(*args, **kwargs) - 1)
 
-dpi = 300
+dpi = 1000
 r_outer = 2
 sponge_function = lambda r: zero_to_one(r, r_outer - 0.15, 0.07)
 
@@ -210,7 +216,7 @@ with turb_plotter.my_sync:
                 cbar.set_ticklabels(['{}'.format(vmin),'{}'.format(wavemin), '0', '{}'.format(wavemax), '{}'.format(vmax)])
 
             if i == 2:
-                ax.text(0.5, 1.05, 'Near Surface Sim', ha='center', va='center', transform=ax.transAxes)
+                ax.text(0.5, 1.05, r'Near Surface Sim', ha='center', va='center', transform=ax.transAxes)
             else:
                 ax.text(0.5, 1.05, 'Wave Flux Sim', ha='center', va='center', transform=ax.transAxes)
 
@@ -255,8 +261,11 @@ with turb_plotter.my_sync:
 
         write_num = turb_plotter.current_file_handle['scales/write_number'][turb_ni] 
         figname = '{:s}/{:s}_{:06d}.png'.format(turb_plotter.out_dir, turb_plotter.out_name, int(write_num+start_fig-1))
+        pdf_figname = figname.replace('.png', '.pdf')
         fig.savefig(figname, dpi=dpi, bbox_inches='tight')
+        fig.savefig(pdf_figname, dpi=dpi, bbox_inches='tight')
         plt.close(fig)
+        print('saved {}'.format(pdf_figname))
 
         first = False
 
