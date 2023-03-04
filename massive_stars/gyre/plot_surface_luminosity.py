@@ -82,10 +82,6 @@ fig = plt.figure(figsize=(8,3))
 ax1 = fig.add_axes((0,    0, 0.27, 1))
 ax2 = fig.add_axes((0.40, 0, 0.27, 1))
 ax3 = fig.add_axes((0.73,  0, 0.27, 1))
-#con1 = ConnectionPatch(xyA=(1e1,1e0), xyB=(3e-2,1e0), coordsA='data', coordsB='data', axesA=ax2, axesB=ax3, color='k', lw=0.5)
-#con2 = ConnectionPatch(xyA=(1e1,1e-4), xyB=(3e-2,1e-4), coordsA='data', coordsB='data', axesA=ax2, axesB=ax3, color='k', lw=0.5)
-#ax2.add_artist(con1)
-#ax2.add_artist(con2)
 
 plt.subplots_adjust(hspace=0.5, wspace=0.7)
 
@@ -143,9 +139,9 @@ ax1.set_xlabel(r'$\log_{10}\, $T$_{\rm eff}/$K')
 #ax1.set_xlabel(r'$\mathrm{log}_{10}(T_{\rm eff})$')
 
 plt.axes(ax2)
-plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
-plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
-ax2.text(0.12, 0.1, 'Predicted wave signal', ha='left')
+#plt.fill_between([3e-2, 1e-1], 1e-20, 1e10, color='grey', alpha=0.5)
+#plt.fill_between([1e1, 3e1], 1e-20, 1e10, color='grey', alpha=0.5)
+ax2.text(0.12, 3e-2, 'Predicted wave signal', ha='left')
 ax2.text(0.2, 2e2, 'Observed red noise', ha='left', va='center')
 
 for i in range(len(star_names)):
@@ -163,19 +159,30 @@ for i in range(len(star_names)):
     plt.ylim(1e-4, 3e2)
     plt.ylabel(r'$\Delta m$ ($\mu$mag)')
     plt.xlabel(r'frequency (d$^{-1}$)')
-    plt.xlim(3e-2, 1e1)
 
+min_plot_freq = 1e-3
 for i in range(3):
     star_log_Teff, star_log_Ell  = logTeffs[i], specLums[i]
     ax1.scatter(star_log_Teff, star_log_Ell, c=cmap.mpl_colors[i], marker='*', s=100, zorder=1, edgecolors='k', linewidths=0.5)
-    ax3.loglog(freqs, signals[i], color=cmap.mpl_colors[i], lw=1)#, label=r'15 $M_{\odot}$ LMC sim')
+    good = freqs >= min_plot_freq
+    ax3.loglog(freqs[good], signals[i][good], color=cmap.mpl_colors[i], lw=1)#, label=r'15 $M_{\odot}$ LMC sim')
     if i == 2:
-        plt.loglog(freqs, signals[i], lw=1, c=cmap.mpl_colors[i])#, label=r'15 $M_{\odot}$ LMC sim')
-ax3.text(5.5e-2, 9e-2, r'40 $M_{\odot}$', color=cmap.mpl_colors[1], ha='center', va='center', size=8)
-ax3.text(9e-2, 3.7e-2, r'15 $M_{\odot}$', color=cmap.mpl_colors[2], ha='center', va='center', size=8)
-ax3.text(1.4e-1, 2e-3, r'3 $M_{\odot}$', color=cmap.mpl_colors[0], ha='center', va='center', size=8)
-ax3.set_ylim(1e-4, 1e0)
-ax3.set_xlim(3e-2, 1e1)
+        #plot on middle panel
+        ax2.loglog(freqs[good], signals[i][good], color=cmap.mpl_colors[i], lw=1)#, label=r'15 $M_{\odot}$ LMC sim')
+
+#con2 = ConnectionPatch(xyA=(1e1,1e-4), xyB=(4e-2,1e-4), coordsA='data', coordsB='data', axesA=ax2, axesB=ax3, color='grey', lw=0.5)
+#ax2.add_artist(con2)
+con1 = ConnectionPatch(xyA=(1e1,1.3e-1), xyB=(4e-2,1.3e-1), coordsA='data', coordsB='data', axesA=ax2, axesB=ax3, color='grey', lw=1)
+ax2.add_artist(con1)
+ax2.plot([7e0,1e1],[1.3e-1,1.3e-1], c='grey', lw=1)
+
+ax3.text(6.5e-2, 6e-2, r'40 $M_{\odot}$', color=cmap.mpl_colors[1], ha='center', va='center', size=8)
+ax3.text(9e-2, 5.5e-3, r'15 $M_{\odot}$', color=cmap.mpl_colors[2], ha='center', va='center', size=8)
+ax3.text(1.4e-1, 2.8e-4, r'3 $M_{\odot}$', color=cmap.mpl_colors[0], ha='center', va='center', size=8)
+ax3.set_ylim(1e-4, 1.3e-1)
 ax3.set_xlabel(r'frequency (d$^{-1}$)')
+for ax in [ax2, ax3]:
+    ax.set_xlim(4e-2, 1e1)
 
 plt.savefig('obs_prediction.png', bbox_inches='tight', dpi=300)
+plt.savefig('obs_prediction.pdf', bbox_inches='tight', dpi=300)
