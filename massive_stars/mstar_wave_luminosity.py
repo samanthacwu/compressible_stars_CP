@@ -46,8 +46,14 @@ def read_mesa(mesa_file_path):
     file_dict['cs_cz'] = np.sum((4*np.pi*r**2*np.gradient(r)*cs)[good])/(4*np.pi*file_dict['Rcore']**3/3)
     file_dict['Ma_cz'] = eval('u_cz/cs_cz', file_dict)
     file_dict['f_cz'] = eval('u_cz/Rcore', file_dict)
-    print(file_dict['Ma_cz'].cgs, file_dict['f_cz'].cgs)
+    print('Ma {:.3e}, f {:.3e}'.format(file_dict['Ma_cz'].cgs, file_dict['f_cz'].cgs))
     return file_dict
+
+
+#40: 0.1 - 0.7 1/day
+#15: 0.2 - 1 1/day
+#3:  0.2 - 1.5 1/day
+#all: ell = 1.
 
 
 
@@ -61,17 +67,37 @@ with h5py.File('twoRcore_re1e4_damping/wave_flux/wave_luminosities.h5', 'r') as 
     lum_msol15 = f['cgs_wave_luminosity(r={})'.format(rv)][0,:]
     msol15_file_dict = read_mesa('gyre/15msol/LOGS/profile47.data')
 
+    fitfunc = ((freqs_msol15/hz_to_invday)**(-13/2))[:,None] * np.sqrt(ells_msol15*(ells_msol15+1))[None,:]
+    good1 = (freqs_msol15 > 0.2)*(freqs_msol15 < 1)
+    good2 = ells_msol15 == 1
+    log_fitAmp = np.mean( np.log10(lum_msol15/fitfunc)[good1, good2] )
+    print('15 fitAmp: {:.3e}'.format(10**(log_fitAmp)))
+
 with h5py.File('other_stars/msol40_twoRcore_re1e4_damping/wave_flux/wave_luminosities.h5', 'r') as f:
     freqs_msol40 = f['cgs_freqs'][()]*hz_to_invday
     ells_msol40  = f['ells'][()].ravel()
     lum_msol40 = f['cgs_wave_luminosity(r={})'.format(rv)][0,:]
     msol40_file_dict = read_mesa('gyre/40msol/LOGS/profile53.data')
 
+    fitfunc = ((freqs_msol40/hz_to_invday)**(-13/2))[:,None] * np.sqrt(ells_msol40*(ells_msol40+1))[None,:]
+    good1 = (freqs_msol40 > 0.1)*(freqs_msol40 < 0.7)
+    good2 = ells_msol40 == 1
+    log_fitAmp = np.mean( np.log10(lum_msol40/fitfunc)[good1, good2] )
+    print('40 fitAmp: {:.3e}'.format(10**(log_fitAmp)))
+
+
+
 with h5py.File('other_stars/msol3_twoRcore_re1e4_damping/wave_flux/wave_luminosities.h5', 'r') as f:
     freqs_msol3 = f['cgs_freqs'][()]*hz_to_invday
     ells_msol3  = f['ells'][()].ravel()
     lum_msol3 = f['cgs_wave_luminosity(r={})'.format(rv)][0,:]
     msol3_file_dict = read_mesa('gyre/3msol/LOGS/profile43.data')
+
+    fitfunc = ((freqs_msol3/hz_to_invday)**(-13/2))[:,None] * np.sqrt(ells_msol3*(ells_msol3+1))[None,:]
+    good1 = (freqs_msol3 > 0.2)*(freqs_msol3 < 1.5)
+    good2 = ells_msol3 == 1
+    log_fitAmp = np.mean( np.log10(lum_msol3/fitfunc)[good1, good2] )
+    print('3 fitAmp: {:.3e}'.format(10**(log_fitAmp)))
 
 
 
