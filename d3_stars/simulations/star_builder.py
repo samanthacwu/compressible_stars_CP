@@ -513,6 +513,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     logger.info('u_heat_nd: {:.3e}'.format(u_heat_nd))
     logger.info('rad_diff cutoff: {:.3e}'.format(rad_diff_cutoff))
+    logger.info('rad_diff cutoff: {:.3e}'.format(rad_diff_cutoff * (L_nd**2/tau_nd)))
     
     #MESA radial values at simulation joints & across full star in simulation units
     r_bound_nd = [(rb/L_nd).value for rb in r_bounds]
