@@ -419,6 +419,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     mu             = p.mu[::-1] * u.g / u.mol 
     lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
 
+
     R_star = (p.photosphere_r * u.R_sun).cgs
     
     #Put all MESA fields into cgs and calculate secondary MESA fields
@@ -440,6 +441,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     ### CORE CONVECTION LOGIC - generalize.
     core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
+
+    mlt_u = ((Luminosity / (4 * np.pi * r**2 * rho) )**(1/3)).cgs
+    avg_core_u = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
+    avg_core_ma = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u/csound)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
+    logger.info('avg core velocity: {:.3e} / ma: {:.3e}'.format(avg_core_u, avg_core_ma))
 
     # Specify fraction of total star to simulate
     r_bounds = list(config.star['r_bounds'])
