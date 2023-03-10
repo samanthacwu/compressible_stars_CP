@@ -150,9 +150,9 @@
    !pgas_div_ptotal ! pgas/pressure
 
    !eta ! electron degeneracy parameter (eta >> 1 for significant degeneracy)
-   !mu ! mean molecular weight per gas particle (ions + free electrons)
+   mu ! mean molecular weight per gas particle (ions + free electrons)
 
-   !grada ! dlnT_dlnP at constant S
+   grada ! dlnT_dlnP at constant S
    !dE_dRho ! at constant T
    !cv ! specific heat at constant volume
    cp ! specific heat at constant total pressure
@@ -163,8 +163,8 @@
    !gam ! plasma interaction parameter (> 160 or so means starting crystallization)
    !free_e ! free_e is mean number of free electrons per nucleon
    !logfree_e ! log10(free_e), free_e is mean number of free electrons per nucleon
-   !chiRho ! dlnP_dlnRho at constant T
-   !chiT ! dlnP_dlnT at constant Rho
+   chiRho ! dlnP_dlnRho at constant T
+   chiT ! dlnP_dlnT at constant Rho
 
    csound ! sound speed
    !log_csound
@@ -238,7 +238,7 @@
    !eps_nuc_minus_non_nuc_neu
    !eps_nuc_start
 
-   !eps_nuc ! ergs/g/sec from nuclear reactions (including losses to reaction neutrinos)
+   eps_nuc ! ergs/g/sec from nuclear reactions (including losses to reaction neutrinos)
    !log_abs_eps_nuc
    !d_lnepsnuc_dlnd
    !d_epsnuc_dlnd
@@ -444,7 +444,7 @@
    !lum_rad_div_L_Edd_sub_fourPrad_div_PchiT ! density increases outward if this is > 0
       ! see Joss, Salpeter, and Ostriker, "Critical Luminosity", ApJ 181:429-438, 1973. 
 
-   !gradT ! mlt value for required temperature gradient dlnT/dlnP
+   gradT ! mlt value for required temperature gradient dlnT/dlnP
    
    !gradr ! dlnT/dlnP required for purely radiative transport
    !grad_temperature ! smoothed dlnT/dlnP at cell boundary
