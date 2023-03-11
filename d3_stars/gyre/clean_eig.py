@@ -398,18 +398,17 @@ class GyreMSGPostProcessor:
         chi_rad = 16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)
         gamma = gamma1[0]
 
+        core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
+        r0 = 0.95 * core_cz_radius
+        r1 = 1.05 * core_cz_radius
+
         #get info about mesa background
         rho_func = interp1d(r.flatten(), rho.flatten())
         chi_rad_func = interp1d(r.flatten(), chi_rad.flatten())
         N2_func = interp1d(r.flatten(), bruntN2.flatten())
-        N2_max = N2_func(r[r <= 0.93*r.max()]).max() #max value in near-surface sim domain
-#        plt.semilogy(r.flatten(), N2_func(r.flatten()))
-#        plt.show()
-    #    print('N2 vals', N2_max, N2(r.max()/2))
-
-        core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
-        r0 = 0.95 * core_cz_radius
-        r1 = 1.05 * core_cz_radius
+        N2_max = bruntN2.max().value
+        N2_force_max = N2_func(r1)
+        N2_adjust = np.sqrt(N2_max/N2_force_max)
 
 
         #Calculate transfer functions
@@ -430,6 +429,7 @@ class GyreMSGPostProcessor:
 
         #Calculate and store transfer function
         good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, lum_amplitudes, r_range, self.ell, rho_func, chi_rad_func, N2_max, gamma, plot=False)
+        good_T *= N2_adjust
 
         if plot:
             fig = plt.figure()

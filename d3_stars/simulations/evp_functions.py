@@ -407,7 +407,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     P_ur_to_h = rho * (cpmu_div_R) * ((big_om + 1j*chi_rad*k2) / k_h**2) * (-k_r) #assuming H_p -> infinity.
     root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*P_ur_to_h)).real
 
-    inner_prod = 4*np.pi*r_range**2*rho*np.conj(bulk_to_bound_force*root_lum_to_ur*u_dual) * dr
+    inner_prod = 4*np.pi*r_range**2*rho*bulk_to_bound_force*root_lum_to_ur*np.conj(u_dual) * dr
     Eig = inner_prod * field_outer / ((values - big_om)*(values + big_om))
     Eig_cos = (Eig*big_om).real
     Eig_sin = (Eig*(-1j)*values).real
@@ -522,6 +522,7 @@ class StellarEVP():
         ntheta = Lmax + 1
         nphi = 4
         hires_factor = config.eigenvalue['hires_factor']
+        base_radial_scale = config.eigenvalue['radial_scale']
         self.do_hires = hires_factor != 1
 
         self.out_dir = 'eigenvalues'
@@ -533,10 +534,10 @@ class StellarEVP():
         resolutions = []
         for nr in config.star['nr']:
             if is_hires:
-                resolutions.append((nphi, ntheta, int(hires_factor*nr)))
+                resolutions.append((nphi, ntheta, int(base_radial_scale*hires_factor*nr)))
             else:
-                resolutions.append((nphi, ntheta, nr))
-        self.nr = config.star['nr']
+                resolutions.append((nphi, ntheta, int(base_radial_scale*nr)))
+        self.nr = base_radial_scale*np.array(config.star['nr'])
         Re  = config.numerics['reynolds_target'] 
         Pr  = config.numerics['prandtl']
         Pe  = Pr*Re
@@ -584,9 +585,9 @@ class StellarEVP():
         self.compressible = SphericalCompressibleProblem(resolutions, self.stitch_radii, radius, self.ncc_file, dealias=dealias, dtype=np.complex128, mesh=None, sponge=sponge, do_rotation=do_rotation)
         self.compressible.make_fields()
 
-        r_scale = config.numerics['N_dealias']/dealias[0]
+        r_scale = config.numerics['N_dealias']/dealias[0]/base_radial_scale
         if is_hires:
-            r_scale /= hires_factor
+            r_scale /= base_radial_scale*hires_factor
         variables, timescales = self.compressible.fill_structure(scales=(1,1,r_scale))
         self.compressible.set_substitutions(EVP=True)
 
