@@ -12,7 +12,7 @@ sLum_sun=(5777)**4.0/(274*100)
 #Get simulation details.
 star_dirs = ['3msol', '40msol', '15msol']
 sim_mass = [3, 40, 15]
-sim_alpha = [4e-4, 8e-2, 8e-3]
+sim_alpha = [3.3e-3, 6e-1, 4.5e-2]
 sim_nuchar = [3.8e-1, 1e-1, 0.3]
 sim_specLums = []
 sim_logTeffs = []
