@@ -32,13 +32,13 @@ def tex_exponential(number):
     power = int(np.floor(log10))
     stem  = 10**(log10 - power)
     if neg:
-        string = '$-'
+        string = r'$- '
     else:
         string = '$ '
     if power != 0:
-        string += '{:>4.2f}'.format(stem) + r' \times 10^{' + '{:>2d}'.format(power) + r'}$'
+        string += '{:>4.1f}'.format(stem) + r' \times 10^{' + '{:>2d}'.format(power) + r'}$'
     else:
-        string += '{:>4.2f}'.format(stem) + '{:15s}'.format('') + r'$'
+        string += '{:>4.1f}'.format(stem) + '{:15s}'.format('') + r'$'
     return string
 
 
@@ -48,7 +48,7 @@ eig_dir = 'gyre_output'
 output_file = 'moments_table.csv'
 
 #star_dirs = ['3msol', '15msol', '40msol']
-star_dirs = ['40msol', '15msol']
+star_dirs = ['40msol', '15msol', '3msol']
 Lmax = 16
 ell_list = np.arange(1, Lmax+1)
 I0s = []
@@ -81,7 +81,7 @@ for i, ell in enumerate(ell_list):
     tex_string = '{:>2d}  & '.format(ell)
     header += '{:>6s},    '.format('Y_ell')
     string += '{:>6.04f},    '.format(Ys[0][i])
-    tex_string += '{:>6.04f} & '.format(Ys[0][i])
+    tex_string += '{:>6.03f} & '.format(Ys[0][i])
     for j in range(len(star_dirs)):
         string += '{:>14.02e}, {:>23.02e}, {:>20.02e},    '.format(*Is[j][i])
         header += '{:>14s}, '.format(star_dirs[j]+' I_l/I_0')

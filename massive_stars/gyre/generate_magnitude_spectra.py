@@ -32,7 +32,7 @@ output_file = 'magnitude_spectra.h5'
 
 
 star_dirs = ['3msol', '40msol', '15msol']
-luminosity_amplitudes = [3e-15, 3e-10, 3e-11]
+luminosity_amplitudes = [7.34e-15, 5.3e-10, 2.33e-11]
 Lmax = [16, 16, 16]
 obs_length_days = 365
 obs_length_sec  = obs_length_days*24*60*60
