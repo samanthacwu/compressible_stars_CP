@@ -516,6 +516,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             r_bools.append((r > r_bounds[i])*(r <= r_bounds[i+1]))
     logger.info('fraction of FULL star simulated: {:.2f}, up to r={:.3e}'.format(r_bounds[-1]/R_star, r_bounds[-1]))
     sim_bool      = (r > r_bounds[0])*(r <= r_bounds[-1])
+    logger.info('fraction of stellar mass simulated: {:.7f}'.format(mass[sim_bool][-1]/mass[-1]))
 
     #Get N2 info
     N2max_sim = N2[sim_bool].max()
