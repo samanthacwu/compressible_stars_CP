@@ -33,7 +33,7 @@ output_file = 'magnitude_spectra.h5'
 
 star_dirs = ['3msol', '40msol', '15msol']
 luminosity_amplitudes = [7.34e-15, 5.3e-10, 2.33e-11]
-Lmax = [16, 16, 16]
+Lmax = [15, 15, 15]
 obs_length_days = 365
 obs_length_sec  = obs_length_days*24*60*60
 obs_cadence = 30*60 #30 min
@@ -51,6 +51,7 @@ for i, sdir in enumerate(star_dirs):
     wave_luminosity = lambda f, l: luminosity_amplitudes[i]*f**(-6.5)*np.sqrt(l*(l+1))**4
     transfer_oms = []
     transfer_signal = []
+    pure_transfers  = []
 
     ell_list = np.arange(1, Lmax[i]+1)
     for ell in ell_list:
@@ -63,19 +64,24 @@ for i, sdir in enumerate(star_dirs):
         micromag = transfer_root_lum*np.sqrt(np.abs(wave_luminosity(om/(2*np.pi), ell)))
         transfer_oms.append(om[np.isfinite(micromag)])
         transfer_signal.append(micromag[np.isfinite(micromag)])
+        pure_transfers.append(transfer_root_lum[np.isfinite(micromag)])
 
 
 
+    transfers  = np.zeros((Lmax[i], N_data))
     magnitudes = np.zeros((Lmax[i], N_data))
     for j in range(freqs.size-1):
-        for k, oms, signal in zip(range(Lmax[i]), transfer_oms, transfer_signal):
+        for k, oms, signal, transfer in zip(range(Lmax[i]), transfer_oms, transfer_signal, pure_transfers):
             good = (2*np.pi*freqs[j+1] >= oms)*(2*np.pi*freqs[j] < oms)
             if np.sum(good) > 0:
                 magnitudes[k,j] = np.max(signal[good])
+                transfers[k,j] = np.max(transfer[good])
             elif 2*np.pi*freqs[j] > oms.min():
                 magnitudes[k,j] = signal[np.argmin(np.abs(2*np.pi*freqs[j] - oms))]
+                transfers[k,j]  = transfer[np.argmin(np.abs(2*np.pi*freqs[j] - oms))]
     total_signal = np.sum(magnitudes, axis=0)
     out_f['{}_magnitude_cube'.format(sdir)] = magnitudes
+    out_f['{}_transfer_cube'.format(sdir)] = transfers
     out_f['{}_magnitude_sum'.format(sdir)] = total_signal
     plt.loglog(freqs, total_signal, c='k')
     plt.legend()
