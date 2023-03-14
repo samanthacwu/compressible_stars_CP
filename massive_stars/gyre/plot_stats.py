@@ -38,13 +38,25 @@ axs = [ax1, ax2]
 norm = mpl.colors.Normalize(vmin=4, vmax=4.7)
 sm = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.viridis)
 
-#TODO: need 2022 bowman data.
+use_new_data = False
 data1 = np.genfromtxt('bowman_a1.csv', delimiter=',', skip_header=1, dtype=str)
 data2 = np.genfromtxt('bowman_a2.csv', delimiter=',', skip_header=1, dtype=str)
-log10Teff = np.array(data1[:,3], dtype=np.float64)
-log10Ell  = np.array(data1[:,4], dtype=np.float64)
-alpha0    = np.array(data2[:,2], dtype=np.float64)
-nuchar    = np.array(data2[:,4], dtype=np.float64)
+data3 = np.genfromtxt('bowman2022_tableB1.csv', delimiter=',', skip_header=1, dtype=str)
+star_2020 = data2[:,0]
+star_2022 = data3[:,0]
+log10Teff  = np.array(data1[:,3], dtype=np.float64)
+log10Ell   = np.array(data1[:,4], dtype=np.float64)
+alpha0     = np.array(data2[:,2], dtype=np.float64)
+alpha0_err = np.array(data2[:,3], dtype=np.float64)
+nuchar     = np.array(data2[:,4], dtype=np.float64)
+nuchar_err = np.array(data2[:,5], dtype=np.float64)
+
+new_nuchar = np.array(data3[:,4], dtype=np.float64)
+new_nucharperr = np.array(data3[:,5], dtype=np.float64)
+new_nucharmerr = np.array(data3[:,6], dtype=np.float64)
+new_alpha0 = np.array(data3[:,7], dtype=np.float64)*1e6
+new_alpha0perr = np.array(data3[:,8], dtype=np.float64)*1e6
+new_alpha0merr = np.array(data3[:,9], dtype=np.float64)*1e6
 
 for ax in axs:
     ax.set_xlabel(r'$\log_{10}\,\mathscr{L}/\mathscr{L}_{\odot}$')
@@ -52,8 +64,17 @@ ax1.set_ylabel(r'$\alpha_{0}$ ($\mu$mag)')
 ax2.set_ylabel(r'$\nu_{\rm char}$ (d$^{-1}$)')
 
 for j in range(log10Teff.size):
-    ax1.scatter(log10Ell[j], alpha0[j], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
-    ax2.scatter(log10Ell[j], nuchar[j], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
+    if use_new_data and star_2020[j] in star_2022:
+        indx = list(star_2022).index(star_2020[j]) 
+        ax1.errorbar(log10Ell[j], new_alpha0[indx], yerr=np.array((new_alpha0merr[indx],new_alpha0perr[indx]))[:,None], color=(1,1,1,0), marker='o', ecolor='k', elinewidth=0.5)
+        ax2.errorbar(log10Ell[j], new_nuchar[indx], yerr=np.array((new_nucharmerr[indx],new_nucharmerr[indx]))[:,None], color=(1,1,1,0), marker='o', ecolor='k', elinewidth=0.5)
+        ax1.scatter(log10Ell[j],  new_alpha0[indx], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
+        ax2.scatter(log10Ell[j],  new_nuchar[indx], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
+    else:
+        ax1.errorbar(log10Ell[j], alpha0[j], yerr=alpha0_err[j], color=(1,1,1,0), marker='o', ecolor='k', elinewidth=0.5)
+        ax2.errorbar(log10Ell[j], nuchar[j], yerr=nuchar_err[j], color=(1,1,1,0), marker='o', ecolor='k', elinewidth=0.5)
+        ax1.scatter(log10Ell[j], alpha0[j], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
+        ax2.scatter(log10Ell[j], nuchar[j], color=sm.to_rgba(log10Teff[j])[:3], alpha=0.7, marker='o', edgecolors='k', linewidths=0.5, s=20)
 ax1.set_yscale('log')
 
 for i in range(len(sim_mass)):
