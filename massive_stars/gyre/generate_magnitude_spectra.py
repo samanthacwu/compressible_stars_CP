@@ -76,10 +76,11 @@ for i, sdir in enumerate(star_dirs):
             if np.sum(good) > 0:
                 magnitudes[k,j] = np.max(signal[good])
                 transfers[k,j] = np.max(transfer[good])
-            elif 2*np.pi*freqs[j] > oms.min():
+            elif 2*np.pi*freqs[j] > oms.min() and 2*np.pi*freqs[j] <= oms.max():
                 magnitudes[k,j] = signal[np.argmin(np.abs(2*np.pi*freqs[j] - oms))]
                 transfers[k,j]  = transfer[np.argmin(np.abs(2*np.pi*freqs[j] - oms))]
-    total_signal = np.sum(magnitudes, axis=0)
+
+    total_signal = np.sqrt(np.sum(magnitudes**2, axis=0))
     out_f['{}_magnitude_cube'.format(sdir)] = magnitudes
     out_f['{}_transfer_cube'.format(sdir)] = transfers
     out_f['{}_magnitude_sum'.format(sdir)] = total_signal
