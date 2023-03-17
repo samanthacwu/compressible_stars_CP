@@ -403,8 +403,9 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     k2 = k_r**2 + k_h**2
 
     #Calculate transfer
-    bulk_to_bound_force = big_om / k_h #times ur -> comes later.
-    P_ur_to_h = rho * (cpmu_div_R) * ((big_om + 1j*chi_rad*k2) / k_h**2) * (-k_r) #assuming H_p -> infinity.
+    bulk_to_bound_force = np.sqrt(2) * big_om / k_h #times ur -> comes later.
+#    P_ur_to_h = rho * (cpmu_div_R) * ((big_om + 1j*chi_rad*k2) / k_h**2) * (-k_r) #assuming H_p -> infinity.
+    P_ur_to_h = rho * (cpmu_div_R) * ((big_om) / k_h**2) * (-k_r) #assuming H_p -> infinity.
     root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*P_ur_to_h)).real
 
     inner_prod = 4*np.pi*r_range**2*rho*bulk_to_bound_force*root_lum_to_ur*np.conj(u_dual) * dr
@@ -413,7 +414,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     Eig_sin = (Eig*(-1j)*values).real
 
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
-    T = np.median(T_pieces, axis=0) #get median as function of radius
+    T = np.sqrt(np.mean(T_pieces**2, axis=0))# #get median as function of radius
     if plot:
         cmap = mpl.cm.viridis
         norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
