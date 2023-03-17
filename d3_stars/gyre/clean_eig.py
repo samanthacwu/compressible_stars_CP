@@ -419,8 +419,8 @@ class GyreMSGPostProcessor:
 
         values = 2*np.pi*self.data_dict['dual_freq']
         #Construct frequency grid for evaluation
-        om0 = np.min(np.abs(values.real))*0.95
-        om1 = np.max(values.real)*1.05
+        om0 = np.min(np.abs(values.real))*0.97
+        om1 = np.max(values.real)*1.03
         om = np.logspace(np.log10(om0), np.log10(om1), num=N_om, endpoint=True) 
 
         #Get forcing radius and dual basis evaluated there.
@@ -429,7 +429,7 @@ class GyreMSGPostProcessor:
 
         #Calculate and store transfer function
         good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, lum_amplitudes, r_range, self.ell, rho_func, chi_rad_func, N2_max, gamma, plot=False)
-        good_T *= N2_adjust
+        good_T *= np.sqrt(N2_adjust)
 
         if plot:
             fig = plt.figure()
