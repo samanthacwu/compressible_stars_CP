@@ -442,8 +442,6 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = dmr.R_star
     grad_ln_g_phi   = g / g_phi
     s_over_cp       = np.cumsum(dmr.grad_s_over_cp*np.gradient(r))
-    pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
-# integrate by parts:    pomega_tilde    = s_over_cp * g_phi - np.cumsum(grad_s_over_cp * g_phi * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 
     #construct simulation diffusivity profiles
     rad_diff_nd = dmr.rad_diff * (tau_nd / L_nd**2)
@@ -460,22 +458,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     r_bound_nd = [(rb/L_nd).value for rb in r_bounds]
     r_nd = (r/L_nd).cgs
     
-    ### entropy gradient
-    ### More core convection zone logic here
-    #Build a nice function for our basis in the ball
-    grad_s_width = grad_s_transition_default
-    grad_s_transition_point = r_bound_nd[1] - grad_s_width
-    logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
-    logger.info('using default grad s width = {}'.format(grad_s_width))
-    grad_s_center =  grad_s_transition_point - 0.5*grad_s_width
-    grad_s_width *= (L_CZ/L_nd).value
-    grad_s_center *= (L_CZ/L_nd).value
-   
-    grad_s_smooth = np.copy(dmr.grad_s)
-    flat_value  = np.interp(grad_s_transition_point, r/L_nd, dmr.grad_s)
-    grad_s_smooth += (r/L_nd)**2 *  flat_value
-    grad_s_smooth *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
-    
+  
     ### Make dedalus domain and bases
     resolutions = [(1, 1, nr) for nr in config.star['nr']]
     stitch_radii = r_bound_nd[1:-1]
@@ -518,17 +501,24 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
     interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2), **interp_kwargs)
-    interpolations['pomega_tilde'] = interp1d(r_nd, pomega_tilde * (tau_nd**2 / L_nd**2), **interp_kwargs)
 
     #construct N2 function #TODO: blend logic here & in BVP.
+    ### More core convection zone logic here
+    grad_s_width = grad_s_transition_default
+    grad_s_width *= (L_CZ/L_nd).value
+    grad_s_transition_point = r_bound_nd[1] - grad_s_width
+    logger.info('using default grad s transition point = {}'.format(grad_s_transition_point))
+    logger.info('using default grad s width = {}'.format(grad_s_width))
+ 
+    #Build a nice function for our basis in the ball
+    #have N^2 = A*r^2 + B; grad_N2 = 2 * A * r, so A = (grad_N2) / (2 * r_stitch) & B = stitch_value - A*r_stitch^2
     stitch_point = 1
     stitch_point = bases['B'].radius
-    smooth_N2 = np.copy(N2)
     stitch_value = np.interp(stitch_point, r/L_nd, N2)
     grad_N2_stitch = np.gradient(N2, r)[r/L_nd < stitch_point][-1]
-    #have N^2 = A*r^2 + B; grad_N2 = 2 * A * r, so A = (grad_N2) / (2 * r_stitch) & B = stitch_value - A*r_stitch^2
     A = grad_N2_stitch / (2*bases['B'].radius * L_nd)
     B = stitch_value - A* (bases['B'].radius * L_nd)**2
+    smooth_N2 = np.copy(N2)
     smooth_N2[r/L_nd < stitch_point] = A*(r[r/L_nd < stitch_point])**2 + B
     smooth_N2 *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
 
@@ -549,11 +539,10 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     interpolations['s0'] = atmo['s0']
     interpolations['pom0'] = atmo['pomega']
     interpolations['grad_ln_pom0'] = atmo['grad_ln_pomega']
-
-
     interpolations['kappa_rad'] = interp1d(r_nd, np.exp(interpolations['ln_rho0'](r_nd))*nondim_cp*sim_rad_diff, **interp_kwargs)
     interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient(interpolations['kappa_rad'](r_nd), r_nd), **interp_kwargs)
 
+    ## Construct Dedalus NCCs
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
             ncc_dict[ncc]['Nmax_{}'.format(bn)] = ncc_dict[ncc]['nr_max'][i]
@@ -586,7 +575,6 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
                     ncc_dict[name]['field_{}'.format(bn)] = make_NCC(basis, c, d, inv_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax
 
-
         if 'neg_g' in ncc_dict.keys():
             if 'g' not in ncc_dict.keys():
                 ncc_dict['g'] = OrderedDict()
@@ -597,7 +585,6 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
             ncc_dict['g']['from_grad'] = True 
         
-   
     if reapply_grad_s_filter:
         for bn, basis in bases.items():
             ncc_dict['grad_s0']['field_{}'.format(bn)]['g'] *= zero_to_one(dedalus_r[bn], grad_s_transition_point-5*grad_s_width, width=grad_s_width)
@@ -658,82 +645,6 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
-
-    #Make some plots of stratification, hydrostatic equilibrium, etc.
-    plt.figure()
-    N2s = []
-    HSEs = []
-    EOSs = []
-    grad_s0s = []
-    grad_ln_rho0s = []
-    grad_ln_pom0s = []
-    rs = []
-    for bn in bases_keys:
-        rs.append(dedalus_r[bn].ravel())
-        grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
-        grad_ln_pom0 = ncc_dict['grad_ln_pom0']['field_{}'.format(bn)]
-        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
-        ln_rho0 = ncc_dict['ln_rho0']['field_{}'.format(bn)]
-        gvec = ncc_dict['g']['field_{}'.format(bn)]
-        grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
-        s0 = ncc_dict['s0']['field_{}'.format(bn)]
-        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
-        HSE = (nondim_gamma1*pom0*(grad_ln_rho0 + grad_s0 / nondim_cp) - gvec).evaluate()
-        EOS = s0/nondim_cp - ( (1/nondim_gamma1) * (np.log(pom0) - np.log(nondim_R_gas)) - ((nondim_gamma1-1)/nondim_gamma1) * ln_rho0 )
-        N2_val = -gvec['g'][2,:] * grad_s0['g'][2,:] / nondim_cp 
-        N2s.append(N2_val)
-        HSEs.append(HSE['g'][2,:])
-        EOSs.append(EOS.evaluate()['g'])
-        grad_ln_rho0s.append(grad_ln_rho0['g'][2,:])
-        grad_ln_pom0s.append(grad_ln_pom0['g'][2,:])
-    r_dedalus = np.concatenate(rs, axis=-1)
-    N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
-    HSE_dedalus = np.concatenate(HSEs, axis=-1).ravel()
-    EOS_dedalus = np.concatenate(EOSs, axis=-1).ravel()
-    grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
-    grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
-    plt.plot(r_nd, tau_nd**2*N2, label='mesa', c='k')
-    plt.plot(r_nd, -tau_nd**2*N2, c='k', ls='--')
-#    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere', c='b')
-#    plt.plot(r_nd, -atmo['N2'](r_nd), c='b', ls='--')
-    plt.plot(r_dedalus, N2_dedalus, label='dedalus', c='g')
-    plt.plot(r_dedalus, -N2_dedalus, ls='--', c='g')
-    plt.legend()
-    plt.ylabel(r'$N^2$')
-    plt.xlabel('r')
-    plt.yscale('log')
-    plt.savefig('star/N2_goodness.png')
-#    plt.show()
-
-    plt.figure()
-    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
-    plt.plot(r_dedalus, np.abs(HSE_dedalus))
-    plt.yscale('log')
-    plt.xlabel('r')
-    plt.ylabel("HSE")
-    plt.savefig('star/HSE_goodness.png')
-
-    plt.figure()
-    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
-    plt.plot(r_dedalus, np.abs(EOS_dedalus))
-    plt.yscale('log')
-    plt.xlabel('r')
-    plt.ylabel("EOS")
-    plt.savefig('star/EOS_goodness.png')
-
-
-    fig = plt.figure()
-    ax1 = fig.add_subplot(2,1,1)
-    plt.plot(r_dedalus, grad_ln_rho0_dedalus)
-    plt.xlabel('r')
-    plt.ylabel("grad_ln_rho0")
-    ax2 = fig.add_subplot(2,1,2)
-    plt.plot(r_dedalus, grad_ln_pom0_dedalus)
-    plt.xlabel('r')
-    plt.ylabel("grad_ln_pom0")
-    plt.savefig('star/ln_thermo_goodness.png')
-#    plt.show()
-
 
     #Fixup heating term to make simulation energy-neutral.       
     integral = 0
@@ -815,4 +726,83 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             f[k].attrs['units'] = 'dimensionless'
     logger.info('finished saving NCCs to {}'.format(out_file))
     logger.info('We recommend looking at the plots in {}/ to make sure the non-constant coefficients look reasonable'.format(out_dir))
+
+    #Make some plots of stratification, hydrostatic equilibrium, etc.
+    logger.info('Making final plots...')
+    plt.figure()
+    N2s = []
+    HSEs = []
+    EOSs = []
+    grad_s0s = []
+    grad_ln_rho0s = []
+    grad_ln_pom0s = []
+    rs = []
+    for bn in bases_keys:
+        rs.append(dedalus_r[bn].ravel())
+        grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
+        grad_ln_pom0 = ncc_dict['grad_ln_pom0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        ln_rho0 = ncc_dict['ln_rho0']['field_{}'.format(bn)]
+        gvec = ncc_dict['g']['field_{}'.format(bn)]
+        grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
+        s0 = ncc_dict['s0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        HSE = (nondim_gamma1*pom0*(grad_ln_rho0 + grad_s0 / nondim_cp) - gvec).evaluate()
+        EOS = s0/nondim_cp - ( (1/nondim_gamma1) * (np.log(pom0) - np.log(nondim_R_gas)) - ((nondim_gamma1-1)/nondim_gamma1) * ln_rho0 )
+        N2_val = -gvec['g'][2,:] * grad_s0['g'][2,:] / nondim_cp 
+        N2s.append(N2_val)
+        HSEs.append(HSE['g'][2,:])
+        EOSs.append(EOS.evaluate()['g'])
+        grad_ln_rho0s.append(grad_ln_rho0['g'][2,:])
+        grad_ln_pom0s.append(grad_ln_pom0['g'][2,:])
+    r_dedalus = np.concatenate(rs, axis=-1)
+    N2_dedalus = np.concatenate(N2s, axis=-1).ravel()
+    HSE_dedalus = np.concatenate(HSEs, axis=-1).ravel()
+    EOS_dedalus = np.concatenate(EOSs, axis=-1).ravel()
+    grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
+    grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
+    plt.plot(r_nd, tau_nd**2*N2, label='mesa', c='k')
+    plt.plot(r_nd, -tau_nd**2*N2, c='k', ls='--')
+#    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere', c='b')
+#    plt.plot(r_nd, -atmo['N2'](r_nd), c='b', ls='--')
+    plt.plot(r_dedalus, N2_dedalus, label='dedalus', c='g')
+    plt.plot(r_dedalus, -N2_dedalus, ls='--', c='g')
+    plt.legend()
+    plt.ylabel(r'$N^2$')
+    plt.xlabel('r')
+    plt.yscale('log')
+    plt.savefig('star/N2_goodness.png')
+#    plt.show()
+
+    plt.figure()
+    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    plt.plot(r_dedalus, np.abs(HSE_dedalus))
+    plt.yscale('log')
+    plt.xlabel('r')
+    plt.ylabel("HSE")
+    plt.savefig('star/HSE_goodness.png')
+
+    plt.figure()
+    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    plt.plot(r_dedalus, np.abs(EOS_dedalus))
+    plt.yscale('log')
+    plt.xlabel('r')
+    plt.ylabel("EOS")
+    plt.savefig('star/EOS_goodness.png')
+
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2,1,1)
+    plt.plot(r_dedalus, grad_ln_rho0_dedalus)
+    plt.xlabel('r')
+    plt.ylabel("grad_ln_rho0")
+    ax2 = fig.add_subplot(2,1,2)
+    plt.plot(r_dedalus, grad_ln_pom0_dedalus)
+    plt.xlabel('r')
+    plt.ylabel("grad_ln_pom0")
+    plt.savefig('star/ln_thermo_goodness.png')
+#    plt.show()
+
+
+
 
