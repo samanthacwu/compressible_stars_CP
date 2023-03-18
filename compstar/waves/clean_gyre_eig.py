@@ -84,7 +84,7 @@ class GyreMSGPostProcessor:
             os.path.join(MSG_DIR, 'data', 'grids'),
         
         if specgrid == 'OSTAR2002':
-            specgrid_file_name = os.path.join(GRID_DIR, 'sg-OSTAR2002-low.h5')
+            specgrid_file_name = os.path.join(GRID_DIR, 'sg-OSTAR2002-high.h5')
         else:
             specgrid_file_name = os.path.join(GRID_DIR, 'sg-demo-ext.h5')
 
