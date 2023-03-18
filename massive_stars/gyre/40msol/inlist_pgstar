@@ -1,6 +1,0 @@
-&pgstar
-
-Grid6_win_flag = .true.
-
-
-/ ! end of pgstar namelist
