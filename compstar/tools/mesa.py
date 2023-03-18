@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import numpy as np
 
 import mesa_reader as mr
@@ -55,4 +56,23 @@ class DimensionalMesaReader:
         self.structure['rad_diff'] = rad_diff = k_rad / (rho * cp)
         #rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs # this is less smooth
 
+
+def find_core_cz_radius(mesa_file, dimensionless=True):
+    ### CORE CONVECTION LOGIC - Find boundary of core convection zone  & setup simulation domain
+    ### Split up the domain
+    # Find edge of core cz
+    p = mr.MesaData(mesa_file)
+    r              = (p.radius[::-1] * u.R_sun).cgs
+    mass           = (p.mass[::-1] * u.M_sun).cgs
+    Luminosity     = (p.luminosity[::-1] * u.L_sun).cgs
+    conv_L_div_L   = p.lum_conv_div_L[::-1]
+    L_conv         = conv_L_div_L*Luminosity
+
+    cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
+    core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
+    core_cz_radius = r[core_index]
+    if dimensionless: #no astropy units.
+        return core_cz_radius.value
+    else:
+        return core_cz_radius
 

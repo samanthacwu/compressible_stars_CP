@@ -1,6 +1,7 @@
 import os, sys
 from collections import OrderedDict
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import h5py
@@ -16,7 +17,7 @@ from scipy.interpolate import interp1d
 import compstar 
 from .compressible_functions import make_bases
 from .parser import name_star
-from compstar.tools.mesa import DimensionalMesaReader
+from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius
 from compstar.tools.general import one_to_zero, zero_to_one
 import compstar.defaults.config as config
 
@@ -350,26 +351,6 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field.change_scales(basis.dealias)
     return this_field
 
-def find_core_cz_radius(mesa_file, dimensionless=True):
-    ### CORE CONVECTION LOGIC - Find boundary of core convection zone  & setup simulation domain
-    ### Split up the domain
-    # Find edge of core cz
-    p = mr.MesaData(mesa_file)
-    r              = (p.radius[::-1] * u.R_sun).cgs
-    mass           = (p.mass[::-1] * u.M_sun).cgs
-    Luminosity     = (p.luminosity[::-1] * u.L_sun).cgs
-    conv_L_div_L   = p.lum_conv_div_L[::-1]
-    L_conv         = conv_L_div_L*Luminosity
-
-    cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
-    core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
-    core_cz_radius = r[core_index]
-    if dimensionless: #no astropy units.
-        return core_cz_radius.value
-    else:
-        return core_cz_radius
-
-
 def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_filter=False):
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
@@ -387,57 +368,18 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         else:
             raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
 
-    #TODO: figure out how to make MESA the file path w.r.t. stock model path w/o supplying full path here 
-    logger.info("Reading MESA file {}".format(mesa_file_path))
-    p = mr.MesaData(mesa_file_path)
-    mass           = (p.mass[::-1] * u.M_sun).cgs
-    r              = (p.radius[::-1] * u.R_sun).cgs
-    rho            = 10**p.logRho[::-1] * u.g / u.cm**3
-    P              = p.pressure[::-1] * u.g / u.cm / u.s**2
-    T              = p.temperature[::-1] * u.K
-    R_gas          = P / (rho * T)
-    nablaT         = p.gradT[::-1] #dlnT/dlnP
-    nablaT_ad      = p.grada[::-1]
-    chiRho         = p.chiRho[::-1]
-    chiT           = p.chiT[::-1]
-    cp             = p.cp[::-1]  * u.erg / u.K / u.g
-    opacity        = p.opacity[::-1] * (u.cm**2 / u.g)
-    Luminosity     = (p.luminosity[::-1] * u.L_sun).cgs
-    conv_L_div_L   = p.lum_conv_div_L[::-1]
-    csound         = p.csound[::-1] * u.cm / u.s
-    N2 = N2_mesa   = p.brunt_N2[::-1] / u.s**2
-    N2_structure   = p.brunt_N2_structure_term[::-1] / u.s**2
-    N2_composition = p.brunt_N2_composition_term[::-1] / u.s**2
-    eps_nuc        = p.eps_nuc[::-1] * u.erg / u.g / u.s
-    mu             = p.mu[::-1] * u.g / u.mol 
-    lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
+    reader = DimensionalMesaReader(mesa_file_path)
+    dmr = SimpleNamespace(**reader.structure)
+    #make some commonly-used variables local.
+    r, mass, rho, T = dmr.r, dmr.mass, dmr.rho, dmr.T
+    N2, g, cp = dmr.N2, dmr.g, dmr.cp
 
-
-    R_star = (p.photosphere_r * u.R_sun).cgs
-    
-    #Put all MESA fields into cgs and calculate secondary MESA fields
-    R_gas           = constants.R.cgs / mu[0]
-    g               = constants.G.cgs*mass/r**2
-    dlogPdr         = -rho*g/P
-    gamma1          = dlogPdr/(-g/csound**2)
-    dlogrhodr       = dlogPdr*(chiT/chiRho)*(nablaT_ad - nablaT) - g/csound**2
-    dlogTdr         = dlogPdr*(nablaT)
-    grad_s_over_cp  = N2/g #entropy gradient, for NCC, includes composition terms
-    grad_s          = cp * grad_s_over_cp
-    L_conv          = conv_L_div_L*Luminosity
-    dTdr            = (T)*dlogTdr
-
-    # Calculate k_rad and radiative diffusivity using luminosities and smooth things.
-    k_rad = rad_cond = -(Luminosity - L_conv)/(4*np.pi*r**2*dTdr)
-    rad_diff        = k_rad / (rho * cp)
-    #rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs # this is less smooth
-
-    ### CORE CONVECTION LOGIC - generalize.
+    ### CORE CONVECTION LOGIC - lots of stuff here needs to be generalized for other types of stars.
     core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
 
-    mlt_u = ((Luminosity / (4 * np.pi * r**2 * rho) )**(1/3)).cgs
+    mlt_u = ((dmr.Luminosity / (4 * np.pi * r**2 * rho) )**(1/3)).cgs
     avg_core_u = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
-    avg_core_ma = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u/csound)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
+    avg_core_ma = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u/dmr.csound)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
     logger.info('avg core velocity: {:.3e} / ma: {:.3e}'.format(avg_core_u, avg_core_ma))
 
     # Specify fraction of total star to simulate
@@ -446,7 +388,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     for i, rb in enumerate(r_bounds):
         if type(rb) == str:
             if 'R' in rb:
-                r_bounds[i] = float(rb.replace('R', ''))*R_star
+                r_bounds[i] = float(rb.replace('R', ''))*dmr.R_star
             elif 'L' in rb:
                 r_bounds[i] = float(rb.replace('L', ''))*core_cz_radius
             else:
@@ -458,7 +400,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     for i, rb in enumerate(r_bounds):
         if i < len(r_bounds) - 1:
             r_bools.append((r > r_bounds[i])*(r <= r_bounds[i+1]))
-    logger.info('fraction of FULL star simulated: {:.2f}, up to r={:.3e}'.format(r_bounds[-1]/R_star, r_bounds[-1]))
+    logger.info('fraction of FULL star simulated: {:.2f}, up to r={:.3e}'.format(r_bounds[-1]/dmr.R_star, r_bounds[-1]))
     sim_bool      = (r > r_bounds[0])*(r <= r_bounds[-1])
     logger.info('fraction of stellar mass simulated: {:.7f}'.format(mass[sim_bool][-1]/mass[-1]))
 
@@ -472,7 +414,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     L_CZ    = core_cz_radius
     m_core  = rho[0] * L_CZ**3
     T_core  = T[0]
-    H0      = (rho*eps_nuc)[0]
+    H0      = (rho*dmr.eps_nuc)[0]
     tau_heat  = ((H0*L_CZ/m_core)**(-1/3)).cgs #heating timescale
     L_nd    = L_CZ
     m_nd    = rho[r==L_nd][0] * L_nd**3 #mass at core cz boundary
@@ -484,28 +426,27 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     H_nd    = (m_nd / L_nd) * tau_nd**-3
     s_motions    = L_nd**2 / tau_heat**2 / T[0]
     lum_nd  = L_nd**2 * m_nd / (tau_nd**2) / tau_nd
-    nondim_R_gas = (R_gas / s_nd).cgs.value
-    nondim_gamma1 = (gamma1[0]).value
+    nondim_R_gas = (dmr.R_gas / s_nd).cgs.value
+    nondim_gamma1 = (dmr.gamma1[0]).value
     nondim_cp = nondim_R_gas * nondim_gamma1 / (nondim_gamma1 - 1)
     nondim_G = (constants.G * (rho_nd * tau_nd**2)).value
     u_heat_nd = (L_nd/tau_heat) / u_nd
-    Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((gamma1[0]-1)*cp[0]*T[0])).cgs
+    Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((dmr.gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
     logger.info('Thermo: Cp/s_nd: {:.2e}, R_gas/s_nd: {:.2e}, gamma1: {:.4f}'.format(nondim_cp, nondim_R_gas, nondim_gamma1))
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
     logger.info('estimated mach number: {:.3e} / t_heat: {:.3e}'.format(np.sqrt(Ma2_r0), tau_heat))
 
-#    g_phi           = u_nd**2 + np.cumsum(g*np.gradient(r)) #gvec = -grad phi; set g_phi = 1 at r = 0
     g_over_cp       = g / cp
     g_phi           = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
-    g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = R_star
+    g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = dmr.R_star
     grad_ln_g_phi   = g / g_phi
-    s_over_cp       = np.cumsum(grad_s_over_cp*np.gradient(r))
+    s_over_cp       = np.cumsum(dmr.grad_s_over_cp*np.gradient(r))
     pomega_tilde    = np.cumsum(s_over_cp * g * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 # integrate by parts:    pomega_tilde    = s_over_cp * g_phi - np.cumsum(grad_s_over_cp * g_phi * np.gradient(r)) #TODO: should this be based on the actual grad s used in the simulation?
 
     #construct simulation diffusivity profiles
-    rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
+    rad_diff_nd = dmr.rad_diff * (tau_nd / L_nd**2)
     rad_diff_cutoff = (1/(config.numerics['prandtl']*config.numerics['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
     sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
     sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
@@ -530,17 +471,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     grad_s_width *= (L_CZ/L_nd).value
     grad_s_center *= (L_CZ/L_nd).value
    
-#    grad_s_outer_ball = grad_s[r/L_nd <= r_bound_nd[1]][-1]
-    grad_s_smooth = np.copy(grad_s)
-#    grad_s_smooth[r/L_nd <= r_bound_nd[1]] = (grad_s_outer_ball * (r/L_nd / r_bound_nd[1])**2)[r/L_nd <= r_bound_nd[1]]
-    flat_value  = np.interp(grad_s_transition_point, r/L_nd, grad_s)
+    grad_s_smooth = np.copy(dmr.grad_s)
+    flat_value  = np.interp(grad_s_transition_point, r/L_nd, dmr.grad_s)
     grad_s_smooth += (r/L_nd)**2 *  flat_value
     grad_s_smooth *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
-#    plt.plot(r/L_nd, grad_s_smooth)
-#    plt.yscale('log')
-#    plt.show()
     
-   
     ### Make dedalus domain and bases
     resolutions = [(1, 1, nr) for nr in config.star['nr']]
     stitch_radii = r_bound_nd[1:-1]
@@ -553,18 +488,15 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
 
-
-    
     if config.star['smooth_h']:
         #smooth CZ-RZ transition
-        L_conv_sim = np.copy(L_conv)
+        L_conv_sim = np.copy(dmr.L_conv)
         L_conv_sim *= one_to_zero(r, 0.9*core_cz_radius, width=0.05*core_cz_radius)
         L_conv_sim *= one_to_zero(r, 0.95*core_cz_radius, width=0.05*core_cz_radius)
         L_conv_sim /= (r/L_nd)**2 * (4*np.pi)
         F_conv_func = interp1d(r/L_nd, L_conv_sim/lum_nd, **interp_kwargs)
     else:
         raise NotImplementedError("must use smooth_h")
-
 
     # Get some timestepping & wave frequency info
     f_nyq = 2*tau_nd*np.sqrt(N2max_sim)/(2*np.pi)
@@ -578,8 +510,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     interpolations = OrderedDict()
     interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
     interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
-    interpolations['grad_ln_rho0'] = interp1d(r_nd, dlogrhodr*L_nd, **interp_kwargs)
-    interpolations['grad_ln_T0'] = interp1d(r_nd, dlogTdr*L_nd, **interp_kwargs)
+    interpolations['grad_ln_rho0'] = interp1d(r_nd, dmr.dlogrhodr*L_nd, **interp_kwargs)
+    interpolations['grad_ln_T0'] = interp1d(r_nd, dmr.dlogTdr*L_nd, **interp_kwargs)
     interpolations['T0'] = interp1d(r_nd, T/T_nd, **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
@@ -591,25 +523,16 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     #construct N2 function #TODO: blend logic here & in BVP.
     stitch_point = 1
     stitch_point = bases['B'].radius
-    smooth_N2 = np.copy(N2_mesa)
-#    stitch_value = np.interp(bases['B'].radius, r/L_nd, N2_mesa)
-#    grad_N2_stitch = np.gradient(N2_mesa, r)[r/L_nd < bases['B'].radius][-1]
-    stitch_value = np.interp(stitch_point, r/L_nd, N2_mesa)
-    grad_N2_stitch = np.gradient(N2_mesa, r)[r/L_nd < stitch_point][-1]
+    smooth_N2 = np.copy(N2)
+    stitch_value = np.interp(stitch_point, r/L_nd, N2)
+    grad_N2_stitch = np.gradient(N2, r)[r/L_nd < stitch_point][-1]
     #have N^2 = A*r^2 + B; grad_N2 = 2 * A * r, so A = (grad_N2) / (2 * r_stitch) & B = stitch_value - A*r_stitch^2
     A = grad_N2_stitch / (2*bases['B'].radius * L_nd)
     B = stitch_value - A* (bases['B'].radius * L_nd)**2
-#    A = stitch_value / (bases['B'].radius * L_nd)**2
-#    B = 0
-#    smooth_N2 = (r/L_nd)**2 * flat_value
     smooth_N2[r/L_nd < stitch_point] = A*(r[r/L_nd < stitch_point])**2 + B
     smooth_N2 *= zero_to_one(r/L_nd, grad_s_transition_point, width=grad_s_width)
-#    plt.semilogy(r, N2_mesa, lw=3, c='k')
-#    plt.semilogy(r, -N2_mesa, lw=3, c='k', ls='--')
-#    plt.semilogy(r, smooth_N2, c='orange')
-#    plt.semilogy(r, -smooth_N2, ls='--', c='orange')
-#    plt.ylim(1e-10*np.max(N2_mesa.value), 1e1*np.max(N2_mesa.value))
-#    plt.show()
+
+    # Solve for hydrostatic equilibrium for background
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
     ln_rho_func = interpolations['ln_rho0']
     grad_ln_rho_func = interpolations['grad_ln_rho0']
@@ -680,28 +603,10 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             ncc_dict['grad_s0']['field_{}'.format(bn)]['g'] *= zero_to_one(dedalus_r[bn], grad_s_transition_point-5*grad_s_width, width=grad_s_width)
             ncc_dict['grad_s0']['field_{}'.format(bn)]['c'] *= 1
             ncc_dict['grad_s0']['field_{}'.format(bn)]['g']
-#        #Evaluate for grad chi rad
-#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['g'] = d3.grad(ncc_dict['chi_rad']['field_{}'.format(bn)]).evaluate()['g']
-    
-#    #Further post-process work to make grad_s nice in the ball
-#    nr_post = ncc_dict['grad_s0']['nr_post']
-#
-#    for i, bn in enumerate(bases.keys()):
-#        ncc_dict['grad_s0']['field_{}'.format(bn)]['g'][2] *= zero_to_one(dedalus_r[bn], grad_s_center, width=grad_s_width)
-#        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-#        ncc_dict['grad_s0']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_s0']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
-#    
-#    #Post-processing for grad chi rad - doesn't work great...
-#    nr_post = ncc_dict['grad_chi_rad']['nr_post']
-#    for i, bn in enumerate(bases.keys()):
-#        if bn == 'B': continue
-#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][:,:,:,nr_post[i]:] = 0
-#        ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c'][np.abs(ncc_dict['grad_chi_rad']['field_{}'.format(bn)]['c']) < config.numerics['ncc_cutoff']] = 0
 
-    
+    #reset ln_rho and ln_T interpolations for nice plots
     interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
     interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
-    
     if plot_nccs:
         for ncc in ncc_dict.keys():
             if ncc_dict[ncc]['interp_func'] is None:
@@ -735,7 +640,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             if ncc == 'H':
                 interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff ) * (1/H_nd), **interp_kwargs )
             elif ncc == 'grad_s0':
-                interp_func = interp1d(r_nd, (L_nd/s_nd) * grad_s, **interp_kwargs)
+                interp_func = interp1d(r_nd, (L_nd/s_nd) * dmr.grad_s, **interp_kwargs)
             elif ncc in ['ln_T0', 'ln_rho0', 'grad_s0']:
                 interp_func = interpolations[ncc]
     
@@ -754,6 +659,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
 
+    #Make some plots of stratification, hydrostatic equilibrium, etc.
     plt.figure()
     N2s = []
     HSEs = []
@@ -786,8 +692,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     EOS_dedalus = np.concatenate(EOSs, axis=-1).ravel()
     grad_ln_rho0_dedalus = np.concatenate(grad_ln_rho0s, axis=-1).ravel()
     grad_ln_pom0_dedalus = np.concatenate(grad_ln_pom0s, axis=-1).ravel()
-    plt.plot(r_nd, tau_nd**2*N2_mesa, label='mesa', c='k')
-    plt.plot(r_nd, -tau_nd**2*N2_mesa, c='k', ls='--')
+    plt.plot(r_nd, tau_nd**2*N2, label='mesa', c='k')
+    plt.plot(r_nd, -tau_nd**2*N2, c='k', ls='--')
 #    plt.plot(r_nd, atmo['N2'](r_nd), label='atmosphere', c='b')
 #    plt.plot(r_nd, -atmo['N2'](r_nd), c='b', ls='--')
     plt.plot(r_dedalus, N2_dedalus, label='dedalus', c='g')
@@ -829,21 +735,17 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 #    plt.show()
 
 
-       
+    #Fixup heating term to make simulation energy-neutral.       
     integral = 0
     for bn in bases.keys():
         integral += d3.integ(ncc_dict['Q']['field_{}'.format(bn)])
     C = integral.evaluate()['g']
     vol = (4/3) * np.pi * (r_bound_nd[-1])**3
-#    C = d3.integ(ncc_dict['Q']['field_B']).evaluate()['g']
-#    vol = (4/3)*np.pi * bases['B'].radius**3
     adj = C / vol
     logger.info('adjusting dLdt for energy conservation; subtracting {} from H'.format(adj))
     for bn in bases.keys():
         ncc_dict['Q']['field_{}'.format(bn)]['g'] -= adj 
 
-#    dLdt = d3.integ(4*np.pi*ncc_dict['H']['field_B']).evaluate()['g']
-    
     with h5py.File('{:s}'.format(out_file), 'w') as f:
         # Save output fields.
         # slicing preserves dimensionality
@@ -877,8 +779,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         f['m_nd'].attrs['units'] = str(m_nd.unit)
         f['s_nd'] = s_nd
         f['s_nd'].attrs['units'] = str(s_nd.unit)
-        f['P_r0']  = P[0]
-        f['P_r0'].attrs['units']  = str(P[0].unit)
+        f['P_r0']  = dmr.P[0]
+        f['P_r0'].attrs['units']  = str(dmr.P[0].unit)
         f['H_nd']  = H_nd
         f['H_nd'].attrs['units']  = str(H_nd.unit)
         f['H0']  = H0
@@ -893,8 +795,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         f['r_mesa'].attrs['units'] = str(r.unit)
         f['N2_mesa'] = N2
         f['N2_mesa'].attrs['units'] = str(N2.unit)
-        f['S1_mesa'] = lamb_freq(1)
-        f['S1_mesa'].attrs['units'] = str(lamb_freq(1).unit)
+        f['S1_mesa'] = dmr.lamb_freq(1)
+        f['S1_mesa'].attrs['units'] = str(dmr.lamb_freq(1).unit)
         f['g_mesa'] = g 
         f['g_mesa'].attrs['units'] = str(g.unit)
         f['cp_mesa'] = cp
