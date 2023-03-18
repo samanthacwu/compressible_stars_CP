@@ -28,6 +28,18 @@ import compstar.defaults.config as config
 from scipy.sparse import linalg as spla
 from scipy import sparse
 
+def SBDF2_gamma_eff(gam, om, dt):
+    """ Calculates the effective value of a damped wave that is explicitly timestepped via SBDF2. """
+    # \tilde{omega}
+    omega_tilde = om - 1j*gam
+    # A_+
+    A_plus = (2 + np.sqrt(1-2*1j*omega_tilde*dt)) / (3 + 2*1j*omega_tilde*dt)
+    #\tilde{omega}_{eff}
+    omega_tilde_eff = (1/(-1j*dt))*np.log(A_plus)
+
+    return -omega_tilde_eff.imag, omega_tilde_eff.real
+
+
 def matrix_info(subproblem):
     pass
 #    if not os.path.exists('evp_matrices'):
