@@ -1,9 +1,0 @@
-[parameters]
-ntheta = 128
-nrB = 128
-nrS = 96
-Re = 4e3
-buoy_end_time = 1e4
-ncc_file = ncc_creation/nccs_40msol/ballShell_nccs_B128_S96_Re4e3_de1.5.h5
-wall_hours = 119.5
-CFL_max_r = 1.05

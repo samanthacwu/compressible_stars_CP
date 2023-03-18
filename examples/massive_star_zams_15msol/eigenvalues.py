@@ -24,7 +24,9 @@ from d3_stars.simulations.evp_functions import StellarEVP
 if __name__ == '__main__':
     eigenvalues = StellarEVP()
     for ell in eigenvalues.ells:
+        logger.info('solving EVP for ell = {}'.format(ell))
         eigenvalues.solve(ell)
         eigenvalues.check_eigen()
         eigenvalues.output()
-        eigenvalues.get_duals()
+        eigenvalues.get_duals(max_cond=1e10, ell=ell)
+        logger.info('solved EVP for ell = {}'.format(ell))

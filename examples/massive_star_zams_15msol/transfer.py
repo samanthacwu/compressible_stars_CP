@@ -1,7 +1,8 @@
 """
-Calculate transfer function to get horizontal velocities at the top of the simulation.
-
+Calculate transfer function to get surface response of convective forcing.
+Outputs a function which, when multiplied by sqrt(wave flux), gives you the surface response.
 """
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import h5py
@@ -10,177 +11,152 @@ from pathlib import Path
 from scipy.interpolate import interp1d
 from configparser import ConfigParser
 
+import d3_stars
+from compstar.defaults import config
+from compstar.dedalus.parser import name_star
+from compstar.dedalus.star_builder import find_core_cz_radius
+from compstar.dedalus.evp_functions import calculate_refined_transfer, SBDF2_gamma_eff
 
-from d3_stars.simulations.anelastic_functions import make_bases
-from d3_stars.simulations.parser import parse_std_config
+plot = False
 
-config, raw_config, star_dir, star_file = parse_std_config('controls.cfg')
-Lmax = config['lmax']
-
-with h5py.File(star_file, 'r') as f:
-    stitch_radii = f['r_stitch'][()]
-    radius = f['r_outer'][()]
-
-resolutions = []
-for nr in config['nr']:
-    resolutions.append((1, 1, nr))
-dealias = 1
-coords, dist, bases, bases_keys = make_bases(resolutions, stitch_radii, radius, dealias=dealias, dtype=np.complex128, mesh=None)
-
-with h5py.File(star_file, 'r') as f:
-    tau_s = f['tau_nd'][()]
-    print(tau_s)
-    tau = tau_s/(60*60*24)
+#Grab relevant information about the simulation stratification.
+out_dir, out_file = name_star()
+with h5py.File(out_file, 'r') as f:
+    L_nd = f['L_nd'][()]
     rs = []
     rhos = []
-    for bk in bases_keys:
+    chi_rads = []
+    N2s = []
+    gamma = f['gamma1'][()]
+    for bk in ['B', 'S1', 'S2']:
         rs.append(f['r_{}'.format(bk)][()])
-        rhos.append(np.exp(f['ln_rho_{}'.format(bk)][()]))
-    r = np.concatenate(rs, axis=-1)
-    rho = np.concatenate(rhos, axis=-1)
-rho = interpolate.interp1d(r.flatten(), rho.flatten())
+        rhos.append(np.exp(f['ln_rho0_{}'.format(bk)][()]))
+        chi_rads.append(f['chi_rad_{}'.format(bk)][()])
+        #N^2 = -g[2] * grad_s[2] / cp
+        N2s.append(-f['g_{}'.format(bk)][2,:]*f['grad_s0_{}'.format(bk)][2,:]/f['Cp'][()])
+    rs = np.concatenate(rs, axis=-1)
+    rhos = np.concatenate(rhos, axis=-1)
+    chi_rads = np.concatenate(chi_rads, axis=-1)
+    N2s = np.concatenate(N2s, axis=-1)
+rho = interpolate.interp1d(rs.flatten(), rhos.flatten())
+chi_rad = interpolate.interp1d(rs.flatten(), chi_rads.flatten())
+N2 = interpolate.interp1d(rs.flatten(), N2s.flatten())
 
-def transfer_function(om, values, u_dual, u_outer, r_range):
-    #The none's expand dims
-    #dimensionality is [omega', rf, omega]
-    dr = np.gradient(r_range)[None, :, None]
-    r_range         = r_range[None, :, None]
-    om                   = om[None, None, :] 
-    values           = values[:, None, None]
-    u_dual           = u_dual[:, :,    None]
-    u_outer         = u_outer[:, None, None]
-    T = (2*np.pi**2*rho(r_range)*r_range**3*om)*u_dual*u_outer/(om-values)
-    return np.sum(np.abs(np.sum(T*dr, axis=0)), axis=0)/np.sum(dr)
+if __name__ == '__main__':
 
-def refine_peaks(om, T, *args):
-    i_peaks = []
-    for i in range(1,len(om)-1):
-        if (T[i]>T[i-1]) and (T[i]>T[i+1]):
-            delta_m = np.abs(T[i]-T[i-1])/T[i]
-            delta_p = np.abs(T[i]-T[i+1])/T[i]
-            if delta_m > 0.01 or delta_p > 0.01:
-                i_peaks.append(i)
-
-    print("number of peaks: %i" %(len(i_peaks)))
-
-    om_new = np.array([])
-    for i in i_peaks:
-        om_low = om[i-1]
-        om_high = om[i+1]
-        om_new = np.concatenate([om_new,np.linspace(om_low,om_high,10)])
-
-    T_new = transfer_function(om_new, values, *args)
-
-    om = np.concatenate([om,om_new])
-    T = np.concatenate([T,T_new])
-
-    om, sort = np.unique(om, return_index=True)
-    T = T[sort]
-
-    return om, T, len(i_peaks)
+    timestep = 0.073
+    #timestep = 0.098
 
 
-ell_list = np.arange(1, Lmax+1)
-print(ell_list)
+    # Generalized logic for getting forcing radius.
+    package_path = Path(d3_stars.__file__).resolve().parent
+    stock_path = package_path.joinpath('stock_models')
+    if os.path.exists(config.star['path']):
+        mesa_file_path = config.star['path']
+    else:
+        stock_file_path = stock_path.joinpath(config.star['path'])
+        if os.path.exists(stock_file_path):
+            mesa_file_path = str(stock_file_path)
+        else:
+            raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
+    core_cz_radius = find_core_cz_radius(mesa_file_path)
+    min_forcing_radius = 0.97 * core_cz_radius / L_nd
+    max_forcing_radius = 1.03 * core_cz_radius / L_nd
+    N2_force_max = N2(max_forcing_radius)
+    N2_max = N2s.max()
+    N2_adjust = np.sqrt(N2_max/N2_force_max)
+#    min_forcing_radius = 0.5 * core_cz_radius / L_nd
+#    max_forcing_radius = 1.04 * core_cz_radius / L_nd
 
-dir = 'eigenvalues'
 
-for ell in ell_list:
-    plt.figure()
-    print("ell = %i" % ell)
+    #Calculate transfer functions
+    Lmax = config.eigenvalue['Lmax']
+    ell_list = np.arange(1, Lmax+1)
+    eig_dir = 'eigenvalues'
+    for ell in ell_list:
+        print("ell = %i" % ell)
 
-    xmin = 1e99
-    xmax = -1e99
+        #Read in eigenfunction values.
+        #Require: eigenvalues, horizontal duals, transfer surface (s1), optical depths
 
-    transfers = []
-    oms = []
-    depth_list = [10, 1, 0.1, 0.05, 0.01]
-    for j, d_filter in enumerate(depth_list):
-        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'r') as f:
+        with h5py.File('{:s}/duals_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'r') as f:
             velocity_duals = f['velocity_duals'][()]
-            values = f['good_evalues'][()]
-            values_inv_day = f['good_evalues_inv_day'][()]
-            velocity_eigenfunctions = f['velocity_eigenfunctions'][()]
-            s1_amplitudes = f['s1_amplitudes'][()]
+            values = raw_values = f['good_evalues'][()]
+            s1_amplitudes = f['s1_amplitudes'][()].squeeze()
             depths = f['depths'][()]
+            discard = int(f['discard'][()]) #number of modes to discard
+            tau_nd = f['tau_nd'][()]
+
+            eff_evalues = []
+            for ev in values:
+                gamma_eff, omega_eff = SBDF2_gamma_eff(-ev.imag, np.abs(ev.real), timestep)
+    #            gamma_eff, omega_eff = -ev.imag, np.abs(ev.real)
+                if ev.real < 0:
+                    eff_evalues.append(-omega_eff - 1j*gamma_eff)
+                else:
+                    eff_evalues.append(omega_eff - 1j*gamma_eff)
+            values = np.array(eff_evalues)
+            print('effective modes in Hz: {}'.format(values/tau_nd))
+
 
             rs = []
-            for bk in bases_keys:
+            for bk in ['B', 'S1', 'S2']:
                 rs.append(f['r_{}'.format(bk)][()].flatten())
             r = np.concatenate(rs)
             smooth_oms = f['smooth_oms'][()]
             smooth_depths = f['smooth_depths'][()]
             depthfunc = interp1d(smooth_oms, smooth_depths, bounds_error=False, fill_value='extrapolate')
+        print(depths)
 
-        if j == 0:
-            for value in values:
-                plt.axvline(value.real/(2*np.pi), c='k')
+        #Construct frequency grid for evaluation
+        om0 = values.real[-1]#np.min(np.abs(values.real))*1
+        if discard == 0:
+            om0 = values.real[-1]#np.min(np.abs(values.real))*1
+        else:
+            om0 = values.real[-discard]#np.min(np.abs(values.real))*1
+#        discard = values.size-np.sum(depths < 1e-2)
+        discard = 0#values.size-np.sum(depths < 1e-2)
+        om1 = np.max(values.real)*1.25
+        print(om0, om1)
 
-        good = depths < d_filter
+        om = np.logspace(np.log10(om0), np.log10(om1), num=3000, endpoint=True)
 
-        values = values[good]
-        s1_amplitudes = s1_amplitudes[good]
-        velocity_eigenfunctions = velocity_eigenfunctions[good]
-        velocity_duals = velocity_duals[good]
-        print('good values: {}'.format(values))
+        #Get forcing radius and dual basis evaluated there.
+        r_range = np.linspace(min_forcing_radius, max_forcing_radius, num=200, endpoint=True)
+#        r_range = np.array([min_forcing_radius, 1.0001*min_forcing_radius])
+        dual_index = 1
+        uh_dual_interp = interpolate.interp1d(r, velocity_duals[:,dual_index,:], axis=-1)(r_range) #m == 1 solve; recall there is some power in utheta, too
 
-        om0 = values.real[-1]
-        om1 = values.real[0]*1.1
-        if om0 < xmin: xmin = om0
-        if om1 > xmax: xmax = om1
-        if j == 0:
-            om0/= 10**(1)
-            print(values.real[-1], om0)
-        om = np.exp( np.linspace(np.log(om0), np.log(om1), num=5000, endpoint=True) )
+        #Calculate and store transfer function
+        good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, s1_amplitudes, r_range, ell, rho, chi_rad, N2_max, gamma, discard_num=discard, plot=plot)
+#        good_T = good_T[depthfunc(good_om) <= 3] #filter only low-depth modes!
+#        good_om = good_om[depthfunc(good_om) <= 3] #filter only low-depth modes!
 
-        r0 = 1.02
-        r1 = r0 + 0.05*(r.max())
-        r_range = np.linspace(r0, r1, num=100, endpoint=True)
-#        r_range = np.linspace(r.min(), r.max(), num=100, endpoint=True)
-        uphi_dual_interp = interpolate.interp1d(r, velocity_duals[:,0,:], axis=-1)(r_range)
-        print(s1_amplitudes)
 
-        T = transfer_function(om, values, uphi_dual_interp, s1_amplitudes, r_range)
+        raw_om, raw_T = calculate_refined_transfer(om, raw_values, uh_dual_interp, s1_amplitudes, r_range, ell, rho, chi_rad, N2_max, gamma, discard_num=discard)
+#        raw_T = raw_T[depthfunc(raw_om) <= 3] #filter only low-depth modes!
+#        raw_om = raw_om[depthfunc(raw_om) <= 3] #filter only low-depth modes!
 
-        peaks = 1
-        while peaks > 0:
-            om, T, peaks = refine_peaks(om, T, uphi_dual_interp, s1_amplitudes, r_range)
+        print('N2 adjust:', N2_adjust)
+        good_T *= np.sqrt(N2_adjust)
+        raw_T  *= np.sqrt(N2_adjust)
 
-        plt.loglog(om/(2*np.pi), np.exp(-depthfunc(om))*np.abs(T)**2*om**(-13/2), lw=1+0.5*(len(depth_list)-j), label='depth filter = {}'.format(d_filter))
-        oms.append(om)
-        transfers.append(T)
+        if plot:
+            plt.figure()
+            for om in raw_values:
+                plt.axvline(om.real/(2*np.pi), lw=0.33)
+            plt.loglog(good_om/(2*np.pi), good_T, c='k')
+            plt.axvline(om0/2/np.pi)
+            plt.ylim(1e-2, 1e4)
+            plt.title('ell = {}'.format(ell))
+            plt.show()
 
-    good_om = np.sort(np.concatenate(oms))
-    good_T = np.zeros_like(good_om)
 
-    from scipy.interpolate import interp1d
-    interps = []
-    for om, T in zip(oms, transfers):
-        interps.append(interp1d(om, T, bounds_error=False, fill_value=np.inf))
+        with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(eig_dir, ell), 'w') as f:
+            f['om'] = good_om
+            f['transfer_root_lum'] = good_T 
+            f['raw_om'] = raw_om
+            f['raw_transfer_root_lum'] = raw_T 
 
-    for i, omega in enumerate(good_om):
-        vals = []
-        for f in interps:
-            vals.append(f(omega))
-        good_T[i] = np.min(vals)
 
-    with h5py.File('{:s}/transfer_ell{:03d}_eigenvalues.h5'.format(dir, ell), 'w') as f:
-        f['om'] = good_om
-        f['om_inv_day'] = good_om / tau
-        f['transfer'] = good_T
-#    print('{:.3e}'.format((np.abs(good_T)**2*good_om**(-13/2)).max()))
-    plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
-#    plt.loglog(good_om/(2*np.pi), np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
 
-    maxval = (np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2)).max()
-    plt.ylim(maxval/1e15, maxval*2)
-    plt.xlabel('frequency (sim units)')
-    plt.legend()
-    plt.title("ell = %i" % ell)
-    plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-    plt.show()
-
-plt.loglog(good_om/(2*np.pi), np.exp(-depthfunc(good_om))*np.abs(good_T)**2*good_om**(-13/2), lw=1, label='combined')
-plt.xlim(0.7*xmin/(2*np.pi), 1.2*xmax/(2*np.pi))
-plt.ylim(maxval/1e15, maxval*2)
-plt.show()
