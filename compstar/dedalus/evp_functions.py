@@ -22,7 +22,7 @@ from dedalus.core import subsystems
 from dedalus.tools.array import csr_matvec, scipy_sparse_eigs
 from .compressible_functions import SphericalCompressibleProblem
 from .parser import name_star
-import d3_stars.defaults.config as config
+import compstar.defaults.config as config
 
 
 from scipy.sparse import linalg as spla

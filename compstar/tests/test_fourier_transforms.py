@@ -6,7 +6,7 @@ from scipy.special import sph_harm
 import matplotlib.pyplot as plt
 
 import dedalus.public as d3
-from d3_stars.post.power_spectrum_functions import FourierTransformer, ShortTimeFourierTransformer
+from compstar.tools.power_spectrum_functions import FourierTransformer, ShortTimeFourierTransformer
 
 
 @pytest.mark.parametrize('N', [1000, 10000])

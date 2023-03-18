@@ -3,7 +3,7 @@ from collections import OrderedDict
 #### Default star info / stratification choices
 star = OrderedDict()
 
-#path to MESA profile to load (searchings in $PATH and  d3_stars/stock_models
+#path to MESA profile to load (searchings in $PATH and  compstar/stock_models
 star['path'] = 'zams_15Msol/LOGS/profile47.data'
 
 #basis boundaries

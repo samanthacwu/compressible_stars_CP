@@ -2,7 +2,7 @@ import os, sys
 from collections import OrderedDict
 from pathlib import Path
 from configparser import ConfigParser
-import d3_stars.defaults.config as config
+import compstar.defaults.config as config
 
 import logging
 logger = logging.getLogger(__name__)

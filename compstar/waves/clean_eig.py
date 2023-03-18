@@ -18,8 +18,8 @@ import scipy.special as ss
 import astropy.units as u
 from astropy import constants
 
-from d3_stars.simulations.star_builder import find_core_cz_radius
-from d3_stars.simulations.evp_functions import calculate_refined_transfer
+from compstar.dedalus.star_builder import find_core_cz_radius
+from compstar.dedalus.evp_functions import calculate_refined_transfer
 
 Rsun_to_cm = 6.957e10
 sigma_SB = 5.67037442e-05 #cgs

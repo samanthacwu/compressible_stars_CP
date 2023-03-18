@@ -5,7 +5,7 @@ import numpy as np
 from scipy.special import sph_harm
 
 import dedalus.public as d3
-from d3_stars.post.transforms import SHTransformer
+from compstar.tools.transforms import SHTransformer
 
 
 ntheta = 8

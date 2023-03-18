@@ -8,7 +8,7 @@ from dedalus.core.operators import convert
 import logging
 logger = logging.getLogger(__name__)
 
-import d3_stars.defaults.config as config
+import compstar.defaults.config as config
 
 def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64, mesh=None):
     """ Makes a stitched together ball and shell domains """

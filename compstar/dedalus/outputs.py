@@ -10,7 +10,7 @@ from pathlib import Path
 from configparser import ConfigParser
 
 from .parser import name_star
-from d3_stars.defaults import config
+from compstar.defaults import config
 
 import logging
 logger = logging.getLogger(__name__)

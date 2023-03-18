@@ -13,10 +13,10 @@ from astropy import units as u
 from astropy import constants
 from scipy.interpolate import interp1d
 
-import d3_stars
-from .anelastic_functions import make_bases
+import compstar 
+from .compressible_functions import make_bases
 from .parser import name_star
-import d3_stars.defaults.config as config
+import compstar.defaults.config as config
 
 import logging
 logger = logging.getLogger(__name__)
@@ -431,7 +431,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
 
-    package_path = Path(d3_stars.__file__).resolve().parent
+    package_path = Path(compstar.__file__).resolve().parent
     stock_path = package_path.joinpath('stock_models')
     mesa_file_path = None
     if os.path.exists(config.star['path']):
