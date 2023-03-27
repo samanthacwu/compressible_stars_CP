@@ -42,9 +42,9 @@ import matplotlib.colors as mcolor
 import logging
 logger = logging.getLogger(__name__)
 
-from d3_stars.defaults import config
-from d3_stars.post.power_spectrum_functions import HarmonicTimeToFreq 
-from d3_stars.simulations.parser import name_star
+from compstar.defaults import config
+from compstar.post.power_spectrum_functions import HarmonicTimeToFreq 
+from compstar.simulations.parser import name_star
 
 args = docopt(__doc__)
 res = re.compile('(.*),r=(.*)')
