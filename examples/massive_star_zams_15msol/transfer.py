@@ -15,7 +15,8 @@ import compstar
 from compstar.defaults import config
 from compstar.dedalus.parser import name_star
 from compstar.dedalus.star_builder import find_core_cz_radius
-from compstar.dedalus.evp_functions import calculate_refined_transfer, SBDF2_gamma_eff
+from compstar.dedalus.evp_functions import SBDF2_gamma_eff
+from compstar.waves.transfer import calculate_refined_transfer
 
 plot = False
 
