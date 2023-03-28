@@ -19,7 +19,7 @@ import astropy.units as u
 from astropy import constants
 
 from compstar.dedalus.star_builder import find_core_cz_radius
-from compstar.dedalus.evp_functions import calculate_refined_transfer
+from .transfer import calculate_refined_transfer
 
 Rsun_to_cm = 6.957e10
 sigma_SB = 5.67037442e-05 #cgs
