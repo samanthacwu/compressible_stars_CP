@@ -5,6 +5,7 @@ import os
 import h5py
 import numpy as np
 import dedalus.public as d3
+from scipy.interpolate import interp1d
 
 import logging
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ from dedalus.core import subsystems
 from dedalus.tools.array import csr_matvec, scipy_sparse_eigs
 from .compressible_functions import SphericalCompressibleProblem
 from .parser import name_star
+from ..waves.general import calculate_optical_depths
 from compstar.tools.general import one_to_zero, zero_to_one
 import compstar.defaults.config as config
 
@@ -188,106 +190,6 @@ def calculate_duals(vel_ef_list, bases, dist, IP=None, max_cond=None, discard_co
 
     return vel_duals, discard
 
-def calculate_optical_depths(solver, bases_keys, stitch_radii, radius, ncc_file, variables, ell=1):
-    #Calculate 'optical depths' of each mode.
-    good_omegas = solver.eigenvalues.real
-    if ncc_file is not None:
-        with h5py.File(ncc_file, 'r') as f:
-            r_stitch = f['r_stitch'][()]
-            r_outer = f['r_outer'][()]
-            tau_nd = f['tau_nd'][()]
-            m_nd = f['m_nd'][()]
-            L_nd = f['L_nd'][()]
-            T_nd = f['T_nd'][()]
-            rho_nd = f['rho_nd'][()]
-            s_nd = f['s_nd'][()]
-
-            tau_day = tau_nd/(60*60*24)
-            N2_mesa = f['N2_mesa'][()]
-            S1_mesa = f['S1_mesa'][()]
-            r_mesa = f['r_mesa'][()]
-            Re_shift = f['Re_shift'][()]
-
-    depths = []
-    if ncc_file is not None:
-        chi_rad = np.zeros_like(r_mesa)
-        for i, bn in enumerate(bases_keys):
-            local_r_inner, local_r_outer = 0, 0
-            if i == 0:
-                local_r_inner = 0
-            else:
-                local_r_inner = stitch_radii[i-1]
-            if len(bases_keys) > 1 and i < len(bases_keys) - 1:
-                local_r_outer = stitch_radii[i]
-            else:
-                local_r_outer = radius
-            r_mesa_nd = r_mesa/L_nd
-            good_r = (r_mesa_nd > local_r_inner)*(r_mesa_nd <= local_r_outer)
-            chi_rad[good_r] = interp1d(variables['r_{}'.format(bn)].flatten(), variables['chi_rad_{}'.format(bn)]['g'][0,0,:], 
-                                       bounds_error=False, fill_value='extrapolate')(r_mesa_nd[good_r])
-        chi_rad *= (L_nd**2 / tau_nd)
-
-        for om in solver.eigenvalues.real:
-            lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
-            dim_om = np.abs(om.real/tau_nd)
-            wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
-            depth_integrand = np.zeros_like(lamb_freq)
-
-            # from Shiode et al 2013 eqns 4-8 
-            # This is the low-diffusion limit
-            Lambda = np.sqrt(ell*(ell+1))
-            kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
-            v_group = (om/tau_nd) / kr_cm
-            gamma_rad = chi_rad * kr_cm**2
-
-            depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
-
-            # from Lecoanet et al 2015 eqn 12. This is the more universal function
-            k_perp = Lambda/r_mesa
-            kz = np.sqrt(-k_perp**2 + 1j*(dim_om/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2_mesa*chi_rad*k_perp**2 / dim_om**3))))
-            depth_integrand[wave_cavity] = -kz[wave_cavity].imag
-
-
-            #No optical depth in CZs, or outside of simulation domain...
-            depth_integrand[r_mesa/L_nd > r_outer] = 0
-
-            #Numpy integrate
-            opt_depth = np.trapz(depth_integrand, x=r_mesa)
-            depths.append(opt_depth)
-        
-        smooth_oms = np.logspace(np.log10(np.abs(good_omegas).min())-1, np.log10(good_omegas.max())+1, 100)
-        smooth_depths = np.zeros_like(smooth_oms)
-        # from Shiode et al 2013 eqns 4-8 
-        for i, om in enumerate(smooth_oms):
-            dim_om = np.abs(om.real/tau_nd)
-            Lambda = np.sqrt(ell*(ell+1))
-            kr_cm = np.sqrt(N2_mesa)*Lambda/(r_mesa* (om/tau_nd))
-            v_group = (om/tau_nd) / kr_cm
-            gamma_rad = chi_rad * kr_cm**2
-
-            lamb_freq = np.sqrt(ell*(ell+1) / 2) * S1_mesa
-            wave_cavity = (dim_om < np.sqrt(N2_mesa))*(dim_om < lamb_freq)
-
-            depth_integrand = np.zeros_like(gamma_rad)
-#            depth_integrand[wave_cavity] = (gamma_rad/v_group)[wave_cavity]
-
-            # from Lecoanet et al 2015 eqn 12. This is the more universal function
-            k_perp = Lambda/r_mesa
-            kz = np.sqrt(-k_perp**2 + 1j*(dim_om/(2*chi_rad))*(1 - np.sqrt(1 + 1j*4*(N2_mesa*chi_rad*k_perp**2 / dim_om**3))))
-            depth_integrand[wave_cavity] = -kz[wave_cavity].imag
-
-
-
-            #No optical depth in CZs, or outside of simulation domain...
-            depth_integrand[r_mesa/L_nd > r_outer] = 0
-
-            #Numpy integrate
-            opt_depth = np.trapz(depth_integrand, x=r_mesa)
-            smooth_depths[i] = opt_depth
-
-    return depths, smooth_oms, smooth_depths
-
-
 
 class StellarEVP():
 
@@ -428,7 +330,6 @@ class StellarEVP():
             ell = subproblem.group[1]
 
             subsystems.build_subproblem_matrices(self.solver, [sp], ['M', 'L'])
-            matrix_info(sp)
 
             self.A =  (sp.L_min @ sp.pre_right)
             self.B = -  (sp.M_min @ sp.pre_right)
@@ -482,7 +383,43 @@ class StellarEVP():
             logger.info("hires_scales = 1; skipping check_eigen()")
             return
 
-        depths, smooth_oms, smooth_depths = calculate_optical_depths(self.solver, self.bases_keys, self.stitch_radii, self.r_outer, self.ncc_file, self.namespace, ell=self.ell)
+        if self.ncc_file is not None:
+            with h5py.File(self.ncc_file, 'r') as f:
+                r_stitch = f['r_stitch'][()]
+                r_outer = f['r_outer'][()]
+                tau_nd = f['tau_nd'][()]
+                m_nd = f['m_nd'][()]
+                L_nd = f['L_nd'][()]
+                T_nd = f['T_nd'][()]
+                rho_nd = f['rho_nd'][()]
+                s_nd = f['s_nd'][()]
+
+                tau_day = tau_nd/(60*60*24)
+                N2_mesa = f['N2_mesa'][()]
+                S1_mesa = f['S1_mesa'][()]
+                r_mesa = f['r_mesa'][()]
+                r_mesa_nd = r_mesa / L_nd
+            chi_rad = np.zeros_like(r_mesa)
+            for i, bn in enumerate(self.bases_keys):
+                local_r_inner, local_r_outer = 0, 0
+                if i == 0:
+                    local_r_inner = 0
+                else:
+                    local_r_inner = self.stitch_radii[i-1]
+                if len(self.bases_keys) > 1 and i < len(self.bases_keys) - 1:
+                    local_r_outer = self.stitch_radii[i]
+                else:
+                    local_r_outer = self.r_outer
+                r_mesa_nd = r_mesa/L_nd
+                good_r = (r_mesa_nd > local_r_inner)*(r_mesa_nd <= local_r_outer)
+                chi_rad[good_r] = interp1d(self.namespace['r_{}'.format(bn)].flatten(), self.namespace['chi_rad_{}'.format(bn)]['g'][0,0,:], 
+                                           bounds_error=False, fill_value='extrapolate')(r_mesa_nd[good_r])
+            chi_rad *= (L_nd**2 / tau_nd)
+
+
+        self.depths = calculate_optical_depths(self.solver.eigenvalues.real, r_mesa, N2_mesa, S1_mesa, chi_rad, ell=self.ell)
+        self.smooth_oms = np.logspace(np.log10(np.abs(self.solver.eigenvalues.real).min())-1, np.log10(np.abs(self.solver.eigenvalues.real).max())+1, 100)
+        self.smooth_depths = calculate_optical_depths(self.smooth_oms, r_mesa, N2_mesa, S1_mesa, chi_rad, ell=self.ell)
         
         self.hires_EVP.setup_sparse_solve(self.ell)
         namespace = self.hires_EVP.problem.namespace
@@ -517,7 +454,7 @@ class StellarEVP():
             if v1.imag > 0:
                 logger.debug('skipping eigenvalue {}; spurious growth mode'.format(v1))
                 continue
-            if depth_cutoff is not None and depths[i] > depth_cutoff:
+            if depth_cutoff is not None and self.depths[i] > depth_cutoff:
                 logger.debug('skipping eigenvalue {}; diffusively dominated'.format(v1))
                 continue
 
@@ -586,8 +523,6 @@ class StellarEVP():
 
     def output(self):
         #Calculate 'optical depths' of each mode.
-        depths, smooth_oms, smooth_depths = calculate_optical_depths(self.solver, self.bases_keys, self.stitch_radii, self.r_outer, self.ncc_file, self.namespace, ell=self.ell)
-
         shape = list(self.namespace['s1_B']['c'].shape[:2])
         good = np.zeros(shape, bool)
         for i in range(shape[0]):
@@ -720,9 +655,9 @@ class StellarEVP():
                     f['pieces/full_velocity_eigenfunctions_piece_{}_{}'.format(j, bn)] = full_velocity_eigenfunctions_pieces[j][i]
             f['r'] = r
             f['rho_full'] = rho_full
-            f['depths'] = np.array(depths)
-            f['smooth_oms'] = smooth_oms
-            f['smooth_depths'] = smooth_depths
+            f['depths'] = np.array(self.depths)
+            f['smooth_oms'] = self.smooth_oms
+            f['smooth_depths'] = self.smooth_depths
             f['bruntN2'] = bruntN2
 
             #Pass through nondimensionalization
