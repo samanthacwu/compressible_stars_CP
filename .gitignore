@@ -2,3 +2,6 @@
 *.mp4
 *.o1???????
 *.pbspl1.nas.nasa.gov
+*.h5
+*.cpython*.pyc
+compstar.egg-info
