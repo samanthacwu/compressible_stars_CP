@@ -11,6 +11,8 @@ from ..tools.general import one_to_zero
 import logging
 logger = logging.getLogger(__name__)
 
+interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
+
 def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stitch=[], r_outer=1, dtype=np.float64, \
               R=1, gamma=5/3, comm=MPI.COMM_SELF, nondim_radius=1, g_nondim=1, s_motions=1):
 

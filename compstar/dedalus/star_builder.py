@@ -374,9 +374,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
                         dedalus_yvals[ind] *= (L_nd**2/tau_nd).value
                 axhline = rad_diff_cutoff*(L_nd**2/tau_nd).value
     
-            if ncc == 'H':
-                interp_func = interp1d(r_vals, ( one_to_zero(r_vals, 1.5*r_bound_nd[1], width=0.05*r_bound_nd[1])*sim_H_eff ) * (1/H_nd), **interp_kwargs )
-            elif ncc == 'grad_s0':
+            if ncc == 'grad_s0':
                 interp_func = interp1d(r_nd, (L_nd/s_nd) * dmr.grad_s, **interp_kwargs)
             elif ncc in ['ln_T0', 'ln_rho0', 'grad_s0']:
                 interp_func = interpolations[ncc]
