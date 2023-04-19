@@ -11,7 +11,12 @@ logger = logging.getLogger(__name__)
 import compstar.defaults.config as config
 
 def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64, mesh=None):
-    """ Makes a stitched together ball and shell domains """
+    """ 
+    Creates Dedalus BallBasis and ShellBasis objects for a spherical problem with adjacent radial domains.
+    The basis objects are returned in an OrderedDict, with the keys 'B' and 'S1', 'S2', etc.
+    The first basis is a BallBasis, and the rest are ShellBases.
+    TODO: generalize so that the first basis can be a ShellBasis.
+    """
     bases = OrderedDict()
     coords  = d3.SphericalCoordinates('phi', 'theta', 'r')
     dist    = d3.Distributor((coords,), mesh=mesh, dtype=dtype)
@@ -33,8 +38,38 @@ def make_bases(resolutions, stitch_radii, radius, dealias=3/2, dtype=np.float64,
     return coords, dist, bases, bases_keys
 
 class SphericalCompressibleProblem():
+    """
+    A class for setting up a Compressible Convection problem in Spherical coordinates in Dedalus.
+    """
 
-    def __init__(self, resolutions, stitch_radii, radius, ncc_file, dealias=3/2, dtype=np.float64, mesh=None, sponge=False, do_rotation=False, sponge_function=lambda r: r**2):
+    def __init__(self, resolutions, stitch_radii, radius, ncc_file, dealias=3/2, 
+                 dtype=np.float64, mesh=None, sponge=False, do_rotation=False, sponge_function=lambda r: r**2):
+        """
+        Parameters
+        ----------
+        resolutions : list of ints
+            The resolution of each radial domain. T
+            he first element is the resolution of the BallBasis, and the rest are the resolutions of the ShellBases.
+        stitch_radii : list of floats
+            The radii of the interfaces between the radial domains. 
+            The first element is the radius of the interface between the BallBasis and the first ShellBasis.
+        radius : float
+            The radial coordinate of the outer boundary of the problem.
+        ncc_file : str
+            The path to the HDF5 file containing the stellar model stratification.
+        dealias : float
+            The dealiasing factor for the problem.
+        dtype : numpy dtype
+            The data type for the problem. (float64 for IVP; complex128 for EVP)
+        mesh : list of ints
+            The processor mesh for the problem.
+        sponge : bool
+            Whether or not to use a damping "sponge" layer at the outer boundary.
+        do_rotation : bool
+            Whether or not to include the Coriolis force in the problem.
+        sponge_function : function
+            A function specifying the shape of the damping layer at the outer boundary.
+        """
         self.stitch_radii = stitch_radii
         self.radius = radius
         self.ncc_file = ncc_file
@@ -49,7 +84,7 @@ class SphericalCompressibleProblem():
         self.bases = bases
         self.bases_keys = bases_keys
 
-
+        # Problem fields which will be needed on each basis.
         self.vec_fields = ['u', ]
         self.scalar_fields = ['ln_rho1', 's1', 'Q', 'ones'] 
         self.vec_taus = ['tau_u']
@@ -62,6 +97,10 @@ class SphericalCompressibleProblem():
         self.namespace = OrderedDict()
 
     def make_fields(self, vec_fields=[], scalar_fields=[], vec_nccs=[], scalar_nccs=[]):
+        """
+        Creates Dedalus Fields for the problem.
+        Can specify additional fields to be created on top of the default fields.
+        """
         self.vec_fields += vec_fields
         self.scalar_fields += scalar_fields
         self.vec_nccs += vec_nccs
@@ -79,6 +118,7 @@ class SphericalCompressibleProblem():
         self.namespace['one'] = one = d3.Grid(one)
 
         for basis_number, bn in enumerate(self.bases.keys()):
+            # Get basis and grid coordinates
             basis = self.bases[bn]
             phi, theta, r = basis.local_grids(basis.dealias)
             phi1, theta1, r1 = basis.local_grids((1,1,1))
@@ -95,7 +135,7 @@ class SphericalCompressibleProblem():
                 logger.debug('creating scalar field {}'.format(key))
                 self.namespace[key] = self.dist.Field(name=key, bases=basis)
 
-            #Taus
+            #Define tau fields
             S2_basis = basis.S2_basis()
             tau_names = []
             if type(basis) == d3.BallBasis:
@@ -112,7 +152,7 @@ class SphericalCompressibleProblem():
                     logger.debug('creating scalar tau {}'.format(key))
                     self.namespace[key] = self.dist.Field(name=key, bases=S2_basis)
             
-            #Define problem NCCs
+            #Define problem NCC fields
             for fn in self.vec_nccs:
                 key = '{}_{}'.format(fn, bn)
                 logger.debug('creating vector NCC {}'.format(key))
@@ -132,7 +172,7 @@ class SphericalCompressibleProblem():
             if self.sponge:
                 self.namespace['sponge_{}'.format(bn)]['g'] = self.sponge_function(r1)
 
-            #Define unit vectors
+            #Define both spherical and cartesian unit vectors.
             for fn in self.sphere_unit_vectors:
                 logger.debug('creating unit vector field {}'.format(key))
                 self.namespace[fn] = self.dist.VectorField(self.coords, name=fn)
@@ -144,40 +184,43 @@ class SphericalCompressibleProblem():
                 key = '{}_{}'.format(fn, bn)
                 logger.debug('creating unit vector field {}'.format(key))
                 self.namespace[key] = self.dist.VectorField(self.coords, name=key, bases=basis)
-
-
             self.namespace['ex_{}'.format(bn)]['g'][0] = -np.sin(phi1)
             self.namespace['ex_{}'.format(bn)]['g'][1] = np.cos(theta1)*np.cos(phi1)
             self.namespace['ex_{}'.format(bn)]['g'][2] = np.sin(theta1)*np.cos(phi1)
-
             self.namespace['ey_{}'.format(bn)]['g'][0] = np.cos(phi1)
             self.namespace['ey_{}'.format(bn)]['g'][1] = np.cos(theta1)*np.sin(phi1)
             self.namespace['ey_{}'.format(bn)]['g'][2] = np.sin(theta1)*np.sin(phi1)
-
             self.namespace['ez_{}'.format(bn)]['g'][0] = 0
             self.namespace['ez_{}'.format(bn)]['g'][1] = -np.sin(theta1)
             self.namespace['ez_{}'.format(bn)]['g'][2] =  np.cos(theta1)
 
+            # Define fields for problem constants.
             if bn == 'B':
                 self.namespace['gamma'] = gamma = self.dist.Field(name='gamma')
                 self.namespace['R_gas'] = R_gas = self.dist.Field(name='R_gas')
                 self.namespace['Cp'] = Cp = self.dist.Field(name='Cp')
                 self.namespace['Cv'] = Cv = self.dist.Field(name='Cv')
             
+            # Grid-lock some fields.
             for k in ['ex', 'ey', 'ez']:
                 self.namespace['{}_{}'.format(k, bn)] = d3.Grid(self.namespace['{}_{}'.format(k, bn)]).evaluate()
         return self.namespace
 
     def set_substitutions(self, EVP=False):
-        """ Sets problem substitutions; must be run after self.fill_fields() """
+        """ 
+        Sets problem substitutions; must be run after self.fill_fields().
 
+        Note: most of the logic that makes a simulation a compressible simulation is contained in this function.
+        TODO: make this function more modular.
+        """
         if not self.fields_filled:
             raise ValueError("Must fill fields before setting substitutions")
 
         for basis_number, bn in enumerate(self.bases.keys()):
             basis = self.bases[bn]
 
-            #Grab various important fields
+            # Grab various important fields
+            #TODO: clean this up using SimpleNamespace.
             u = self.namespace['u_{}'.format(bn)]
             ln_rho1 = self.namespace['ln_rho1_{}'.format(bn)]
             s1 = self.namespace['s1_{}'.format(bn)]
@@ -206,7 +249,7 @@ class SphericalCompressibleProblem():
             etheta = self.namespace['etheta']
             rvec = self.namespace['rvec_{}'.format(bn)]
 
-
+            # Calculate background pressure from fields we have.
             self.namespace['P0_{}'.format(bn)] = P0 = (rho0*pom0)
 
             #Make a 'ones' field for broadcasting scalars or radial fields to full basis domain
@@ -232,7 +275,8 @@ class SphericalCompressibleProblem():
                 self.namespace['taus_u_{}'.format(bn)] = taus_u = lift_fn(self.namespace['tau_u1_{}'.format(bn)], -1) + lift_fn(self.namespace['tau_u2_{}'.format(bn)], -2)
                 self.namespace['taus_s_{}'.format(bn)] = taus_s = lift_fn(self.namespace['tau_s1_{}'.format(bn)], -1) + lift_fn(self.namespace['tau_s2_{}'.format(bn)], -2)
 
-            #Lock a bunch of fields onto the grid.
+            #Lock a bunch of fields onto the grid. This reduces the number of transforms taken and speeds things up.
+            # TODO: make this more modular, make this shorter.
 
             #These fields are coming to the grid:
             grid_u = d3.Grid(u)
@@ -266,9 +310,9 @@ class SphericalCompressibleProblem():
             self.namespace['grid_g_phi_{}'.format(bn)] = grid_g_phi = d3.Grid(ones*g_phi)
 
             for fname in ['rho0', 'ln_rho0', 'grad_ln_rho0', 's0', 'grad_s0', 'pom0', 'grad_pom0', 'g', 'chi_rad', 'grad_chi_rad', 'kappa_rad', 'grad_kappa_rad', 'inv_pom0', 'nu_diff', 'neg_one', 'eye', 'P0']:
-                self.namespace['grid_{}_{}'.format(fname, bn)].name = 'grid_{}_{}'.format(fname, bn)
+                self.namespace['grid_{}_{}'.format(fname, bn)].name = 'grid_{}_{}'.format(fname, bn) #attach a name to the fields.
 
-
+            # Define thermodynamic constants
             if bn == 'B':
                 gamma = self.namespace['gamma']
                 R_gas = self.namespace['R_gas']
@@ -285,6 +329,7 @@ class SphericalCompressibleProblem():
                 for fname in ['cp', 'cp_div_R', 'R_div_cp', 'inv_cp', 'R', 'gamma', 'inv_gamma']:
                     self.namespace['grid_{}'.format(fname)].name = 'grid_{}'.format(fname)
 
+            # Wrapper for RHS laplacian to reduce transforms.
             lap_domain = d3.lap(s1).domain
             self.namespace['lap_C_{}'.format(bn)] = lap_C = lambda A: convert(A, lap_domain.bases)
 
@@ -304,12 +349,10 @@ class SphericalCompressibleProblem():
             self.namespace['ln_rho_full_{}'.format(bn)] = ln_rho_full = (grid_ln_rho0 + ln_rho1)
             self.namespace['grad_ln_rho_full_{}'.format(bn)] = grad_ln_rho_full = grid_grad_ln_rho0 + grid_grad_ln_rho1
             self.namespace['s_full_{}'.format(bn)] = s_full = grid_s0 + grid_s1
-#            self.namespace['P_full_{}'.format(bn)] = P_full = grid_P0*np.exp(grid_gamma*(s1*grid_inv_cp + grid_ln_rho1))
             self.namespace['P_full_{}'.format(bn)] = P_full = np.exp(grid_gamma*(s_full*grid_inv_cp + grid_ln_rho1 + grid_ln_rho0))
             self.namespace['grad_s_full_{}'.format(bn)] = grad_s_full = grid_grad_s0 + grid_grad_s1
             self.namespace['enthalpy_{}'.format(bn)] = enthalpy = grid_cp_div_R*P_full
             self.namespace['enthalpy_fluc_{}'.format(bn)] = enthalpy_fluc = enthalpy - d3.Grid(grid_cp_div_R*grid_P0)
-
 
             #Linear Pomega = R * T
             self.namespace['pom1_over_pom0_{}'.format(bn)] = pom1_over_pom0 = gamma*(s1/Cp + ((gamma-1)/gamma)*ln_rho1)
@@ -317,7 +360,7 @@ class SphericalCompressibleProblem():
             self.namespace['pom1_{}'.format(bn)] = pom1 = pom0 * pom1_over_pom0
             self.namespace['grad_pom1_{}'.format(bn)] = grad_pom1 = d3.grad(pom1)#grad_pom0*pom1_over_pom0 + pom0*grad_pom1_over_pom0
 
-            #RHS terms
+            #RHS versions of some of the above
             self.namespace['pom1_over_pom0_RHS_{}'.format(bn)] = pom1_over_pom0_RHS = grid_gamma*(grid_s1*grid_inv_cp + grid_R_div_cp*grid_ln_rho1)
             self.namespace['pom1_RHS_{}'.format(bn)] = pom1_RHS = grid_pom0 * pom1_over_pom0_RHS
             self.namespace['grad_pom1_over_pom0_RHS_{}'.format(bn)] = grad_pom1_over_pom0_RHS = grid_gamma*(grad_s1*grid_inv_cp + grid_R_div_cp*grad_ln_rho1)
@@ -325,29 +368,30 @@ class SphericalCompressibleProblem():
             self.namespace['grad_pom1_RHS_{}'.format(bn)] = grad_pom1_RHS = grid_grad_pom0*pom1_over_pom0_RHS + grid_pom0*grad_pom1_over_pom0_RHS
             self.namespace['inv_pom0_times_lap_pom1_RHS_{}'.format(bn)] = inv_pom0_times_lap_pom1_RHS = lap_pom1_over_pom0_RHS + 2 * grid_inv_pom0 * grid_grad_pom0 @ grad_pom1_over_pom0_RHS + d3.Grid(d3.lap(ones*pom0)) * grid_inv_pom0 *  pom1_over_pom0_RHS
 
-            #Full pomega subs
+            #full fluctuations of pomega around the background
             self.namespace['pom_fluc_over_pom0_{}'.format(bn)] = pom_fluc_over_pom0 = np.exp(pom1_over_pom0_RHS) + neg_one 
             self.namespace['pom_fluc_{}'.format(bn)] = pom_fluc = grid_pom0*pom_fluc_over_pom0
             self.namespace['grad_pom_fluc_{}'.format(bn)] = grad_pom_fluc = grid_grad_pom0*pom_fluc_over_pom0 + (pom_fluc_over_pom0 + ones)*grid_pom0*grad_pom1_over_pom0_RHS
             self.namespace['lap_pom_fluc_{}'.format(bn)] = lap_pom_fluc = d3.lap(pom_fluc)
 
-            #Nonlinear Pomega = R*T
+            #Nonlinear part of Pomega = R*T
             self.namespace['pom2_over_pom0_{}'.format(bn)] = pom2_over_pom0 = pom_fluc_over_pom0 - pom1_over_pom0_RHS
             self.namespace['pom2_{}'.format(bn)] = pom2 = grid_pom0*pom2_over_pom0
             self.namespace['grad_pom2_{}'.format(bn)] = grad_pom2 = d3.grad(pom2)
 
+            # Full pomega, including background and fluctuations.
             self.namespace['grad_pom_full_{}'.format(bn)] = grad_pom_full = (grid_grad_pom0 + grad_pom_fluc)
             self.namespace['pom_full_{}'.format(bn)] = pom_full = (grid_pom0 + pom_fluc)
             self.namespace['inv_pom_full_{}'.format(bn)] = inv_pom_full = d3.Grid(1/pom_full)
             self.namespace['grad_pom2_over_pom0_{}'.format(bn)] = grad_pom2_over_pom0 = grad_pom1_over_pom0_RHS*pom_fluc_over_pom0
 
-            #Equation of state goodness
+            #Equation of state (& how well fluctuations satisfy it)
             self.namespace['EOS_{}'.format(bn)]    = EOS = (s_full)*grid_inv_cp - ( grid_inv_gamma * (np.log(pom_full) - np.log(grid_R)) - grid_R_div_cp * ln_rho_full )
             self.namespace['EOS_bg_{}'.format(bn)] = EOS_bg = d3.Grid(ones*(s0/Cp - ( grid_inv_gamma * (np.log(pom0) - np.log(R_gas)) - ((gamma-1)/(gamma)) * ln_rho0)))
             self.namespace['EOS_goodness_{}'.format(bn)]    = EOS_good_ = np.sqrt(EOS**2)
             self.namespace['EOS_goodness_bg_{}'.format(bn)] = EOS_good_bg = d3.Grid(np.sqrt(EOS_bg**2))
 
-            #Momentum thermo / hydrostatic terms:
+            #Momentum equation thermodynamic / hydrostatic terms:
             self.namespace['gradP0_div_rho0_{}'.format(bn)]         = gradP0_div_rho0 = gamma*pom0*(grad_ln_rho0 + grad_s0*grid_inv_cp)
             self.namespace['background_HSE_{}'.format(bn)]          = background_HSE = gradP0_div_rho0 - g
             self.namespace['linear_gradP_div_rho_{}'.format(bn)]    = linear_gradP_div_rho    = gamma*pom0*(grad_ln_rho1 + grad_s1/Cp) + g*pom1_over_pom0
@@ -355,13 +399,12 @@ class SphericalCompressibleProblem():
 
             #Radiative diffusivity -- we model flux as kappa * grad T1 (not including nonlinear part of T; it's low mach so it's fine.
             self.namespace['F_cond_{}'.format(bn)] = F_cond = -1*kappa_rad*((grad_pom1_RHS)/R_gas)
-          
-
             self.namespace['div_rad_flux_pt1_LHS_{}'.format(bn)] = div_rad_flux_pt1_LHS = grad_kappa_rad@(grad_pom1)
             self.namespace['div_rad_flux_pt2_LHS_{}'.format(bn)] = div_rad_flux_pt2_LHS = kappa_rad * d3.lap(pom1)
             self.namespace['div_rad_flux_pt1_{}'.format(bn)] = div_rad_flux_pt1 = grid_grad_kappa_rad@(grad_pom1_RHS)
             self.namespace['div_rad_flux_pt2_{}'.format(bn)] = div_rad_flux_pt2 = grid_kappa_rad * d3.lap(pom1_RHS)
 
+            #TODO: Clean up this logic so that it's more obvious what's happening in IVP vs EVP. It's right but confusing.
             if EVP:
                 diff_factor = 1
                 self.namespace['div_rad_flux_L_{}'.format(bn)] = div_rad_flux_L = (diff_factor/P0) * (div_rad_flux_pt1_LHS + div_rad_flux_pt2_LHS)
@@ -371,7 +414,7 @@ class SphericalCompressibleProblem():
             self.namespace['full_div_rad_flux_pt1_{}'.format(bn)] = full_div_rad_flux_pt1 =   d3.Grid(1/P_full) * (div_rad_flux_pt1) #technically wrong for EVP; also set to 0 so whatever.
             self.namespace['full_div_rad_flux_pt2_{}'.format(bn)] = full_div_rad_flux_pt2 =   d3.Grid(1/P_full + d3.Grid(diff_factor*neg_one/grid_P0)) * (div_rad_flux_pt2)
 
-            # Rotation and damping terms
+            # Optional rotation and wave damping terms
             if self.do_rotation:
                 ez = self.namespace['ez_{}'.format(bn)]
                 self.namespace['rotation_term_{}'.format(bn)] = -2*self.Omega*d3.cross(ez, u)
@@ -383,11 +426,8 @@ class SphericalCompressibleProblem():
             else:
                 self.namespace['sponge_term_{}'.format(bn)] = 0
 
-            sponge_term = self.namespace['sponge_term_{}'.format(bn)]
-            rotation_term = self.namespace['rotation_term_{}'.format(bn)]
-
-
-            #The sum order matters here based on ball or shell...weird.
+            #The sum order matters here based on ball or shell...weird. Perhaps this will be fixed in the future.
+            #TODO: make this easier to read.
             energy_terms_1 = d3.Grid(lap_C(-grid_u@grid_grad_s1 + d3.Grid(grid_R/P_full)*d3.Grid(Q) + d3.Grid(grid_R*inv_pom_full)*VH + full_div_rad_flux_pt1))
             energy_terms_2 = d3.Grid(lap_C(full_div_rad_flux_pt2))
             self.namespace['energy_RHS_{}'.format(bn)] = energy_terms_1 + energy_terms_2
@@ -398,43 +438,42 @@ class SphericalCompressibleProblem():
             self.namespace['ur_{}'.format(bn)] = er@u
             self.namespace['momentum_{}'.format(bn)] = momentum = rho_full * u
             self.namespace['u_squared_{}'.format(bn)] = u_squared = u@u
-            self.namespace['KE_{}'.format(bn)] = KE = rho_full * u_squared / 2
-            self.namespace['PE_{}'.format(bn)] = PE = rho_full * grid_g_phi
-            self.namespace['IE_{}'.format(bn)] = IE = d3.Grid((P_full)*d3.Grid(Cv/R_gas).evaluate())
-            self.namespace['PE0_{}'.format(bn)] = PE0 = d3.Grid(rho0 * g_phi)
-            self.namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(grid_P0*(Cv/R_gas))
-            self.namespace['PE1_{}'.format(bn)] = PE1 = PE + d3.Grid(-PE0*ones)
-            self.namespace['IE1_{}'.format(bn)] = IE1 = IE + d3.Grid(-IE0*ones)
-            self.namespace['TotE_{}'.format(bn)] = KE + PE + IE
-            self.namespace['FlucE_{}'.format(bn)] = KE + PE1 + IE1
-            self.namespace['FlucE_linear_{}'.format(bn)] = rho0*(Cv*pom1/R_gas + Cv*pom0*ln_rho1/R_gas + g_phi*ln_rho1)
-            self.namespace['FlucE_linear_RHS_{}'.format(bn)] = grid_rho0*(grid_cv_div_R*pom1_RHS + d3.Grid(grid_g_phi + grid_cv_div_R*grid_pom0)*ln_rho1)
-            self.namespace['Re_{}'.format(bn)] = np.sqrt(u_squared) * d3.Grid(1/nu_diff)
-            self.namespace['Ma_{}'.format(bn)] = np.sqrt(u_squared) / np.sqrt(pom_full) 
-            self.namespace['L_{}'.format(bn)] = d3.cross(rvec, momentum)
+            self.namespace['KE_{}'.format(bn)] = KE = rho_full * u_squared / 2 #kinetic energy
+            self.namespace['PE_{}'.format(bn)] = PE = rho_full * grid_g_phi    #gravitational potential energy
+            self.namespace['IE_{}'.format(bn)] = IE = d3.Grid((P_full)*d3.Grid(Cv/R_gas).evaluate()) #internal energy
+            self.namespace['PE0_{}'.format(bn)] = PE0 = d3.Grid(rho0 * g_phi) #gravitational potential energy (background)
+            self.namespace['IE0_{}'.format(bn)] = IE0 = d3.Grid(grid_P0*(Cv/R_gas)) #internal energy (background)
+            self.namespace['PE1_{}'.format(bn)] = PE1 = PE + d3.Grid(-PE0*ones) #gravitational potential energy (fluctuations)
+            self.namespace['IE1_{}'.format(bn)] = IE1 = IE + d3.Grid(-IE0*ones) #internal energy (fluctuations)
+            self.namespace['TotE_{}'.format(bn)] = KE + PE + IE #total energy
+            self.namespace['FlucE_{}'.format(bn)] = KE + PE1 + IE1 #total energy (fluctuations)
+            self.namespace['FlucE_linear_{}'.format(bn)] = rho0*(Cv*pom1/R_gas + Cv*pom0*ln_rho1/R_gas + g_phi*ln_rho1) #linear energy (fluctuations)
+            self.namespace['FlucE_linear_RHS_{}'.format(bn)] = grid_rho0*(grid_cv_div_R*pom1_RHS + d3.Grid(grid_g_phi + grid_cv_div_R*grid_pom0)*ln_rho1) #linear energy (fluctuations; RHS form)
+            self.namespace['Re_{}'.format(bn)] = np.sqrt(u_squared) * d3.Grid(1/nu_diff) #Reynolds number
+            self.namespace['Ma_{}'.format(bn)] = np.sqrt(u_squared) / np.sqrt(pom_full) #Mach number
+            self.namespace['L_{}'.format(bn)] = d3.cross(rvec, momentum) #angular momentum
 
             #Fluxes
-            self.namespace['F_KE_{}'.format(bn)] = F_KE = u * KE
-            self.namespace['F_PE_{}'.format(bn)] = F_PE = u * PE
-            self.namespace['F_enth_{}'.format(bn)] = F_enth = grid_cp_div_R * momentum * pom_full
-            self.namespace['F_visc_{}'.format(bn)] = F_visc = d3.Grid(-nu_diff)*momentum@sigma_RHS
+            self.namespace['F_KE_{}'.format(bn)] = F_KE = u * KE #kinetic energy flux
+            self.namespace['F_PE_{}'.format(bn)] = F_PE = u * PE #gravitational potential energy flux
+            self.namespace['F_enth_{}'.format(bn)] = F_enth = grid_cp_div_R * momentum * pom_full #enthalpy flux
+            self.namespace['F_visc_{}'.format(bn)] = F_visc = d3.Grid(-nu_diff)*momentum@sigma_RHS #viscous flux
 
             #Waves
-            self.namespace['N2_{}'.format(bn)] = N2 = grad_s_full@d3.Grid(-g/Cp)
+            self.namespace['N2_{}'.format(bn)] = N2 = grad_s_full@d3.Grid(-g/Cp) #Brunt-Vaisala frequency squared
 
             #Source terms
-            self.namespace['Q_source_{}'.format(bn)] = Q_source = self.namespace['Q_{}'.format(bn)]
+            self.namespace['Q_source_{}'.format(bn)] = Q_source = self.namespace['Q_{}'.format(bn)] #heat source (may include radiative cooling)
 
-            self.namespace['visc_source_KE_{}'.format(bn)] = visc_source_KE = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R)
-            self.namespace['visc_source_IE_{}'.format(bn)] = visc_source_IE = (P_full/grid_R)*d3.Grid(grid_R*inv_pom_full)*VH
-            self.namespace['tot_visc_source_{}'.format(bn)] = tot_visc_source = visc_source_KE + visc_source_IE
+            self.namespace['visc_source_KE_{}'.format(bn)] = visc_source_KE = momentum @ (visc_div_stress_L_RHS + visc_div_stress_R) #viscous cooling in momentum eqn
+            self.namespace['visc_source_IE_{}'.format(bn)] = visc_source_IE = (P_full/grid_R)*d3.Grid(grid_R*inv_pom_full)*VH #viscout heating in energy eqn
+            self.namespace['tot_visc_source_{}'.format(bn)] = tot_visc_source = visc_source_KE + visc_source_IE #total viscous source term (should be zero)
 
-            self.namespace['PdV_source_KE_{}'.format(bn)] = PdV_source_KE = momentum @ (-d3.grad(P_full)/rho_full) 
-            self.namespace['PdV_source_IE_{}'.format(bn)] = PdV_source_IE =  - P_full*div_u
-            self.namespace['tot_PdV_source_{}'.format(bn)] = tot_PdV_source = PdV_source_KE + PdV_source_IE
+            self.namespace['PdV_source_KE_{}'.format(bn)] = PdV_source_KE = momentum @ (-d3.grad(P_full)/rho_full)  #pressure-volume work in momentum eqn
+            self.namespace['PdV_source_IE_{}'.format(bn)] = PdV_source_IE =  - P_full*div_u #pressure-volume work in energy eqn
+            self.namespace['tot_PdV_source_{}'.format(bn)] = tot_PdV_source = PdV_source_KE + PdV_source_IE #total pressure-volume source term (should be zero)
 
-            self.namespace['divRad_source_{}'.format(bn)] = divRad_source = (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + div_rad_flux_L)
-
+            self.namespace['divRad_source_{}'.format(bn)] = divRad_source = (P_full/grid_R)*(full_div_rad_flux_pt1 + full_div_rad_flux_pt2 + div_rad_flux_L) #energy production of radiative flux divergence
 
             self.namespace['source_KE_{}'.format(bn)] = visc_source_KE + PdV_source_KE #g term turns into dt(PE) + div(u*PE); do not include here while trying to solve for dt(KE) + div(u*KE).
             self.namespace['source_IE_{}'.format(bn)] = visc_source_IE + PdV_source_IE + Q_source + divRad_source
@@ -442,6 +481,17 @@ class SphericalCompressibleProblem():
         return self.namespace
 
     def fill_structure(self, scales=None, dimensional_Omega=None):
+        """
+        Fills dedalus fields with stellar structure from NCC file.
+
+        Parameters
+        ----------
+        scales : tuple of floats, optional
+            Scales to use for NCC loading.  If not specified, uses dealias scales.
+        dimensional_Omega : float, optional
+            Dimensional angular velocity of star. 
+            TODO: fix possible bug if not specified by do_rotation=True
+        """
         self.fields_filled = True
         logger.info('using NCC file {}'.format(self.ncc_file))
         max_dt = None
@@ -453,23 +503,25 @@ class SphericalCompressibleProblem():
             ncc_scales = scales
             if ncc_scales is None:
                 ncc_scales = basis.dealias
-            phi, theta, r = basis.local_grids(ncc_scales)
-            phi1, theta1, r1 = basis.local_grids((1,1,1))
-            # Load MESA NCC file or setup NCCs using polytrope
+
+            #Read in field shape of a vector field.
             a_vector = self.namespace['{}_{}'.format(self.vec_fields[0], bn)]
             grid_slices  = self.dist.layouts[-1].slices(a_vector.domain, ncc_scales[-1])
             a_vector.change_scales(ncc_scales)
             local_vncc_size = self.namespace['{}_{}'.format(self.vec_nccs[0], bn)]['g'].size
+            # Load MESA NCC file 
             if self.ncc_file is not None:
                 logger.info('reading NCCs from {}'.format(self.ncc_file))
                 for k in self.vec_nccs + self.scalar_nccs + ['Q', 'rho0']:
                     self.namespace['{}_{}'.format(k, bn)].change_scales(ncc_scales)
                 with h5py.File(self.ncc_file, 'r') as f:
+                    #Thermo constants.
                     self.namespace['Cp']['g'] = f['Cp'][()]
                     self.namespace['R_gas']['g'] = f['R_gas'][()]
                     self.namespace['gamma']['g'] = f['gamma1'][()]
                     self.namespace['Cv']['g'] = f['Cp'][()] - f['R_gas'][()]
                     logger.info('using Cp: {}, Cv: {}, R_gas: {}, gamma: {}'.format(self.namespace['Cp']['g'], self.namespace['Cv']['g'], self.namespace['R_gas']['g'], self.namespace['gamma']['g']))
+                    #Vectors
                     for k in self.vec_nccs:
                         self.dist.comm_cart.Barrier()
                         if '{}_{}'.format(k, bn) not in f.keys():
@@ -478,6 +530,7 @@ class SphericalCompressibleProblem():
                         if local_vncc_size > 0:
                             logger.info('reading {}_{}'.format(k, bn))
                             self.namespace['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:1,:1,grid_slices[-1]]
+                    #Scalars
                     for k in self.scalar_nccs:
                         self.dist.comm_cart.Barrier()
                         if '{}_{}'.format(k, bn) not in f.keys():
@@ -485,16 +538,15 @@ class SphericalCompressibleProblem():
                             continue
                         logger.info('reading {}_{}'.format(k, bn))
                         self.namespace['{}_{}'.format(k, bn)]['g'] = f['{}_{}'.format(k, bn)][:,:,grid_slices[-1]]
+                    #Heating and density (from logrho)
                     self.namespace['Q_{}'.format(bn)]['g']         = f['Q_{}'.format(bn)][:,:,grid_slices[-1]]
                     self.namespace['rho0_{}'.format(bn)]['g']       = np.exp(f['ln_rho0_{}'.format(bn)][:,:,grid_slices[-1]])[None,None,:]
 
-
+                    #Time scales
                     if max_dt is None:
                         max_dt = f['max_dt'][()]
-
                     if t_buoy is None:
                         t_buoy = f['tau_heat'][()]/f['tau_nd'][()]
-
                     if t_rot is None:
                         if self.do_rotation:
                             sim_tau_sec = f['tau_nd'][()] #sec / sim time
@@ -503,22 +555,21 @@ class SphericalCompressibleProblem():
                             t_rot = 1/(2*self.Omega)
                         else:
                             t_rot = np.inf
-
+                    #Damping layer
                     if self.sponge:
                         f_brunt = f['tau_nd'][()]*np.sqrt(f['N2max_sim'][()])/(2*np.pi)
                         self.namespace['sponge_{}'.format(bn)]['g'] *= f_brunt
                 for k in self.vec_nccs + self.scalar_nccs + ['rho0']:
+                    #Rescale down from dealias scales.
                     self.namespace['{}_{}'.format(k, bn)].change_scales((1,1,1))
-
             else:
                 raise NotImplementedError("Must supply star file")
-
             if self.do_rotation:
                 logger.info("Running with Coriolis Omega = {:.3e}".format(self.Omega))
-
         return self.namespace, (max_dt, t_buoy, t_rot)
 
     def get_compressible_variables(self):
+        """Make lists of compressible variables and taus for use in the IVP."""
         problem_variables = []
         for field in ['ln_rho1', 'u', 's1']:
             for basis_number, bn in enumerate(self.bases_keys):
@@ -543,6 +594,7 @@ class SphericalCompressibleProblem():
         return problem_variables + problem_taus
 
     def set_compressible_problem(self, problem):
+        """Create the dedalus ivp for the compressible equations."""
         equations = OrderedDict()
         u_BCs = OrderedDict()
         T_BCs = OrderedDict()
@@ -559,22 +611,22 @@ class SphericalCompressibleProblem():
             else:
                 raise ValueError("Unknown equation choice, plesae use 'FC_HD'")
 
+            #Boundary condition operations
             constant_U = "u_{0}(r={2}) - u_{1}(r={2}) = 0 "
             constant_s = "s1_{0}(r={2}) - s1_{1}(r={2}) = 0"
             constant_gradT = "radial(grad_pom1_over_pom0_{0}(r={2}) - grad_pom1_over_pom0_{1}(r={2})) = 0" #this makes grad(pom_fluc) continuous if s1 and ln_rho1 are also continuous.
             constant_ln_rho = "ln_rho1_{0}(r={2}) - ln_rho1_{1}(r={2}) = 0"
             constant_momentum_ang = "angular(radial(sigma_{0}(r={2}) - sigma_{1}(r={2}))) = 0"
 
-
-
             #Boundary conditions
             if type(basis) == d3.BallBasis:
                 if basis_number == len(self.bases_keys) - 1:
-                    #No shell bases
+                    #If there are no shell bases
                     u_BCs['BC_u1_{}'.format(bn)] = "radial(u_{0}(r={1})) = 0".format(bn, basis.radius)
                     u_BCs['BC_u2_{}'.format(bn)] = "angular(radial(E_{0}(r={1}))) = 0".format(bn, basis.radius)
                     T_BCs['BC_T_outer_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, basis.radius) #needed for energy conservation
                 else:
+                    #Stitch to shell basis above
                     shell_name = self.bases_keys[basis_number+1] 
                     rval = self.stitch_radii[basis_number]
                     u_BCs['BC_u2_{}'.format(bn)] = constant_U.format(bn, shell_name, rval)
@@ -589,6 +641,7 @@ class SphericalCompressibleProblem():
 
                 #Add upper BCs
                 if basis_number != len(self.bases_keys) - 1:
+                    #Stitch to basis above
                     shn = self.bases_keys[basis_number+1] 
                     rval = self.stitch_radii[basis_number]
                     u_BCs['BC_u3_vec_{}'.format(bn)] = constant_U.format(bn, shn, rval)
@@ -600,6 +653,7 @@ class SphericalCompressibleProblem():
                     T_BCs['BC_T_outer_{}'.format(bn)] = "radial(grad_pom1_{0}(r={1})) = 0".format(bn, basis.radii[1])
 
 
+        #Add equations to problem
         for bn, basis in self.bases.items():
             continuity = equations['continuity_{}'.format(bn)]
             logger.info('adding eqn "{}"'.format(continuity))
@@ -619,6 +673,7 @@ class SphericalCompressibleProblem():
             logger.info('adding BC "{}"'.format(BC))
             problem.add_equation(BC)
 
+        #Force energy conservation
         FlucE_LHS = ""
         FlucE_RHS = ""
         for basis_number, bn in enumerate(self.bases_keys):
