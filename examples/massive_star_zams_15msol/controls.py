@@ -2,13 +2,13 @@ from collections import OrderedDict
 from compstar.defaults.controls import *
 
 #### Default star info / stratification choices
-#path: path to MESA profile to load (searchings in $PATH and  d3_stars/stock_models
+#path: path to MESA profile to load (searchings in $PATH and  compstar/stock_models
 #r_bounds: basis boundaries -- Only works with L if you have core convection zone; how to generalize that?
 #nr: radial resolution(s) -> length = len(r_bounds) - 1
 star = OrderedDict()
 star['path'] = 'zams_15Msol/LOGS/profile47.data' #from stock models
-star['r_bounds'] = (0, '1.1L', '0.82R', '0.93R')
-star['nr'] = (128, 192, 64)
+star['r_bounds'] = (0, '1.10L', '1.5L')
+star['nr'] = (64, 32)
 star['smooth_h'] = True
 
 
@@ -18,7 +18,7 @@ star['smooth_h'] = True
 #ncc_cutoff: non-constant-coefficient cutoff needs to be small enough to resolve star non-constant coefficients but large enough that machine precision isn't a problem    
 numerics = OrderedDict()
 numerics['equations'] = 'FC_HD' #fully compressible hydro
-numerics['reynolds_target'] = 4e3
+numerics['reynolds_target'] = 1e3
 numerics['prandtl'] = 1
 numerics['ncc_cutoff'] = 1e-10
 numerics['N_dealias'] = 1.5
@@ -34,7 +34,7 @@ numerics['L_dealias'] = 1.5
 # tau_factor: multiply damping term by this factor.
 # A0: Initial noise amplitude.
 dynamics = OrderedDict()
-dynamics['ntheta'] = 128 
+dynamics['ntheta'] =  64
 dynamics['timestepper'] = 'SBDF2'
 dynamics['safety'] = 0.2
 dynamics['CFL_max_r'] = 1.05

@@ -277,9 +277,9 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     ln_rho_func = interpolations['ln_rho0']
     grad_ln_rho_func = interpolations['grad_ln_rho0']
     atmo = HSE_solve(c, d, bases,  grad_ln_rho_func, N2_func, F_conv_func,
-              r_outer=r_bound_nd[-1], r_stitch=stitch_radii, dtype=np.float64, \
-              R=nondim_R_gas, gamma=nondim_gamma1, comm=MPI.COMM_SELF, \
-              nondim_radius=1, g_nondim=interpolations['g'](1), s_motions=s_motions/s_nd)
+              r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
+              R=nondim_R_gas, gamma=nondim_gamma1,  \
+              nondim_radius=1)
 
     interpolations['ln_rho0'] = atmo['ln_rho']
     interpolations['Q'] = atmo['Q']
