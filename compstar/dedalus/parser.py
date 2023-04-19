@@ -1,4 +1,4 @@
-import os, sys
+import os
 from collections import OrderedDict
 from pathlib import Path
 from configparser import ConfigParser
@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def name_star(star_dir='star'):
+    """Generate a name for the star file based on the config file."""
     star_file = '{:s}/star_'.format(star_dir)
     star_file += (len(config.star['nr'])*"{}+").format(*tuple(config.star['nr']))[:-1]
     star_file += '_bounds{}-{}'.format(config.star['r_bounds'][0], config.star['r_bounds'][-1])
@@ -19,10 +20,8 @@ def name_star(star_dir='star'):
     return star_dir, star_file
 
 
-
-
-
 def parse_std_config(config_file, star_dir='star'):
+    """Parse the config file and return a dictionary of the parameters."""
     config = OrderedDict()
     raw_config = OrderedDict()
     config_file = Path(config_file)
@@ -65,7 +64,6 @@ def parse_std_config(config_file, star_dir='star'):
         else:
             config[n] = v
 
-
     for k in ['reynolds_target', 'prandtl', 'ncc_cutoff', 'n_dealias', 'l_dealias']:
         config[k] = float(config[k])
 
@@ -84,6 +82,7 @@ def parse_std_config(config_file, star_dir='star'):
 
 
 def parse_ncc_config(ncc_config_file):
+    """Parse the NCC config file and return a dictionary of the parameters."""
     ncc_config_file = Path(ncc_config_file)
     ncc_config_p = ConfigParser()
     ncc_config_p.optionxform = str
