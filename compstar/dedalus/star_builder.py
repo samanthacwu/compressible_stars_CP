@@ -1,14 +1,12 @@
-import os, sys
+import os
 from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import h5py
-from mpi4py import MPI
 import matplotlib.pyplot as plt
 import dedalus.public as d3
-import mesa_reader as mr
 
 from astropy import units as u
 from astropy import constants
@@ -27,10 +25,42 @@ logger = logging.getLogger(__name__)
 
 interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
 
-
 ### Function definitions
-def plot_ncc_figure(rvals, mesa_func, dedalus_vals, Ns, ylabel="", fig_name="", out_dir='.', zero_line=False, log=False, r_int=None, ylim=None, axhline=None, ncc_cutoff=1e-6):
-    """ Plots up a figure to compare a dedalus field to the MESA field it's based on. """
+def plot_ncc_figure(rvals, mesa_func, dedalus_vals, ylabel="", fig_name="", out_dir='.', 
+                    zero_line=False, log=False, r_int=None, ylim=None, axhline=None, Ns=None, ncc_cutoff=1e-6):
+    """ 
+    Plots a figure which compares a dedalus field and the MESA profile that the Dedalus field is based on. 
+
+    Parameters
+    ----------
+    rvals : list of arrays
+        The radial values of the dedalus field
+    mesa_func : function
+        A function which takes a radius and returns the corresponding MESA value
+    dedalus_vals : list of arrays
+        The dedalus field values
+    
+    ylabel : str
+        The label for the y-axis
+    fig_name : str
+        The name of the figure (will be saved as a png)
+    out_dir : str
+        The directory to save the figure in
+    zero_line : bool
+        Whether to plot a horizontal line at y=0
+    log : bool
+        Whether to plot the y-axis on a log scale
+    r_int : list of floats
+        The radii to plot vertical lines at
+    ylim : list of floats
+        The limits of the y-axis
+    axhline : float
+        A value to plot a horizontal line at
+    Ns : list of int
+        The number of coefficients used in the dedalus field expansion
+    ncc_cutoff : float
+        The NCC cutoff used.
+    """
     fig = plt.figure()
     ax1 = fig.add_subplot(2,1,1)
     ax2 = fig.add_subplot(2,1,2)
@@ -80,6 +110,29 @@ def plot_ncc_figure(rvals, mesa_func, dedalus_vals, Ns, ylabel="", fig_name="", 
     fig.savefig('{:s}/{}.png'.format(out_dir, fig_name), bbox_inches='tight', dpi=200)
 
 def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=False, ncc_cutoff=1e-6):
+    """
+    Given a function which returns some MESA profile as a function of nondimensional radius,
+    this function returns a dedalus field which is the Dedalus expansion of that function.
+
+    Arguments
+    ---------
+    basis : dedalus basis
+        The dedalus basis to use for the field
+    coords : dedalus coordinates
+        The dedalus coordinates to use for the field
+    dist : dedalus distributor
+        The dedalus distributor to use for the field
+    interp_func : function
+        A function which takes a radius and returns the corresponding (nondimensional) MESA value
+    Nmax : int
+        The maximum number of coefficients to use in the dedalus expansion
+    vector : bool
+        Whether the field is a vector field; if False, the field is a scalar field
+    grid_only : bool
+        If True, this field will never be transformed into coefficient space (i.e. it will always be in grid space)
+    ncc_cutoff : float
+        The NCC cutoff used.
+    """
     if grid_only:
         scales = basis.dealias
     else:
@@ -102,10 +155,25 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
     return this_field
 
 def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_filter=False):
+    """
+    This function builds the NCCs for the star, then saves them to a file.
+    TODO: This function is a bit of a mess, and should be cleaned up. It should be turned into a class.
+    TODO: Generalize this function; it is currently specific to the massive star case.
+
+    Arguments
+    ---------
+    plot_nccs : bool
+        Whether to plot the NCCs
+    grad_s_transition_default : float
+        The default value for how far the entropy gradient transition should be away from the BallBasis outer boundary
+    reapply_grad_s_filter : bool
+        Whether to reapply the zero-to-one filter after expanding the entropy gradient field.
+    """
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
 
+    # Find the path to the MESA profile file
     package_path = Path(compstar.__file__).resolve().parent
     stock_path = package_path.joinpath('stock_models')
     mesa_file_path = None
@@ -118,8 +186,9 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         else:
             raise ValueError("Cannot find MESA profile file in {} or {}".format(config.star['path'], stock_file_path))
 
+    # Read in the MESA profile
     reader = DimensionalMesaReader(mesa_file_path)
-    dmr = SimpleNamespace(**reader.structure)
+    dmr = SimpleNamespace(**reader.structure) # Turns the dictionary into a namespace so that fields can be accessed as attributes
     #make some commonly-used variables local.
     r, mass, rho, T = dmr.r, dmr.mass, dmr.rho, dmr.T
     N2, g, cp = dmr.N2, dmr.g, dmr.cp
@@ -127,6 +196,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     ### CORE CONVECTION LOGIC - lots of stuff here needs to be generalized for other types of stars.
     core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
 
+    # Get some rough MLT values.
     mlt_u = ((dmr.Luminosity / (4 * np.pi * r**2 * rho) )**(1/3)).cgs
     avg_core_u = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
     avg_core_ma = np.sum((4*np.pi*r**2*np.gradient(r)*mlt_u/dmr.csound)[r < core_cz_radius]) / (4*np.pi*core_cz_radius**3 / 3)
@@ -179,7 +249,6 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     nondim_R_gas = (dmr.R_gas / s_nd).cgs.value
     nondim_gamma1 = (dmr.gamma1[0]).value
     nondim_cp = nondim_R_gas * nondim_gamma1 / (nondim_gamma1 - 1)
-    nondim_G = (constants.G * (rho_nd * tau_nd**2)).value
     u_heat_nd = (L_nd/tau_heat) / u_nd
     Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((dmr.gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
@@ -187,13 +256,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     logger.info('m_nd/M_\odot: {:.3f}'.format((m_nd/constants.M_sun).cgs))
     logger.info('estimated mach number: {:.3e} / t_heat: {:.3e}'.format(np.sqrt(Ma2_r0), tau_heat))
 
-    g_over_cp       = g / cp
-    g_phi           = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
+    #Gravitational potential, set to -1 at r = R_star
+    g_phi = np.cumsum(g*np.gradient(r))  #gvec = -grad phi; 
     g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = dmr.R_star
-    grad_ln_g_phi   = g / g_phi
-    s_over_cp       = np.cumsum(dmr.grad_s_over_cp*np.gradient(r))
-
-    #construct simulation diffusivity profiles
+    
+    #construct diffusivity profiles which will be used in simulation.
     rad_diff_nd = dmr.rad_diff * (tau_nd / L_nd**2)
     rad_diff_cutoff = (1/(config.numerics['prandtl']*config.numerics['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
     sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
@@ -221,6 +288,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
 
+    # Construct convective flux function which determines how convection is driven
     if config.star['smooth_h']:
         #smooth CZ-RZ transition
         L_conv_sim = np.copy(dmr.L_conv)
@@ -252,7 +320,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     interpolations['g'] = interp1d(r_nd, -g * (tau_nd**2/L_nd), **interp_kwargs)
     interpolations['g_phi'] = interp1d(r_nd, g_phi * (tau_nd**2 / L_nd**2), **interp_kwargs)
 
-    #construct N2 function #TODO: blend logic here & in BVP.
+    # construct N2 function 
+    # TODO: I think some of this logic is happening inside the BVP; make sure it's all together.
     ### More core convection zone logic here
     grad_s_width = grad_s_transition_default
     grad_s_width *= (L_CZ/L_nd).value
@@ -274,12 +343,10 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     # Solve for hydrostatic equilibrium for background
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
-    ln_rho_func = interpolations['ln_rho0']
     grad_ln_rho_func = interpolations['grad_ln_rho0']
     atmo = HSE_solve(c, d, bases,  grad_ln_rho_func, N2_func, F_conv_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
-              R=nondim_R_gas, gamma=nondim_gamma1,  \
-              nondim_radius=1)
+              R=nondim_R_gas, gamma=nondim_gamma1, nondim_radius=1)
 
     interpolations['ln_rho0'] = atmo['ln_rho']
     interpolations['Q'] = atmo['Q']
@@ -302,16 +369,19 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
         else:
             ncc_dict[ncc]['interp_func'] = None
 
+    #Loop over bases, then loop over the NCCs that need to be built for each basis
     for bn, basis in bases.items():
         rvals = dedalus_r[bn]
         for ncc in ncc_dict.keys():
             interp_func = ncc_dict[ncc]['interp_func']
+            #If we have an interpolation function, build the NCC from the interpolator, 
+            # unless we're using the Dedalus gradient of another field.
             if interp_func is not None and not ncc_dict[ncc]['from_grad']:
                 Nmax = ncc_dict[ncc]['Nmax_{}'.format(bn)]
                 vector = ncc_dict[ncc]['vector']
                 grid_only = ncc_dict[ncc]['grid_only']
                 ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
-                if ncc_dict[ncc]['get_grad']:
+                if ncc_dict[ncc]['get_grad']: #If another NCC needs the gradient of this one, build it
                     name = ncc_dict[ncc]['grad_name']
                     logger.info('getting {}'.format(name))
                     grad_field = d3.grad(ncc_dict[ncc]['field_{}'.format(bn)]).evaluate()
@@ -319,12 +389,13 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
                     grad_field.change_scales(basis.dealias)
                     ncc_dict[name]['field_{}'.format(bn)] = grad_field
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax+1
-                if ncc_dict[ncc]['get_inverse']:
+                if ncc_dict[ncc]['get_inverse']: #If another NCC needs the inverse of this one, build it
                     name = 'inv_{}'.format(ncc)
                     inv_func = lambda r: 1/interp_func(r)
                     ncc_dict[name]['field_{}'.format(bn)] = make_NCC(basis, c, d, inv_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax
 
+        # Special case for gravity; we build the NCC from the potential, then take the gradient, which is -g.
         if 'neg_g' in ncc_dict.keys():
             if 'g' not in ncc_dict.keys():
                 ncc_dict['g'] = OrderedDict()
@@ -334,7 +405,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
             ncc_dict['g']['interp_func'] = interpolations['g']
             ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
             ncc_dict['g']['from_grad'] = True 
-        
+    
+    #Force more zeros in the CZ if requested. Uses all available coefficients in the expansion of grad s0.
     if reapply_grad_s_filter:
         for bn, basis in bases.items():
             ncc_dict['grad_s0']['field_{}'.format(bn)]['g'] *= zero_to_one(dedalus_r[bn], grad_s_transition_point-5*grad_s_width, width=grad_s_width)
@@ -344,7 +416,20 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     #reset ln_rho and ln_T interpolations for nice plots
     interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
     interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
+
+    #Fixup heating term to make simulation energy-neutral.       
+    integral = 0
+    for bn in bases.keys():
+        integral += d3.integ(ncc_dict['Q']['field_{}'.format(bn)])
+    C = integral.evaluate()['g']
+    vol = (4/3) * np.pi * (r_bound_nd[-1])**3
+    adj = C / vol
+    logger.info('adjusting dLdt for energy conservation; subtracting {} from H'.format(adj))
+    for bn in bases.keys():
+        ncc_dict['Q']['field_{}'.format(bn)]['g'] -= adj 
+
     if plot_nccs:
+        #Plot the NCCs
         for ncc in ncc_dict.keys():
             if ncc_dict[ncc]['interp_func'] is None:
                 continue
@@ -390,20 +475,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
                 ylabel = ncc
 
     
-            plot_ncc_figure(rvals, interp_func, dedalus_yvals, nvals, \
+            plot_ncc_figure(rvals, interp_func, dedalus_yvals, Ns=nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
 
-    #Fixup heating term to make simulation energy-neutral.       
-    integral = 0
-    for bn in bases.keys():
-        integral += d3.integ(ncc_dict['Q']['field_{}'.format(bn)])
-    C = integral.evaluate()['g']
-    vol = (4/3) * np.pi * (r_bound_nd[-1])**3
-    adj = C / vol
-    logger.info('adjusting dLdt for energy conservation; subtracting {} from H'.format(adj))
-    for bn in bases.keys():
-        ncc_dict['Q']['field_{}'.format(bn)]['g'] -= adj 
+    
 
     with h5py.File('{:s}'.format(out_file), 'w') as f:
         # Save output fields.
