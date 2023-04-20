@@ -1,6 +1,24 @@
 import numpy as np
 
 def calculate_optical_depths(eigenfrequencies, r, N2, S1, chi_rad, ell=1):
+    """
+    Calculate the optical depth of modes of the specified frequencies.
+
+    Parameters
+    ----------
+    eigenfrequencies : array
+        Array of frequencies (not angular frequencies) of the modes.
+    r : array
+        Array of radial positions.
+    N2 : array
+        Array of Brunt-Vaisala frequencies squared.
+    S1 : array
+        Array of ell = 1 Lamb frequencies.
+    chi_rad : float
+        Array of radiative diffusion.
+    ell : int, optional
+        The spherical harmonic degree of the mode. Default is 1.
+    """
     #Calculate 'optical depths' of each mode.
     depths = []
     for freq in eigenfrequencies.real:

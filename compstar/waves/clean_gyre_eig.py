@@ -40,13 +40,51 @@ def natural_sort(iterable, reverse=False):
 
 
 class GyreMSGPostProcessor:
+    """
+    This class reads in a MESA model and a set of GYRE eigenvalues and eigenfunctions, and calculates the 
+    photometric magnitude fluctuation eigenfunction at the stellar surface.
+    It also has logic for calculating the transfer function which maps the sqrt of the wave luminosity
+    to the photometric variability at the surface of a star.
+    """
 
     def __init__(self, ell, pos_summary, pos_details, mesa_pulse_file, mesa_LOG_file, 
                  initial_z=0.006, specgrid=None, filters=['Red',], 
-                 MSG_DIR = os.environ['MSG_DIR'], 
-                 GRID_DIR=None,
+                 MSG_DIR = os.environ['MSG_DIR'], GRID_DIR=None,
                  PASS_DIR=os.path.join('..','gyre_phot','passbands'),
                  output_dir='gyre_output'):
+        """
+        Initialize the class.
+
+        Parameters
+        ----------
+        ell : int
+            The spherical harmonic degree of the eigenvalues
+        pos_summary : str
+            The path to the GYRE summary file
+        pos_details : list of str
+            The paths to the GYRE details files
+        mesa_pulse_file : str
+            The path to the MESA pulse (.GYRE) file
+        mesa_LOG_file : str
+            The path to the MESA profile file
+        initial_z : float
+            The initial metallicity of the star (default: 0.006, which is the LMC value)
+        specgrid : str
+            The name of the spectral grid to use (options: 'OSTAR2002' or None, which uses the demo grid)
+            See http://user.astro.wisc.edu/~townsend/static.php?ref=msg-grids
+        filters : list of str
+            The names of the filters to use; uses TESS passband by default which only has 'Red' filter.
+            See http://user.astro.wisc.edu/~townsend/static.php?ref=msg-passbands
+        MSG_DIR : str
+            The path to the MSG directory
+        GRID_DIR : str
+            The path to the directory where the specgrid file is located; if None, uses $MSG_DIR/data/grids
+        PASS_DIR : str
+            The path to the directory where the passband files are located; Default is ../gyre_phot/passbands
+            TODO: fix this so that it's not hard-coded
+        output_dir : str
+            The path to the directory where the output files will be written
+        """
         self.ell = ell
         self.pos_summary = pos_summary
         self.pos_details = pos_details
@@ -66,19 +104,19 @@ class GyreMSGPostProcessor:
         else:
             specgrid_file_name = os.path.join(GRID_DIR, 'sg-demo-ext.h5')
 
+        # Create the photgrid using the TESS passband.
         self.photgrids = {}
         for filter in self.filters:
             passband_file_name = os.path.join(PASS_DIR, f'pb-TESS-TESS.{filter}-Vega.h5')
             print(specgrid_file_name, passband_file_name)
             self.photgrids[filter] = pm.PhotGrid(specgrid_file_name, passband_file_name)
 
-
             # Inspect grid parameters
             print('Grid parameters:')
             for label in self.photgrids[filter].axis_labels:
                 print(f'  {label} [{self.photgrids[filter].axis_x_min[label]} -> {self.photgrids[filter].axis_x_max[label]}]')
 
-        # Load the stellar model to figure out Teff and gravity
+        # Load the stellar model to figure out fundamental stellar properties & Teff and gravity
         self.model = pg.read_model(mesa_pulse_file)
         self.M = self.model.meta['M_star']
         self.R = self.model.meta['R_star']
@@ -90,20 +128,16 @@ class GyreMSGPostProcessor:
         self.logg = np.log10(G*self.M/self.R**2)
 
         # Set up the atmosphere parameters dict (to be passed to MSG)
-
         self.model_x = {'Teff': self.Teff, 'log(g)': self.logg, 'Z/Zo': self.ZdZsol}
-
         print(f'Teff: {self.Teff}')
         print(f'log(g): {self.logg}')
         print(f'Z/Zo: {self.ZdZsol}')
 
-        # Evaluate the intensity moments (eqn. 15 of Townsend 2003) and their
-        # partials
+        # Evaluate the intensity moments (eqn. 15 of Townsend 2003) and their partials
         self.I_0 = {}
         self.I_l = {}
         self.dI_l_dlnTeff = {}
         self.dI_l_dlng = {}
-
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'w') as f:
             for filter in self.filters:
                 self.I_0[filter] = self.photgrids[filter].D_moment(self.model_x, 0)
@@ -121,14 +155,15 @@ class GyreMSGPostProcessor:
 
 
     def sort_eigenfunctions(self):
+        """
+        Gather and consistently normalize the GYRE eigenfunctions.
+        """
         #TODO: move these background info reading lines up to __init__()
         #get info about mesa background
-
         self.data_dict = OrderedDict()
         p = mr.MesaData(self.mesa_LOG_file)
         r_mesa = p.radius[::-1]*Rsun_to_cm #in cm
         bruntN2_mesa = p.brunt_N2[::-1] #rad^2/s^2
-        lambS1_mesa  = p.lamb_S[::-1] #rad/s
         T       = p.temperature[::-1] #K
         rho     = 10**(p.logRho[::-1]) #g/cm^3
         opacity = p.opacity[::-1] #cm^2 / g
@@ -156,49 +191,49 @@ class GyreMSGPostProcessor:
         bruntN2 /= self.gyre_tau_nd**2
         lambS1 /= self.gyre_tau_nd
 
+        #Create storage for loading eigenfunctions into
         #data_dicts already has 'freq', 'omega', 'xi_r_ref', 'lag_L_ref', 'l', 'n_pg'
-        file_list = self.pos_details
-        summary_file = self.pos_summary
         data = self.data_dict
         for field in ['xi_r_eigfunc', 'xi_h_eigfunc', 'lag_L_eigfunc', 'u_r_eigfunc', 'u_h_eigfunc']:
-            data[field] = np.zeros((len(file_list), len(self.x)), dtype=np.complex128) 
+            data[field] = np.zeros((len(self.pos_details), len(self.x)), dtype=np.complex128) 
         for field in ['freq', 'omega', 'lag_L_ref', 'xi_r_ref']:
-            data[field] = np.zeros((len(file_list)), dtype=np.complex128) 
+            data[field] = np.zeros((len(self.pos_details)), dtype=np.complex128) 
         for field in ['depth', 'n_pg', 'l']:
-            data[field] = np.zeros(len(file_list))
-        for i,filename in enumerate(file_list):
+            data[field] = np.zeros(len(self.pos_details))
+        
+        #Loop through GYRE detail files, then normalize and load eigenfunctions.
+        for i,filename in enumerate(self.pos_details):
             print('reading eigenfunctions from {}'.format(filename))
             pgout = pg.read_output(filename)
 
+            shift = 1
+            #scalars
             data['n_pg'][i] = pgout.meta['n_pg']
             data['l'][i]    = pgout.meta['l']
-
-#            shift = pgout['xi_r'][-2]
-#            shift = np.abs(shift)/shift
-            shift = 1
-
             data['freq'][i] = 1e-6*pgout.meta['freq'] #cgs
-            data['omega'][i] = pgout.meta['omega']
-            data['lag_L_ref'][i] = shift*np.sqrt(4*np.pi)*pgout.meta['lag_L_ref']
-            data['xi_r_ref'][i]  = shift*np.sqrt(4*np.pi)*pgout.meta['xi_r_ref']
-
+            data['omega'][i] = pgout.meta['omega'] #gyre nondimensionalization
+            data['lag_L_ref'][i] = shift*np.sqrt(4*np.pi)*pgout.meta['lag_L_ref'] #L/Lstar
+            data['xi_r_ref'][i]  = shift*np.sqrt(4*np.pi)*pgout.meta['xi_r_ref']  #r/Rstar
             data['depth'][i] = calculate_optical_depths(np.array([data['freq'][i],]), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)[0]
-            print(shift)
+
+            #eigenfunctions
             data['xi_r_eigfunc'][i,:]  = shift*np.sqrt(4*np.pi)*self.R*pgout['xi_r'] #arbitrary amplitude; cgs units.
             data['xi_h_eigfunc'][i,:]  = shift*np.sqrt(4*np.pi)*self.R*pgout['xi_h'] #arbitrary amplitude; cgs units.
             data['lag_L_eigfunc'][i,:] = shift*np.sqrt(4*np.pi)*self.L*pgout['lag_L'] #arbitrary amplitude; cgs units
-
+            
         #u = dt(xi) = -i om u by defn.
-        #eigenfunctions are dimensional but of arbitrary amplitude.
+        #These velocity eigenfunctions are cgs-dimensional but of arbitrary amplitude.
         data['u_r_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_r_eigfunc']
-        data['u_h_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc'] * (np.sqrt(self.ell*(self.ell+1))) #over r??
-        data['delta_L_dL_top'] = data['lag_L_ref']#data['lag_L_eigfunc'][:,-1]/self.L
+        data['u_h_eigfunc'] = -1j*2*np.pi*data['freq'][:,None]*data['xi_h_eigfunc'] * (np.sqrt(self.ell*(self.ell+1)))
+        data['delta_L_dL_top'] = data['lag_L_ref'] #dimensionless (L/Lstar), arbitrary amplitude
       
+        #Calculate optical depths over a smooth omega grid.
         smooth_oms = np.logspace(np.log10(np.abs(data['freq'].real).min())-3, np.log10(np.abs(data['freq'].real).max())+1, 100)
         smooth_depths = calculate_optical_depths(smooth_oms/(2*np.pi), self.r, bruntN2, lambS1, chi_rad, ell=self.ell)
         data['smooth_oms'] = smooth_oms
         data['smooth_depths'] = smooth_depths
 
+        #Save arbitrary amplitude, normalized eigenfunctions to output file.
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
             for k in data.keys():
                 f[k] = data[k]
@@ -208,28 +243,25 @@ class GyreMSGPostProcessor:
         
         return self.data_dict
 
-
     def get_Y_l(self):
-        #get Y_l per eqn 8 of Townsend 2002
+        """ Retrieves the observer-angle-averaged Y_l per eqn 8 of Townsend 2002."""
         data = self.data_dict
         ms  = np.linspace(-self.ell, self.ell, 2*self.ell + 1)[:,None,None]
         phi = np.linspace(0, np.pi, 100)[None,:,None]
         dphi = np.gradient(phi.ravel())[None,:,None]
         theta = np.linspace(0, np.pi, 100)[None,None,:]
         dtheta = np.gradient(theta.ravel())[None,None,:]
+        # Evaluate the average spherical harmonic at many observer locations
+        # (note that sph_harm has back-to-front angle labeling!)
         data['Y_l'] = Y_l = (1/(2*self.ell+1))*(1/(4*np.pi))*np.sum(np.sum(np.sum(dtheta*dphi*np.sin(theta)*np.abs(ss.sph_harm(ms, self.ell, phi, theta)),axis=1),axis=1),axis=0)
-        print('this ell:', self.ell, Y_l)
+        print('this ell, Y_l:', self.ell, Y_l)
         with h5py.File('{:s}/ell{:03d}_eigenvalues.h5'.format(self.output_dir, self.ell), 'a') as f:
             f['Y_l'] = Y_l
         return Y_l
 
-
-
     def evaluate_magnitudes(self):
-        file_list = self.pos_details
-        summary_file = self.pos_summary
+        """ Evaluates the stellar surface photometric magnitude perturbation of each mode. """
         # Read summary file from GYRE
-        summary = pg.read_output(summary_file)
         data = self.data_dict
 
         # Extract radial displacement and Lagrangian luminosity perturbation
@@ -251,26 +283,22 @@ class GyreMSGPostProcessor:
         print('Delta_T: {}'.format(data['Delta_T']))
         print('Delta_g: {}'.format(data['Delta_g']))
 
-        # Evaluate the spherical harmonic at the observer location
-        # (note that sph_harm has back-to-front angle labeling!)
         Y_l = self.get_Y_l()
 
-        
         # Evaluate the differential flux functions (eqn. 14 of Townsend 2003)
-
         dff_R = {}
         dff_T = {}
         dff_G = {}
         dF = {}
         dF_mumag_dict = dict()
 
+        #Calculate magnitude perturbation in mumag for eachmode, for each filter.
         for filter in self.filters:
-            
             dff_R[filter] = (2+self.ell)*(1-self.ell)*self.I_l[filter]/self.I_0[filter]*Y_l
             dff_T[filter] = self.dI_l_dlnTeff[filter]/self.I_0[filter]*Y_l
             dff_G[filter] = self.dI_l_dlng[filter]/self.I_0[filter]*Y_l
 
-            # Evaluate a light curve in each filter (eqn. 11 of Townsend 2003)
+            # Evaluate a light curve magnitude in each filter (eqn. 11 of Townsend 2003)
             dF[filter] = ((data['Delta_R']*dff_R[filter] +
                            data['Delta_T']*dff_T[filter] +
                            data['Delta_g']*dff_G[filter]))
@@ -287,6 +315,7 @@ class GyreMSGPostProcessor:
 
 
     def calculate_duals(self, max_cond=1e8, max_eigs=1000):
+        """ Calculates the velocity duals of the eigenfunctions. """
         data = self.data_dict
         ur = data['u_r_eigfunc']
         uh = data['u_h_eigfunc']
@@ -294,16 +323,12 @@ class GyreMSGPostProcessor:
         self.dr = np.gradient(self.r)
         self.dx = np.gradient(self.x)
         def IP(ur_1,ur_2,uh_1,uh_2):
-            """
-            Per daniel:
-            for the inner product, you need the ell(ell+1) because what gyre calls uh is actually uh/sqrt(ell(ell+1)).
-            (because the actual angular velocity has two components and is uh = xi_h * f * grad(Y_ell,m)) [so grad_h is the angular part of the gradient without any 1/r factor]
-            but when you take <uh, uh> you can integrate-by-parts on one of the grad's to turn it into laplacian(Y_ell,m)=-(ell(ell+1)) Y_ell,m
-            """
+            """ Calculates the inner product of two eigenfunctions. """
             dr = self.dr
             r = self.r
             return np.sum(dr*4*np.pi*r**2*self.rho*(np.conj(ur_1)*ur_2+np.conj(uh_1)*uh_2),axis=-1)
        
+        #Calculate a matrix of the inner product of each mode with each other mode.
         n_modes = ur.shape[0]
         IP_matrix = np.zeros((ur.shape[0], ur.shape[0]),dtype=np.complex128)
         for i in range(ur.shape[0]):
@@ -324,9 +349,10 @@ class GyreMSGPostProcessor:
         print('dual IP matrix cond: {:.3e}; n_modes: {}/{}'.format(cond, n_modes, ur.shape[0]))
         cond = np.linalg.cond(IP_matrix[:i+1,:i+1]) 
         IP_inv = linalg.inv(IP_matrix)
-
         ur = ur[:n_modes]
         uh = uh[:n_modes]
+
+        # Store truncated eigenvalue/eigenfunction lists which only keep as many modes as we have duals for.
         keys = list(self.data_dict.keys())
         for k in keys:
             if k == 'Y_l':
@@ -334,7 +360,7 @@ class GyreMSGPostProcessor:
             elif 'smooth' not in k:
                 self.data_dict['dual_'+k] = self.data_dict[k][:n_modes]
 
-
+        #Calculate the duals
         data['u_r_dual'] = u_r_dual = np.conj(IP_inv)@ur
         data['u_h_dual'] = u_h_dual = np.conj(IP_inv)@uh
 
@@ -360,6 +386,21 @@ class GyreMSGPostProcessor:
         return self.data_dict
 
     def calculate_transfer(self, use_delta_L=False, plot=False, N_om=1000):
+        """
+        Calculates the transfer function for the GYRE eigenfunctions.
+
+        Parameters
+        ----------
+        use_delta_L : bool
+            If True, calculate the transfer function for delta L / L eigenmode instead of
+            for MSG magnitude perturbations.
+        plot : bool
+            If True, plot the transfer function after calculation.
+        N_om : int
+            Number of frequencies to calculate the transfer function for.
+            Angular frequency span is 0.97*min(omega) to 1.03*max(omega), where omega is the angular eigenfrequency array.
+        """
+        #Load MESA file info
         p = mr.MesaData(self.mesa_LOG_file)
         mass           = (p.mass[::-1] * u.M_sun).cgs
         r              = (p.radius[::-1] * u.R_sun).cgs
@@ -376,11 +417,13 @@ class GyreMSGPostProcessor:
         chi_rad = 16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)
         gamma = gamma1[0]
 
+        #Calculate where the core CZ's boundary is located
+        #Force the transfer function from 0.98 to 1.02 times the core CZ radius
         core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
-        r0 = 0.95 * core_cz_radius
-        r1 = 1.05 * core_cz_radius
+        r0 = 0.98 * core_cz_radius
+        r1 = 1.02 * core_cz_radius
 
-        #get info about mesa background
+        #get info about mesa background for transfer calc
         rho_func = interp1d(r.flatten(), rho.flatten())
         chi_rad_func = interp1d(r.flatten(), chi_rad.flatten())
         N2_func = interp1d(r.flatten(), bruntN2.flatten())
@@ -388,15 +431,14 @@ class GyreMSGPostProcessor:
         N2_force_max = N2_func(r1)
         N2_adjust = np.sqrt(N2_max/N2_force_max)
 
-
-        #Calculate transfer functions
+        #Get surface eigenfunction value that the transfer function will determine the amplitude of
         if use_delta_L:
             lum_amplitudes = -2.5*1e6*self.data_dict['Y_l']*self.data_dict['dual_delta_L_dL_top']
         else:
             lum_amplitudes = self.data_dict['dual_dF_mumags_Red']
 
+        #Get angular frequencies for transfer calculation
         values = 2*np.pi*self.data_dict['dual_freq']
-        #Construct frequency grid for evaluation
         om0 = np.min(np.abs(values.real))*0.97
         om1 = np.max(values.real)*1.03
         om = np.logspace(np.log10(om0), np.log10(om1), num=N_om, endpoint=True) 

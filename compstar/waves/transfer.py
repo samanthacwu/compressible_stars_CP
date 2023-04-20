@@ -3,8 +3,6 @@ import numpy as np
 import logging
 logger = logging.getLogger(__name__)
 
-import compstar.defaults.config as config
-
 def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0, plot=False):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
@@ -79,6 +77,8 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     T_pieces = np.abs(np.sum(Eig_cos + 1j*Eig_sin,axis=0)) # sum over eigenfunctions, then take abs()
     T = np.sqrt(np.mean(T_pieces**2, axis=0))# #get median as function of radius
     if plot:
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
         cmap = mpl.cm.viridis
         norm = mpl.colors.Normalize(vmin=r_range.min(), vmax=r_range.max())
         sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
