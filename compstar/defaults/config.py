@@ -2,7 +2,6 @@
 Configuration handling. -> inspired by dedalus' config handling
 """
 import os
-from collections import OrderedDict
 
 from compstar.defaults.controls import star, numerics, eigenvalue, dynamics
 from compstar.defaults.ncc_specs import defaults, nccs
