@@ -11,7 +11,6 @@ star['r_bounds'] = (0, '1.10L', '1.5L')
 star['nr'] = (64, 32)
 star['smooth_h'] = True
 
-
 ### Numerical choices
 #Need to add a tag saying what the default diffusivity formalism is
 #reynolds_target: Target reynolds number of simulation; higher needs more resolution
@@ -34,7 +33,7 @@ numerics['L_dealias'] = 1.5
 # tau_factor: multiply damping term by this factor.
 # A0: Initial noise amplitude.
 dynamics = OrderedDict()
-dynamics['ntheta'] =  64
+dynamics['ntheta'] =  4
 dynamics['timestepper'] = 'SBDF2'
 dynamics['safety'] = 0.2
 dynamics['CFL_max_r'] = 1.05
@@ -43,3 +42,14 @@ dynamics['wall_hours'] = 23.5
 dynamics['buoy_end_time'] = 100
 dynamics['sponge'] = True 
 dynamics['tau_factor'] = 1
+
+### Eigenvalue problem setup
+# hires_factor: Factor by which to increase the radial resolution for the hi-res EVP solve for mode rejection
+# Lmax: Solve at ell = [1, Lmax]
+# radial_scale: increase radial resolution (nr) of all solves by this factor.
+eigenvalue = OrderedDict()
+eigenvalue['hires_factor'] = 1.5
+
+#highest spherical harmonic degree to solve EVP at
+eigenvalue['Lmax'] = 16
+eigenvalue['radial_scale'] = 1
