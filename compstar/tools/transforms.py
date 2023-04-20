@@ -8,30 +8,49 @@ import dedalus.public as d3
 
 
 class SHTransformer():
+    """ 
+    Class which takes spherical harmonic transforms of a Dedalus scalar or vector field 
+    which is defined on an S2 sphere in grid space (i.e. phi, theta). 
+    """
 
     def __init__(self, nphi, ntheta, dtype=np.float64, dealias=1, radius=1):
+        """
+        Initialize the transformer object.
+    
+        Parameters
+        ----------
+        nphi : int
+            Number of phi grid points used in the Dedalus output task.
+        ntheta : int
+            Number of theta grid points used in the Dedalus output task.
+        dtype : numpy dtype
+            Data type of the Dedalus output task.
+        dealias : int
+            Dealiasing factor used in the Dedalus output task.
+        radius : float
+            Radius of the sphere used in the Dedalus output task.
+        """
         resolution = (nphi, ntheta)
         self.dtype = dtype
         if self.dtype not in (np.float64, np.complex128):
             raise ValueError("Invalid dtype")
 
-        # Parameters
+        # Create coordinate system, distributor, and sphere basis.
         c = d3.SphericalCoordinates('phi', 'theta', 'r')
         dealias_tuple = (dealias, dealias)
-        Lmax = resolution[1]-1
-        sphere_area = 4*np.pi*radius**2
         self.dealias = dealias
-        
         dist = d3.Distributor((c,), mesh=None, comm=MPI.COMM_SELF, dtype=dtype)
         basis = d3.SphereBasis(c.S2coordsys, resolution, radius=radius, dtype=dtype, dealias=dealias_tuple)
         self.phi, self.theta = basis.global_grids(basis.dealias)
 
+        # Create fields which will be used to take transforms
         self.scalar_field = dist.Field(bases=basis)
         self.vector_field = dist.VectorField(bases=basis, coordsys=c)
         self.conj_vector_field = dist.VectorField(bases=basis, coordsys=c)
         self.power_scalar_op = d3.Average(self.scalar_field*np.conj(self.scalar_field))
         self.power_vector_op = d3.Average(self.conj_vector_field@self.vector_field)
 
+        # Create a dictionary with keys 'ell,m' (e.g., '1,1') which contain index slices of that ell and m in the dedalus fields.
         self.ell_values = []
         self.m_values = []
 
@@ -58,12 +77,23 @@ class SHTransformer():
         self.vector = False
 
     def transform_scalar_field(self, grid_data, normalization=1/2):
+        """ 
+        Takes spherical harmonic transform of a scalar field.
+        
+        Parameters
+        ----------
+        grid_data : numpy array
+            Array of shape (nphi, ntheta, 1) which contains the scalar field data.
+        normalization : float
+            Normalization factor to apply to the transform to satisfy Parseval's theorem. Default is 1/2.
+        """
         self.vector = False
         self.scalar_field.change_scales(self.dealias)
         self.scalar_field['g'] = grid_data
         power_grid = self.power_scalar_op.evaluate()['g'].ravel()[0]
 
         out_field = np.zeros((self.ell_values.size, self.m_values.size), dtype=np.complex128)
+        #loop over ell and m values and store the transform coefficients
         for i, ell in enumerate(self.ell_values.ravel()):
             for j, m in enumerate(self.m_values.ravel()):
                 sl_key = '{},{}'.format(ell,m)
@@ -88,6 +118,16 @@ class SHTransformer():
             raise ValueError("Scalar Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
     def transform_vector_field(self, grid_data, normalization=1/2):
+        """ 
+        Takes spherical harmonic transform of a scalar field.
+        
+        Parameters
+        ----------
+        grid_data : numpy array
+            Array of shape (coords, nphi, ntheta, 1) which contains the scalar field data.
+        normalization : float
+            Normalization factor to apply to the transform to satisfy Parseval's theorem. Default is 1/2.
+        """
         self.vector = True
         self.vector_field.change_scales(self.dealias)
         self.conj_vector_field.change_scales(self.dealias)
@@ -96,6 +136,7 @@ class SHTransformer():
         power_grid = self.power_vector_op.evaluate()['g'].ravel()[0]
 
         out_field = np.zeros((grid_data.shape[0], self.ell_values.size, self.m_values.size), dtype=np.complex128)
+        #loop over ell and m values and store the transform coefficients
         for i, ell in enumerate(self.ell_values.ravel()):
             for j, m in enumerate(self.m_values.ravel()):
                 sl_key = '{},{}'.format(ell,m)
@@ -124,6 +165,7 @@ class SHTransformer():
             raise ValueError("Vector Transform is not conserving power; ratio: {}, vals: {}, {}".format(power_transform/power_grid, power_transform, power_grid))
 
     def get_ell_m_value(self, ell, m):
+        """ Returns the transform coefficient for a given ell and m value. """
         if self.out_field is None:
             raise ValueError("Must transform field before finding ell,m value")
 
@@ -135,22 +177,39 @@ class SHTransformer():
 
 class DedalusShellSHTransformer():
     """ 
-    Transforms all scalar and vector fields in a dedalus output file.
+    A wrapper which takes all tasks in a dedalus output file and performs a spherical harmonic transform on them.
     Assumes all output tasks are defined on S2.
 
     Relies on plotpal for file reading.
     """
     def __init__(self, nphi, ntheta, root_dir, data_dir, dtype=np.float64, dealias=1, radius=1, **kwargs):
+        """
+        Instantiates a DedalusShellSHTransformer object, including a file reader.
+
+        Parameters
+        ----------
+        nphi, ntheta : int
+            Number of phi, theta grid points that the grid data is expanded on.
+        root_dir : str
+            Root directory of the dedalus simulation handlers.
+        data_dir : str
+            Directory of the dedalus output files (handler name).
+        dtype : numpy dtype
+            Data type of the grid data. Default is np.float64.
+        dealias : int
+            Dealiasing factor of the dedalus simulation. Default is 1.
+        radius : float
+            Radius of the sphere. Default is 1.
+        **kwargs : dict
+            Keyword arguments to pass to the file reader.     
+        """
         from plotpal.file_reader import SingleTypeReader as SR
-        self.nphi = nphi
-        self.ntheta = ntheta
         self.root_dir = root_dir
         self.out_dir = 'SH_transform_{}'.format(data_dir)
-        self.reader = SR(root_dir, data_dir, self.out_dir, distribution='even-file', **kwargs)
+        self.reader = SR(root_dir, data_dir, self.out_dir, distribution='even-file', **kwargs) #important to use even-file so that one input file -> one output file.
 
         # Parameters
         self.transformer = SHTransformer(nphi, ntheta, dtype=dtype, dealias=dealias, radius=radius)
-
         if not self.reader.idle:
             with h5py.File(self.reader.files[0], 'r') as f:
                 self.fields = list(f['tasks'].keys())
@@ -158,6 +217,9 @@ class DedalusShellSHTransformer():
             self.fields = None
 
     def write_transforms(self):
+        """
+        Reads in dedalus output from all output files, takes SH transforms, and writes transformmed fields to a new file.
+        """
         if not self.reader.idle:
             while self.reader.writes_remain():
                 dsets, ni = self.reader.get_dsets(self.fields)
@@ -169,7 +231,9 @@ class DedalusShellSHTransformer():
                     file_mode = 'a'
                 output_file_name = '{}/{}/{}_s{}.h5'.format(self.root_dir, self.out_dir, self.out_dir, file_num)
 
+                
                 with h5py.File(output_file_name, file_mode) as of:
+                    #Set up output file; output ells, ms, time, etc.
                     sim_times = self.reader.current_file_handle['scales/sim_time'][()]
                     if ni == 0:
                         of['ells'] = self.transformer.ell_values[None,:,:,None]
@@ -178,7 +242,7 @@ class DedalusShellSHTransformer():
                         for attr in ['writes', 'set_number', 'handler_name']:
                             of.attrs[attr] = self.reader.current_file_handle.attrs[attr]
 
-                    outputs = OrderedDict()
+                    #Transform each field and save to output file.
                     for f in self.fields:
                         task_data = dsets[f][ni,:]
                         if len(task_data.squeeze().shape) == len(self.transformer.vector_field['g'].squeeze().shape):

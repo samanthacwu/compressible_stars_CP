@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class DimensionalMesaReader:
+    """ Class to read in MESA profile and store it in a dictionary with astropy units """
 
     def __init__(self, filename):
         #TODO: figure out how to make MESA the file path w.r.t. stock model path w/o supplying full path here
@@ -57,10 +58,21 @@ class DimensionalMesaReader:
         #rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity)).cgs # this is less smooth
 
 
-def find_core_cz_radius(mesa_file, dimensionless=True):
-    ### CORE CONVECTION LOGIC - Find boundary of core convection zone  & setup simulation domain
-    ### Split up the domain
-    # Find edge of core cz
+def find_core_cz_radius(mesa_file, dimensionless=True, L_conv_threshold=1):
+    """ 
+    Find the radius of the core convection zone in a MESA profile.
+    The convective core is defined as the region where the convective luminosity is greater than a threshold
+    and the mass coordinate is less than 90% of the total stellar mass.
+
+    Arguments:
+    ----------
+    mesa_file : str
+        Path to MESA profile file
+    dimensionless : bool
+        If True, return the radius as a float without astropy units attached.
+    L_conv_threshold : float
+        Threshold for determining if a region is convective.
+    """
     p = mr.MesaData(mesa_file)
     r              = (p.radius[::-1] * u.R_sun).cgs
     mass           = (p.mass[::-1] * u.M_sun).cgs
@@ -68,11 +80,10 @@ def find_core_cz_radius(mesa_file, dimensionless=True):
     conv_L_div_L   = p.lum_conv_div_L[::-1]
     L_conv         = conv_L_div_L*Luminosity
 
-    cz_bool = (L_conv.value > 1)*(mass < 0.9*mass[-1]) #rudimentary but works
+    cz_bool = (L_conv.value > L_conv_threshold)*(mass < 0.9*mass[-1])
     core_index  = np.argmin(np.abs(mass - mass[cz_bool][-1]))
     core_cz_radius = r[core_index]
     if dimensionless: #no astropy units.
         return core_cz_radius.value
     else:
         return core_cz_radius
-
