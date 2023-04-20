@@ -5,7 +5,7 @@ with open('README.md') as f:
 
 setup(name='compstar',
       version='1.0.0',
-      description='A plugin for running dynamical simulations of MESA models using Dedalus-v3',
+      description='A plugin for running dynamical simulations based on MESA models using Dedalus-v3',
       longdescription=long_description,
       url='https://github.com/evanhanders/compressible_stars',
       author='Evan H. Anders',
