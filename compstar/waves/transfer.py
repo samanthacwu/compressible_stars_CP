@@ -3,7 +3,7 @@ import numpy as np
 import logging
 logger = logging.getLogger(__name__)
 
-def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_max, gamma, discard_num=0, plot=False):
+def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, chi_rad_func, N2_func, N2_max, gamma, discard_num=0, plot=False):
     """
     Calculates the transfer function of linear, damped waves of a field at a star/simulation's
     surface (specfied by field_outer) when driven near a radiative-convective boundary (r_range).
@@ -29,6 +29,8 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
         A function of the mass density to be evaluated at each radial coordinate in r_range.
      chi_rad_func : function
         A function of chi_rad to be evaluated at each radial coordinate in r_range.
+     N2_func : function
+        A function of N^2 to be evaluated at each radial coordinate in r_range.
      N2_max : float64
         Maximal value of N^2 achieved in the domain
      gamma : float
@@ -55,6 +57,7 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
 
     #Get structure variables
     chi_rad = chi_rad_func(r_range)
+    N2 = N2_func(r_range)
     rho = rho_func(r_range)
     cpmu_div_R = gamma/(gamma-1)
 
@@ -67,7 +70,8 @@ def transfer_function(om, values, u_dual, field_outer, r_range, ell, rho_func, c
     #Calculate transfer
     bulk_to_bound_force = np.sqrt(2) * big_om / k_h #times ur -> comes later.
     P_ur_to_h = rho * (cpmu_div_R) * ((big_om) / k_h**2) * (-k_r) #assuming H_p -> infinity.
-    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*P_ur_to_h)).real
+    Pprime_ur_to_h = np.sqrt(N2/N2_max)*P_ur_to_h
+    root_lum_to_ur = np.sqrt(1/(4*np.pi*r_range**2*Pprime_ur_to_h)).real
 
     inner_prod = 4*np.pi*r_range**2*rho*bulk_to_bound_force*root_lum_to_ur*np.conj(u_dual) * dr
     Eig = inner_prod * field_outer / ((values - big_om)*(values + big_om))

@@ -429,7 +429,7 @@ class GyreMSGPostProcessor:
         N2_func = interp1d(r.flatten(), bruntN2.flatten())
         N2_max = bruntN2.max().value
         N2_force_max = N2_func(r1)
-        N2_adjust = np.sqrt(N2_max/N2_force_max)
+#        N2_adjust = np.sqrt(N2_max/N2_force_max)
 
         #Get surface eigenfunction value that the transfer function will determine the amplitude of
         if use_delta_L:
@@ -448,8 +448,8 @@ class GyreMSGPostProcessor:
         uh_dual_interp = interp1d(self.r, self.data_dict['u_h_dual'][:,:], axis=-1)(r_range)
 
         #Calculate and store transfer function
-        good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, lum_amplitudes, r_range, self.ell, rho_func, chi_rad_func, N2_max, gamma, plot=False)
-        good_T *= np.sqrt(N2_adjust)
+        good_om, good_T = calculate_refined_transfer(om, values, uh_dual_interp, lum_amplitudes, r_range, self.ell, rho_func, chi_rad_func, N2_func, N2_max, gamma, plot=False)
+#        good_T *= np.sqrt(N2_adjust)
 
         if plot:
             fig = plt.figure()
