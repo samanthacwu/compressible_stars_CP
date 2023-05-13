@@ -420,7 +420,7 @@ class GyreMSGPostProcessor:
         #Calculate where the core CZ's boundary is located
         #Force the transfer function from 1.00 to 1.20 times the core CZ radius
         core_cz_radius = find_core_cz_radius(self.mesa_LOG_file)*u.cm
-        r0 = 1.00 * core_cz_radius
+        r0 = 1.005 * core_cz_radius
         r1 = 1.20 * core_cz_radius
 
         #get info about mesa background for transfer calc
