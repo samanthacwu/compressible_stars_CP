@@ -668,6 +668,8 @@ class SphericalCompressibleProblem():
             energy = equations['energy_{}'.format(bn)]
             logger.info('adding eqn "{}"'.format(energy))
             problem.add_equation(energy)
+            # problem.add_equation(energy, condition='nth!=0')
+            # problem.add_equation(energy2, condition='nth==0')
 
         for BC in u_BCs.values():
             logger.info('adding BC "{}"'.format(BC))

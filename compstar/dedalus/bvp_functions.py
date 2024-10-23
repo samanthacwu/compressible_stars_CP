@@ -75,7 +75,7 @@ def HSE_solve(coords, dist, bases, grad_ln_rho_func, N2_func, Fconv_func, r_stit
         namespace['g_phi_{}'.format(k)] = Q = dist.Field(name='g_phi', bases=basis)
         namespace['Q_{}'.format(k)] = Q = dist.Field(name='Q', bases=basis)
         namespace['s_{}'.format(k)] = s = dist.Field(name='s', bases=basis)
-        namespace['g_{}'.format(k)] = g = dist.VectorField(basis.coordsystem, name='g', bases=basis)
+        namespace['g_{}'.format(k)] = g = dist.VectorField(coords, name='g', bases=basis)
         namespace['ln_rho_{}'.format(k)] = ln_rho = dist.Field(name='ln_rho', bases=basis)
         namespace['grad_ln_rho_{}'.format(k)] = grad_ln_rho = dist.VectorField(coords, name='grad_ln_rho', bases=basis)
         namespace['tau_s_{}'.format(k)] = tau_s = dist.Field(name='tau_s', bases=S2_basis)

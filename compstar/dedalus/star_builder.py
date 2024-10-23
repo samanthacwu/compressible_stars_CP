@@ -138,7 +138,7 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
     else:
         scales = basis.dealias
         scales_small = (1, 1, Nmax/basis.radial_basis.radial_size)
-    rvals = basis.global_grid_radius(scales[2])
+    rvals = basis.global_grid_radius(dist,scale=scales[2])
     if vector:
         this_field = dist.VectorField(coords, bases=basis)
         this_field.change_scales(scales)
@@ -285,7 +285,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_bound_nd[-1], dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
     dedalus_r = OrderedDict()
     for bn in bases.keys():
-        phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
+        phi, theta, r_vals = bases[bn].global_grids(d,scales=(1, 1, dealias))
         dedalus_r[bn] = r_vals
 
     # Construct convective flux function which determines how convection is driven
@@ -595,23 +595,26 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     plt.ylabel(r'$N^2$')
     plt.xlabel('r')
     plt.yscale('log')
+    plt.ylim(1e-17,)
     plt.savefig('star/N2_goodness.png')
 #    plt.show()
 
     plt.figure()
     plt.axhline(s_motions/nondim_cp / s_nd, c='k')
-    plt.plot(r_dedalus, np.abs(HSE_dedalus))
+    plt.plot(r_dedalus, np.abs(HSE_dedalus),label='dedalus')
     plt.yscale('log')
     plt.xlabel('r')
     plt.ylabel("HSE")
+    plt.legend()
     plt.savefig('star/HSE_goodness.png')
 
     plt.figure()
     plt.axhline(s_motions/nondim_cp / s_nd, c='k')
-    plt.plot(r_dedalus, np.abs(EOS_dedalus))
+    plt.plot(r_dedalus, np.abs(EOS_dedalus),label='dedalus')
     plt.yscale('log')
     plt.xlabel('r')
     plt.ylabel("EOS")
+    plt.legend()
     plt.savefig('star/EOS_goodness.png')
 
 
