@@ -38,7 +38,6 @@ class DimensionalMesaReader:
         self.structure['mu']             = mu             = p.mu[::-1] * u.g / u.mol
         self.structure['lamb_freq']      = lamb_freq = lambda ell : np.sqrt(ell*(ell + 1)) * csound/r
 
-
         self.structure['R_star'] = R_star = (p.photosphere_r * u.R_sun).cgs
 
         self.structure['R_gas'] = R_gas                     = constants.R.cgs / mu[0]
@@ -87,3 +86,29 @@ def find_core_cz_radius(mesa_file, dimensionless=True, L_conv_threshold=1):
         return core_cz_radius.value
     else:
         return core_cz_radius
+    
+def adjust_opacity(mesa_file):
+        """
+        Change the opacity to one that follows a Kramer's opacity + constant (electron scattering)
+        """
+        p = mr.MesaData(mesa_file)
+        opacity = p.opacity[::-1] #* (u.cm**2 / u.g)
+        h1 = p.h1[::-1]
+        he3 = p.he3[::-1]
+        he4 = p.he4[::-1]
+        ye = p.ye[::-1]
+        x_frac = h1
+        z_frac = 1-(h1 + he3 + he4)
+        rho = 10**p.logRho[::-1] #* u.g / u.cm**3
+        T = p.temperature[::-1] #* u.K
+
+        kappa_ff = lambda rho,T,Z,X: 3.68e22*(1-Z)*(1+X)*rho*T**(-7/2)
+        # kappa_bf = lambda rho,T,Z,X: 4.34e25*Z*(1+X)*rho*T**(-7/2)
+
+        z_frac = 1-h1-he4-he3
+        x_frac = h1
+        new_opacity = ye*(0.2*(1+x_frac)+kappa_ff(rho,T,z_frac,x_frac))
+        gff = (opacity[0] - new_opacity[0])/ye[0]/kappa_ff(rho,T,z_frac,x_frac)[0] + 1
+        print(gff)
+        opacity_adj = ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) 
+        return opacity_adj * (u.cm**2 / u.g)
