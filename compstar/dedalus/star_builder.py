@@ -16,7 +16,7 @@ import compstar
 from .compressible_functions import make_bases
 from .parser import name_star
 from .bvp_functions import HSE_solve
-from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius
+from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius, adjust_opacity
 from compstar.tools.general import one_to_zero, zero_to_one
 import compstar.defaults.config as config
 
@@ -195,6 +195,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     ### CORE CONVECTION LOGIC - lots of stuff here needs to be generalized for other types of stars.
     core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
+    opacity_adjusted = adjust_opacity(mesa_file_path, dimensionless=False)
+
+    ### Recalculate k_rad and rad_diff using adjusted opacity
+    rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity_adjusted)).cgs
+    k_rad    = rad_cond = rad_diff*(rho * cp)
 
     # Get some rough MLT values.
     mlt_u = ((dmr.Luminosity / (4 * np.pi * r**2 * rho) )**(1/3)).cgs
@@ -261,7 +266,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     g_phi -= g_phi[-1] - u_nd**2 #set g_phi = -1 at r = dmr.R_star
     
     #construct diffusivity profiles which will be used in simulation.
-    rad_diff_nd = dmr.rad_diff * (tau_nd / L_nd**2)
+    rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
+    # rad_diff_nd = dmr.rad_diff * (tau_nd / L_nd**2)
     rad_diff_cutoff = (1/(config.numerics['prandtl']*config.numerics['reynolds_target'])) * ((L_CZ**2/tau_heat) / (L_nd**2/tau_nd))
     sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
     sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)

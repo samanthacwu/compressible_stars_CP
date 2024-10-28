@@ -87,7 +87,7 @@ def find_core_cz_radius(mesa_file, dimensionless=True, L_conv_threshold=1):
     else:
         return core_cz_radius
     
-def adjust_opacity(mesa_file):
+def adjust_opacity(mesa_file, dimensionless=False):
         """
         Change the opacity to one that follows a Kramer's opacity + constant (electron scattering)
         """
@@ -109,6 +109,9 @@ def adjust_opacity(mesa_file):
         x_frac = h1
         new_opacity = ye*(0.2*(1+x_frac)+kappa_ff(rho,T,z_frac,x_frac))
         gff = (opacity[0] - new_opacity[0])/ye[0]/kappa_ff(rho,T,z_frac,x_frac)[0] + 1
-        print(gff)
+        # print(gff)
         opacity_adj = ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) 
-        return opacity_adj * (u.cm**2 / u.g)
+        if dimensionless:
+            return opacity_adj.value
+        else:
+            return opacity_adj * (u.cm**2 / u.g)
