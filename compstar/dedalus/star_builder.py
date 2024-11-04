@@ -254,6 +254,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     nondim_R_gas = (dmr.R_gas / s_nd).cgs.value
     nondim_gamma1 = (dmr.gamma1[0]).value
     nondim_cp = nondim_R_gas * nondim_gamma1 / (nondim_gamma1 - 1)
+    nondim_G = (constants.G.cgs / (L_nd**3 / m_nd / tau_nd**2)).cgs
     u_heat_nd = (L_nd/tau_heat) / u_nd
     Ma2_r0 = ((u_nd*(tau_nd/tau_heat))**2 / ((dmr.gamma1[0]-1)*cp[0]*T[0])).cgs
     logger.info('Nondimensionalization: L_nd = {:.2e}, T_nd = {:.2e}, m_nd = {:.2e}, tau_nd = {:.2e}'.format(L_nd, T_nd, m_nd, tau_nd))
@@ -350,9 +351,11 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     # Solve for hydrostatic equilibrium for background
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
     grad_ln_rho_func = interpolations['grad_ln_rho0']
-    atmo = HSE_solve(c, d, bases,  grad_ln_rho_func, N2_func, F_conv_func,
+    ln_rho_func = interpolations['ln_rho0']
+    g_phi_func = interpolations['g_phi']
+    atmo = HSE_solve(c, d, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, F_conv_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
-              R=nondim_R_gas, gamma=nondim_gamma1, nondim_radius=1)
+              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
 
     interpolations['ln_rho0'] = atmo['ln_rho']
     interpolations['Q'] = atmo['Q']

@@ -120,8 +120,8 @@ class SphericalCompressibleProblem():
         for basis_number, bn in enumerate(self.bases.keys()):
             # Get basis and grid coordinates
             basis = self.bases[bn]
-            phi, theta, r = basis.local_grids(basis.dealias)
-            phi1, theta1, r1 = basis.local_grids((1,1,1))
+            phi, theta, r = basis.local_grids(self.dist,scales=basis.dealias)
+            phi1, theta1, r1 = basis.local_grids(self.dist,scales=(1,1,1))
             self.namespace['phi_'+bn], self.namespace['theta_'+bn], self.namespace['r_'+bn] = phi, theta, r
             self.namespace['phi1_'+bn], self.namespace['theta1_'+bn], self.namespace['r1_'+bn] = phi1, theta1, r1
 
