@@ -201,6 +201,7 @@ def HSE_solve(coords, dist, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2
         problem.add_equation("-grad(g_phi_{0}) + r_vec_{0}*lift_{0}(tau_g_phi_{0}) = g_op_{0} ".format(k))
         # problem.add_equation("grad(ln_rho_{0})@(grad(s_{0})/Cp) + lift_{0}(tau_s_{0}) = -N2_{0}/(gamma*pomega_{0}) - grad(s_{0})@grad(s_{0}) / Cp**2".format(k))
         problem.add_equation("grad(g_phi_{0})@grad(s_{0}) / Cp + lift_{0}(tau_s_{0}) = N2_{0}".format(k))
+        
         count_eqn+=2
         #Set equation for heating
         problem.add_equation("Q_{0} = edge_smoothing_{0}*div(Fconv_{0})".format(k))

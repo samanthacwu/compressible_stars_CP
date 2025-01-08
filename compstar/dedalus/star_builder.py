@@ -16,7 +16,7 @@ import compstar
 from .compressible_functions import make_bases
 from .parser import name_star
 from .bvp_functions import HSE_solve
-from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius, adjust_opacity
+from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius, adjust_opacity, opacity_func
 from compstar.tools.general import one_to_zero, zero_to_one
 import compstar.defaults.config as config
 
@@ -195,9 +195,9 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     ### CORE CONVECTION LOGIC - lots of stuff here needs to be generalized for other types of stars.
     core_cz_radius = find_core_cz_radius(mesa_file_path, dimensionless=False)
-    opacity_adjusted = adjust_opacity(mesa_file_path, dimensionless=False)
+    opacity_adjusted, gff_out, z_frac_out, x_frac_out,ye_out = adjust_opacity(mesa_file_path, dimensionless=False)
 
-    ### Recalculate k_rad and rad_diff using adjusted opacity
+    ### Recalculate k_rad and rad_diff using adjusted opacity. might need to redo after the HSE solve since rho, T could change
     rad_diff        = (16 * constants.sigma_sb.cgs * T**3 / (3 * rho**2 * cp * opacity_adjusted)).cgs
     k_rad    = rad_cond = rad_diff*(rho * cp)
 
@@ -292,7 +292,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_bound_nd[-1], dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
     dedalus_r = OrderedDict()
     for bn in bases.keys():
-        phi, theta, r_vals = bases[bn].global_grids(d,scales=(1, 1, dealias))
+        phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
         dedalus_r[bn] = r_vals
 
     # Construct convective flux function which determines how convection is driven
@@ -353,6 +353,12 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     grad_ln_rho_func = interpolations['grad_ln_rho0']
     ln_rho_func = interpolations['ln_rho0']
     g_phi_func = interpolations['g_phi']
+    # opacity_info_arr = [gff_out, z_frac_out, x_frac_out,ye_out]
+    opacity_func_in = lambda rho, T: opacity_func(rho*rho_nd,T*T_nd,gff=gff_out,z_frac=z_frac_out,x_frac=x_frac_out,ye=ye_out)
+    #assuming rho, T are nondimensionalized inputs, but opacity_func returns a dimensionalized opacity 
+    rad_diff_func_in = lambda rho,T: (16 * constants.sigma_sb.cgs * (T*T_nd)**3 / (3 * (rho*rho_nd)**2 * cp * opacity_func_in(rho,T))) * (tau_nd / L_nd**2)
+    #assuming rho, T are nondimensionalized inputs, but will return dimensionalized rad_diff so must non-dimensionalize
+    
     atmo = HSE_solve(c, d, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, F_conv_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
               R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
