@@ -105,16 +105,19 @@ def adjust_opacity(mesa_file, dimensionless=False):
         kappa_ff = lambda rho,T,Z,X: 3.68e22*(1-Z)*(1+X)*rho*T**(-7/2)
         # kappa_bf = lambda rho,T,Z,X: 4.34e25*Z*(1+X)*rho*T**(-7/2)
 
-        z_frac = 1-h1-he4-he3
-        x_frac = h1
-        new_opacity = ye*(0.2*(1+x_frac)+kappa_ff(rho,T,z_frac,x_frac))
+        z_frac = (1-h1-he4-he3)[0]
+        x_frac = h1[0]
+        new_opacity = ye[0]*(0.2*(1+x_frac)+kappa_ff(rho,T,z_frac,x_frac))
         gff = (opacity[0] - new_opacity[0])/ye[0]/kappa_ff(rho,T,z_frac,x_frac)[0] + 1
         # print(gff)
-        opacity_adj = ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) 
+        opacity_adj = ye[0]*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) 
         if dimensionless:
             return opacity_adj.value, gff, z_frac, x_frac, ye[0]
         else:
             return opacity_adj * (u.cm**2 / u.g), gff, z_frac, x_frac, ye[0]
-def opacity_func(rho,T,gff,z_frac,x_frac,ye): #this is dimensional
+def opacity_func(rho,T,gff,z_frac,x_frac,ye,dimensionless=False): #this is dimensional
     kappa_ff = lambda rho,T,Z,X: 3.68e22*(1-Z)*(1+X)*rho*T**(-7/2)
-    return ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) * (u.cm**2 / u.g)
+    if dimensionless:
+        return ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac))
+    else:
+        return ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac)) * (u.cm**2 / u.g)
