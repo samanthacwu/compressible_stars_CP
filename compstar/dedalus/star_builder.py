@@ -358,7 +358,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
     #assuming rho, T are nondimensionalized inputs, but opacity_func returns a dimensionalized opacity 
     rad_diff_func_in = lambda rho,T: (16 * constants.sigma_sb.cgs * (T*T_nd)**3 / (3 * (rho*rho_nd)**2 * cp * opacity_func_in(rho,T))) * (tau_nd / L_nd**2)
     #assuming rho, T are nondimensionalized inputs, but will return dimensionalized rad_diff so must non-dimensionalize
-    
+    # will have to call HSE_solve_CZ and HSE_solve_RZ instead
     atmo = HSE_solve(c, d, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, F_conv_func,
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
               R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
