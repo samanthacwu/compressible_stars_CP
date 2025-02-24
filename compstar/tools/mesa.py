@@ -115,7 +115,7 @@ def adjust_opacity(mesa_file, dimensionless=False):
             return opacity_adj.value, gff, z_frac, x_frac, ye[0]
         else:
             return opacity_adj * (u.cm**2 / u.g), gff, z_frac, x_frac, ye[0]
-def opacity_func(rho,T,gff,z_frac,x_frac,ye,dimensionless=False): #this is dimensional
+def opacity_func(rho,T,gff,z_frac,x_frac,ye,dimensionless=False): #this is not non-dimensionalized
     kappa_ff = lambda rho,T,Z,X: 3.68e22*(1-Z)*(1+X)*rho*T**(-7/2)
     if dimensionless:
         return ye*(0.2*(1+x_frac)+gff*kappa_ff(rho,T,z_frac,x_frac))

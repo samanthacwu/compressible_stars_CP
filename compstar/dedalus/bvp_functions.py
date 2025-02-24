@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
 
+#first one is not used right now. will use combo of HSE_solve_CZ + HSE_solve_RZ + HSE_EOS_solve for smoothed quantities
+
 def HSE_solve(coords, dist, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, Fconv_func, r_stitch=[], r_outer=1, low_nr=16, \
               R=1, gamma=5/3, G=1, nondim_radius=1, ncc_cutoff=1e-9, tolerance=1e-9, HSE_tolerance = 1e-4):
     """
@@ -242,35 +244,6 @@ def HSE_solve(coords, dist, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2
             logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
-
-    # plt.figure()
-    for k, basis in bases.items():
-        namespace['g_phi_{}'.format(k)].change_scales(basis.dealias)
-        namespace['g_phi_in_{}'.format(k)].change_scales(basis.dealias)
-        namespace['g_{}'.format(k)] = -d3.grad(namespace['g_phi_{}'.format(k)])
-    #     plt.ylabel(r'$\Phi_g$')
-    #     plt.xlabel(r'r')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['g_phi_{}'.format(k)]['g'][0,0,:],label='g_phi',c='cornflowerblue')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['g_phi_in_{}'.format(k)]['g'][0,0,:],label='g_phi in',c='salmon',ls=':')
-    #     plt.legend()
-    # plt.figure()
-    # for k, basis in bases.items():
-    #     namespace['ln_rho_{}'.format(k)].change_scales(basis.dealias)
-    #     namespace['ln_rho_in_{}'.format(k)].change_scales(basis.dealias)
-        
-    #     plt.ylabel(r'$\ln \rho$')
-    #     plt.xlabel(r'r')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['ln_rho_{}'.format(k)]['g'][0,0,:],label='ln_rho',c='cornflowerblue')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['ln_rho_in_{}'.format(k)]['g'][0,0,:],label='ln_rho in',c='salmon',ls=':')
-    #     plt.legend()
-    # plt.figure()
-    # for k, basis in bases.items():
-    #     plt.ylabel(r'$s$')
-    #     plt.xlabel(r'r')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['s_{}'.format(k)]['g'][0,0,:],label='s',c='cornflowerblue')
-    #     plt.plot(namespace['r_de_{}'.format(k)][0,0,:], -(R*namespace['ln_rho_{}'.format(k)]).evaluate()['g'][0,0,:],label='s in',c='salmon',ls=':')
-    # plt.legend()
-
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
@@ -504,8 +477,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
 
     namespace['pi'] = np.pi
     locals().update(namespace)
-    
-
 
     # Solve for poisson equation given ln_rho.
     variables, taus = [], []
@@ -523,10 +494,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     problem = d3.NLBVP(variables + taus, namespace=locals())
     count_eqn = 0
     for k, basis in bases.items():
-    
-        # Set a decent initial guess for s.
-        # namespace['s_{}'.format(k)].change_scales(basis.dealias)
-        # namespace['s_{}'.format(k)]['g'] = -(R*namespace['ln_rho_in_{}'.format(k)]).evaluate()['g']
         # Set a decent initial guess for ln_rho.
         namespace['ln_rho_{}'.format(k)].change_scales(basis.dealias)
         namespace['ln_rho_in_{}'.format(k)].change_scales(basis.dealias)
@@ -579,14 +546,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     pert_norm = np.inf
     while pert_norm > tolerance or HSE_err > HSE_tolerance:
-
-        plt.figure()
-        for k, basis in bases.items():
-            plt.ylabel(r'HSE')
-            plt.xlabel(r'r')
-            plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['HSE_{}'.format(k)]['g'][2,0,0,:],label='HSE',c='cornflowerblue')
-        plt.legend()
-        plt.show()
         HSE_err = 0
         solver.newton_iteration(damping=1)
         pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
@@ -596,34 +555,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
             logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
-
-    plt.figure()
-    for k, basis in bases.items():
-        namespace['g_phi_{}'.format(k)].change_scales(basis.dealias)
-        namespace['g_phi_in_{}'.format(k)].change_scales(basis.dealias)
-        namespace['g_{}'.format(k)] = -d3.grad(namespace['g_phi_{}'.format(k)])
-        plt.ylabel(r'$\Phi_g$')
-        plt.xlabel(r'r')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['g_phi_{}'.format(k)]['g'][0,0,:],label='g_phi',c='cornflowerblue')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['g_phi_in_{}'.format(k)]['g'][0,0,:],label='g_phi in',c='salmon',ls=':')
-        plt.legend()
-    plt.figure()
-    for k, basis in bases.items():
-        namespace['ln_rho_{}'.format(k)].change_scales(basis.dealias)
-        namespace['ln_rho_in_{}'.format(k)].change_scales(basis.dealias)
-        
-        plt.ylabel(r'$\ln \rho$')
-        plt.xlabel(r'r')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['ln_rho_{}'.format(k)]['g'][0,0,:],label='ln_rho',c='cornflowerblue')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['ln_rho_in_{}'.format(k)]['g'][0,0,:],label='ln_rho in',c='salmon',ls=':')
-        plt.legend()
-    plt.figure()
-    for k, basis in bases.items():
-        plt.ylabel(r'$s$')
-        plt.xlabel(r'r')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], namespace['s_{}'.format(k)]['g'][0,0,:],label='s',c='cornflowerblue')
-        plt.plot(namespace['r_de_{}'.format(k)][0,0,:], -(R*namespace['ln_rho_{}'.format(k)]).evaluate()['g'][0,0,:],label='s in',c='salmon',ls=':')
-    plt.legend()
 
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
@@ -659,7 +590,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     Q = stitch_fields['Q'].ravel()
     s0 = stitch_fields['s0'].ravel()
 
-
     #Plot the results.
     fig = plt.figure()
     ax1 = fig.add_subplot(4,2,1)
@@ -694,7 +624,8 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     ax8.plot(r, grad_s, label='grad s')
     ax8.set_yscale('log')
     ax8.legend()
-    # fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
+    plt.subplots_adjust(hspace=0.25,wspace=0.25)
+    fig.savefig('stratification_CZonly.png', bbox_inches='tight', dpi=300)
     for k, basis in bases.items():
         this_HSE = np.max(np.abs(namespace['HSE_{}'.format(k)].evaluate()['g']))
         print('this HSE',this_HSE)
@@ -729,26 +660,6 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     quantities_CZ['grad_pomega'] = grad_pom
     quantities_CZ['grad_ln_pomega'] = grad_ln_pom
     quantities_CZ['r_de'] = r
-    # for k, basis in bases.items():
-    #     phi, theta, r_basis = dist.local_grids(basis)
-    #     namespace['ones_{}'.format(k)] = ones = dist.Field(bases=basis, name='ones')
-    #     ones['g'] = 1
-    #     # gamma*pomega*(d3.grad(ones*ln_rho) + d3.grad(s)/Cp) + d3.grad(g_phi)*ones
-    #     namespace['pomega_in_{}'.format(k)] = pomega_in = dist.Field(name='pomega_in', bases=basis)
-    #     pomega_in['g']=atmosphere['pomega'](r_basis)
-    #     namespace['ln_rho_in_{}'.format(k)] = ln_rho_in = dist.Field(name='ln_rho_in', bases=basis)
-    #     ln_rho_in['g']=atmosphere['ln_rho'](r_basis)
-    #     namespace['s_in_{}'.format(k)] = s_in = dist.Field(name='s_in', bases=basis)
-    #     s_in['g']=0
-    #     namespace['g_phi_in_{}'.format(k)] = g_phi_in = dist.Field(name='g_phi_in', bases=basis)
-    #     g_phi_in['g']=atmosphere['g_phi'](r_basis)
-    #     # print(pomega,ln_rho,s,g_phi)
-    #     namespace['HSE_in_{}'.format(k)] = HSE_in = gamma*pomega_in*(d3.grad(ones*ln_rho_in) + d3.grad(s_in)/Cp) + d3.grad(g_phi_in)*ones
-    #     namespace['HSE_out_{}'.format(k)] = HSE_out = gamma*pom*(grad_ln_rho + grad_s/Cp) - g
-    #     this_HSE = np.max(np.abs(namespace['HSE_in_{}'.format(k)].evaluate()['g']))
-    #     this_HSE2 = np.max(np.abs(namespace['HSE_out_{}'.format(k)]))
-    #     print('this HSE',this_HSE,this_HSE2)
-    # print('r_test_CZ',r)
     return atmosphere, quantities_CZ
 
 #given atmo from HSE solved above, then input quantities_CZ to this one
@@ -840,7 +751,6 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     namespace['gamma'] = gamma
     namespace['log'] = np.log
     namespace['exp'] = np.exp
-
     #Loop over bases, set up fields and operators.
     for k, basis in bases.items():
         namespace['basis_{}'.format(k)] = basis
@@ -968,9 +878,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
         elif k == 'S1':
             Q['g'] = quantities_CZ['Q'][dealias_length:]
             
-        #### chi_rad_func should be a function of rho, T now, not a field. 
         namespace['chi_rad_{}'.format(k)] = chi_rad = lambda rho,pomega: chi_rad_func(rho, pomega/R)
-
         # Create important operations from the fields.
         namespace['ln_pomega_LHS_{}'.format(k)] = ln_pomega_LHS = gamma*(s/Cp + ((gamma-1)/gamma)*ln_rho*ones)
         namespace['ln_pomega_{}'.format(k)] = ln_pomega = ln_pomega_LHS + np.log(R)
@@ -989,9 +897,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
         namespace['r_vec_g_{}'.format(k)] = r_vec@g
         namespace['g_op_{}'.format(k)] = gamma * pomega * (d3.grad(s)/Cp + d3.grad(ln_rho))
         namespace['s0_{}'.format(k)] = Cp * ((1/gamma)*(np.log(pomega) + ln_rho) - ln_rho) #s with an offset so s0 = cp * (1/gamma * lnP - ln_rho)
-        # namespace['Frad_op_{}'.format(k)] = rho * Cp * chi_rad * grad_pomega/R  # = - F_rad
-        namespace['Frad_op_{}'.format(k)] = Frad_op = Frad*R/(rho * Cp) # = - grad (pomega)*chi_rad
-        
+        namespace['Frad_op_{}'.format(k)] = Frad*R/(rho * Cp) # = - grad (pomega)*chi_rad
     namespace['pi'] = np.pi
     
     locals().update(namespace)
@@ -1034,13 +940,12 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             #ln pomega comes from these
             
         if k != 'B':
-            variables += [namespace['g_phi_{}'.format(k)],
-                          namespace['s_{}'.format(k)],namespace['ln_rho_{}'.format(k)],
-                          namespace['pomega_{}'.format(k)] ]
+            variables += [namespace['g_phi_{}'.format(k)], namespace['s_{}'.format(k)],
+                          namespace['ln_rho_{}'.format(k)], namespace['pomega_{}'.format(k)] ]
             
-            taus += [ namespace['tau_g_phi_1_{}'.format(k)], namespace['tau_g_phi_{}'.format(k)], 
-                     namespace['tau_pomega_{}'.format(k)],[namespace['tau_g_phi_2_{}'.format(k)]]]
-            
+            taus += [ namespace['tau_g_phi_1_{}'.format(k)],  namespace['tau_g_phi_{}'.format(k)], 
+                     namespace['tau_g_phi_2_{}'.format(k)], namespace['tau_pomega_{}'.format(k)]] 
+
     print('variables',len(variables),'taus',len(taus))
     problem = d3.NLBVP(variables + taus, namespace=locals())
     count_eqn = 0
@@ -1063,7 +968,6 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             #Set the equations: poisson
             problem.add_equation("lap(g_phi_{0}) - four_pi_G_{0}*exp(ln_rho_{0}*ones_{0}) + lift_{0}(tau_g_phi_1_{0}) + lift2_{0}(tau_g_phi_2_{0}) = 0".format(k))
             count_eqn+=1
-            
             #Set the equations: hydrostatic equilibrium
             problem.add_equation("-grad(g_phi_{0}) + r_vec_{0}*lift_{0}(tau_g_phi_{0}) = g_op_{0} ".format(k))
             # this has grad_s in it
@@ -1072,7 +976,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             problem.add_equation(" -grad(pomega_{0}) + r_vec_{0}*lift_{0}(tau_pomega_{0}) = Frad_op_{0}/chi_rad_{0}(exp(ln_rho_{0}*ones_{0}),pomega_{0})".format(k))  #Frad_op_{0}
             problem.add_equation("pomega_{0} = exp(ln_pomega_{0})".format(k))
             count_eqn+=3
-        
+    
     #Set the boundary conditions.
     iter = 0
     for k, basis in bases.items():
@@ -1080,8 +984,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             k_old = list(bases.keys())[iter-1]
             r_s = r_stitch[iter-1]
         iter += 1
-        
-    #fix BCs to the values at the transition point 
+    #fix them to the values at the transition point 
     problem.add_equation("pomega_S1(r=r_transition) = pomega_r_transition")
     problem.add_equation("ln_rho_S1(r=r_transition) = ln_rho_r_transition")
     problem.add_equation("g_phi_S1(r=r_transition) = g_phi_r_transition") 
@@ -1103,9 +1006,9 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
 
-    # #now, when stitch together, make sure to combine the one for the CZ with the one for the RZ
-    # # Stitch together the fields for creation of interpolators that span the full simulation domain.
-    # #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
+    # now, when stitch together, make sure to combine the one for the CZ with the one for the RZ
+    # Stitch together the fields for creation of interpolators that span the full simulation domain.
+    # Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
     fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'grad_s', 'g', 'pomega', 'rho', 'ln_rho', 'g_phi', 'r_vec', 'HSE', 'N2_op', 'Q', 's0']
     for f in fields:
@@ -1140,7 +1043,6 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     N2 = stitch_fields['N2_op'].ravel()
     Q = stitch_fields['Q'].ravel()
     s0 = stitch_fields['s0'].ravel()
-
 
     #Plot the results.
     fig = plt.figure(figsize=(8,12))
@@ -1178,8 +1080,8 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     ax8.plot(r, grad_s, label='grad s')
     ax8.set_yscale('log')
     ax8.legend()
-    # fig.savefig('stratification.png', bbox_inches='tight', dpi=300)
     plt.subplots_adjust(hspace=0.25,wspace=0.25)
+    fig.savefig('stratification_CZplusRZ.png', bbox_inches='tight', dpi=300)
     #Create interpolators for the atmosphere.
     atmosphere = dict()
     atmosphere['grad_pomega'] = interp1d(r, grad_pom, **interp_kwargs)
@@ -1196,3 +1098,213 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     atmosphere['s0'] = interp1d(r, s0, **interp_kwargs)
     return atmosphere
 
+#after smoothing, call this function to make sure smoothed functions are consistent with EOS and HSE given smoothed grad_s profile.
+def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_in, pomega_func_in, s0_const, r_stitch=[], r_outer=1, low_nr=16, \
+              R=1, gamma=5/3, G=1, nondim_radius=1, ncc_cutoff=1e-9, tolerance=1e-9, HSE_tolerance = 1e-4):
+    
+    # Parameters
+    namespace = dict()
+    namespace['G'] = G
+    namespace['R'] = R
+    namespace['Cp'] = Cp = R*gamma/(gamma-1)
+    namespace['gamma'] = gamma
+    namespace['log'] = np.log
+    namespace['exp'] = np.exp
+
+    #Loop over bases, set up fields and operators.
+    for k, basis in bases.items():
+        namespace['basis_{}'.format(k)] = basis
+        namespace['S2_basis_{}'.format(k)] = S2_basis = basis.S2_basis()
+
+        # Make problem variables and taus.
+        
+        namespace['s_{}'.format(k)] = s = dist.Field(name='s', bases=basis)
+        namespace['pomega_{}'.format(k)] = pomega = dist.Field( name='pomega', bases=basis)
+        namespace['ln_rho_{}'.format(k)] = ln_rho = dist.Field(name='ln_rho', bases=basis)
+        namespace['grad_ln_rho_{}'.format(k)] = grad_ln_rho = dist.VectorField(coords, name='grad_ln_rho', bases=basis)
+        namespace['tau_s_{}'.format(k)] = tau_pomega = dist.Field(name='tau_pomega', bases=S2_basis)
+        namespace['tau_rho_{}'.format(k)] = tau_rho = dist.Field(name='tau_rho', bases=S2_basis)
+
+        # Set up some fundamental grid data
+        low_scales = low_nr/basis.radial_basis.radial_size 
+        phi, theta, r = dist.local_grids(basis)
+        phi_de, theta_de, r_de = dist.local_grids(basis, scales=basis.dealias)
+        phi_low, theta_low, r_low = dist.local_grids(basis, scales=(1,1,low_scales))
+        namespace['r_de_{}'.format(k)] = r_de
+        namespace['r_vec_{}'.format(k)] = r_vec = dist.VectorField(coords, bases=basis.radial_basis)
+        r_vec['g'][2] = r
+        namespace['r_squared_{}'.format(k)] = r_squared = dist.Field(bases=basis.radial_basis)
+        r_squared['g'] = r**2       
+
+        # Make lift operators for BCs
+        if k == 'B':
+            namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis, -1)
+        else:
+            namespace['lift_{}'.format(k)] = lift = lambda A: d3.Lift(A, basis.derivative_basis(2), -1)
+
+        # Make a field of ones for converting NCCs to full fields.
+        namespace['ones_{}'.format(k)] = ones = dist.Field(bases=basis, name='ones')
+        ones['g'] = 1
+
+        #Make a field that smooths at the edge of the ball basis.
+        namespace['edge_smoothing_{}'.format(k)] = edge_smooth = dist.Field(bases=basis, name='edge_smooth')
+        edge_smooth['g'] = one_to_zero(r, 0.95*bases['B'].radius, width=0.03*bases['B'].radius)
+
+        # Set s0, g inputs.
+        namespace['grad_s0_in_{}'.format(k)] = grad_s0_in = dist.VectorField(coords,bases=basis, name='grad_s0_in')
+        grad_s0_in['g'][2] = grad_s_smooth_func(r)
+
+        namespace['g_in_{}'.format(k)] = g_in = dist.VectorField(coords,bases=basis, name='g_in')
+        g_in['g'][2] = g_func(r)
+
+        #set initial guesses for ln_rho, pomega
+        namespace['ln_rho_in_{}'.format(k)] = ln_rho_in = dist.Field(bases=basis, name='ln_rho_in')
+        ln_rho_in['g'] = ln_rho_func_in(r)
+
+        namespace['pomega_in_{}'.format(k)] = pomega_in = dist.Field(bases=basis, name='pomega_in')
+        pomega_in['g'] = pomega_func_in(r)
+
+
+        # Create important operations from the fields.
+        namespace['P_{}'.format(k)] = P = pomega*np.exp(ln_rho)
+        namespace['HSE_{}'.format(k)] = HSE = gamma*pomega*(grad_ln_rho + grad_s0_in/Cp) - g_in*ones
+        namespace['rho_{}'.format(k)] = rho = np.exp(ln_rho*ones)
+        namespace['T_{}'.format(k)] = T = pomega/R
+        namespace['grad_pomega_{}'.format(k)] = d3.grad(pomega)
+        namespace['grad_ln_pomega_{}'.format(k)] = d3.grad(pomega)/pomega
+        namespace['r_vec_g_{}'.format(k)] = r_vec@g_in
+        namespace['g_op_{}'.format(k)] = gamma * pomega * (grad_s0_in/Cp + grad_ln_rho)
+        namespace['s0_op_{}'.format(k)] = Cp * ((1/gamma)*(np.log(pomega) + ln_rho) - ln_rho) #s with an offset so s0 = cp * (1/gamma * lnP - ln_rho)
+
+    namespace['pi'] = np.pi
+    locals().update(namespace)
+    
+    #Solve for s0.
+    variables, taus = [], []
+    for k, basis in bases.items():
+        variables += [namespace['s_{}'.format(k)],]
+        taus      += [namespace['tau_s_{}'.format(k)],]
+
+    problem = d3.NLBVP(variables + taus, namespace=locals())
+    for k, basis in bases.items():
+        #Equation is just definitional.
+        problem.add_equation("grad(s_{0}) - grad_s0_in_{0} + r_vec_{0}*lift_{0}(tau_s_{0}) = 0".format(k))
+    
+    #Set boundary conditions.
+    iter = 0
+    for k, basis in bases.items():
+        if k != 'B':
+            k_old = list(bases.keys())[iter-1]
+            r_s = r_stitch[iter-1]
+            problem.add_equation("s_{0}(r={2}) - s_{1}(r={2}) = 0".format(k, k_old, r_s))
+        iter += 1
+    problem.add_equation("s_B(r=0) = {0}".format(s0_const))
+
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
+    pert_norm = np.inf
+    while pert_norm > tolerance:
+        solver.newton_iteration(damping=1)
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+        logger.info(f'Perturbation norm: {pert_norm:.3e}')
+    logger.info('s0 found')
+
+    # Solve for HSE/EOS simultaneously given s.
+    variables, taus = [], []
+    for k, basis in bases.items():
+        variables += [namespace['pomega_{}'.format(k)],namespace['grad_ln_rho_{}'.format(k)],namespace['ln_rho_{}'.format(k)]]
+        
+        taus += [namespace['tau_rho_{}'.format(k)]] 
+
+    print('variables',len(variables),'taus',len(taus))
+    problem = d3.NLBVP(variables + taus, namespace=locals())
+    count_eqn = 0
+    for k, basis in bases.items():
+        #set decent initial guesses for ln rho and pomega
+        namespace['ln_rho_{}'.format(k)].change_scales(basis.dealias)
+        namespace['pomega_{}'.format(k)].change_scales(basis.dealias)
+        namespace['ln_rho_in_{}'.format(k)].change_scales(basis.dealias)
+        namespace['pomega_in_{}'.format(k)].change_scales(basis.dealias)
+
+        namespace['ln_rho_{}'.format(k)]['g'] = np.copy(namespace['ln_rho_in_{}'.format(k)]['g'])
+        namespace['pomega_{}'.format(k)]['g'] = np.copy(namespace['pomega_in_{}'.format(k)]['g'])
+
+    
+        #Set the equations: hydrostatic equilibrium
+        problem.add_equation("g_in_{0} = g_op_{0} ".format(k))
+        problem.add_equation("s_{0} = s0_op_{0}".format(k))
+        problem.add_equation("grad(ln_rho_{0}) - grad_ln_rho_{0} + r_vec_{0}*lift_{0}(tau_rho_{0}) = 0".format(k))
+        #above is just definition of ln_rho/grad_ln rho to recover ln_rho
+        
+        count_eqn+=3
+
+    
+    #Set the boundary conditions.
+    iter = 0
+    for k, basis in bases.items():
+        if k != 'B':
+            k_old = list(bases.keys())[iter-1]
+            r_s = r_stitch[iter-1]
+            problem.add_equation("ln_rho_{0}(r={2}) - ln_rho_{1}(r={2}) = 0".format(k, k_old, r_s))
+            # problem.add_equation("pomega_{0}(r={2}) - pomega_{1}(r={2}) = 0".format(k, k_old, r_s))
+            count_eqn+=1
+        iter += 1
+    problem.add_equation("ln_rho_B(r=nondim_radius) = 0")
+    count_eqn+=1
+    print('number of eqns',count_eqn)
+
+    #Solve with tolerances on pert_norm and hydrostatic equilibrium.
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
+    pert_norm = np.inf
+    while pert_norm > tolerance or HSE_err > HSE_tolerance:
+        HSE_err = 0
+        solver.newton_iteration(damping=1)
+        pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+        logger.info(f'Perturbation norm: {pert_norm:.3e}')
+        for k, basis in bases.items():
+            this_HSE = np.max(np.abs(namespace['HSE_{}'.format(k)].evaluate()['g']))
+            logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
+            if this_HSE > HSE_err:
+                HSE_err = this_HSE
+
+    # plt.figure()
+
+    # Stitch together the fields for creation of interpolators that span the full simulation domain.
+    #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
+    stitch_fields = OrderedDict()
+    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'pomega', 'rho', 'ln_rho', 's','grad_s0_in','r_vec']
+    for f in fields:
+        stitch_fields[f] = []
+    
+    for k, basis in bases.items():
+        for f in fields:
+            stitch_fields[f] += [np.copy(namespace['{}_{}'.format(f, k)].evaluate()['g'])]
+
+    if len(stitch_fields['r_vec']) == 1:
+        for f in fields:
+            stitch_fields[f] = stitch_fields[f][0]
+    else:
+        for f in fields:
+            stitch_fields[f] = np.concatenate(stitch_fields[f], axis=-1)
+
+    grad_pom = stitch_fields['grad_pomega'][2,:].ravel()
+    grad_ln_pom = stitch_fields['grad_ln_pomega'][2,:].ravel()
+    grad_ln_rho = stitch_fields['grad_ln_rho'][2,:].ravel()
+    grad_s = stitch_fields['grad_s0_in'][2,:].ravel()
+    r = stitch_fields['r_vec'][2,:].ravel()
+
+    pom = stitch_fields['pomega'].ravel()
+    rho = stitch_fields['rho'].ravel()
+    ln_rho = stitch_fields['ln_rho'].ravel()
+    s0 = stitch_fields['s'].ravel()
+
+    #Create interpolators for the atmosphere.
+    atmosphere = dict()
+    atmosphere['grad_pomega'] = interp1d(r, grad_pom, **interp_kwargs)
+    atmosphere['grad_ln_pomega'] = interp1d(r, grad_ln_pom, **interp_kwargs)
+    atmosphere['grad_ln_rho'] = interp1d(r, grad_ln_rho, **interp_kwargs)
+    atmosphere['grad_s'] = interp1d(r, grad_s, **interp_kwargs)
+    atmosphere['pomega'] = interp1d(r, pom, **interp_kwargs)
+    atmosphere['rho'] = interp1d(r, rho, **interp_kwargs)
+    atmosphere['ln_rho'] = interp1d(r, ln_rho, **interp_kwargs)
+    atmosphere['s0'] = interp1d(r, s0, **interp_kwargs)
+    return atmosphere

@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 import compstar 
 from .compressible_functions import make_bases
 from .parser import name_star
-from .bvp_functions import HSE_solve
+from .bvp_functions import HSE_solve_CZ, HSE_solve_RZ, HSE_EOS_solve
 from compstar.tools.mesa import DimensionalMesaReader, find_core_cz_radius, adjust_opacity, opacity_func
 from compstar.tools.general import one_to_zero, zero_to_one
 import compstar.defaults.config as config
@@ -154,7 +154,7 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field.change_scales(basis.dealias)
     return this_field
 
-def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_filter=False):
+def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transition_default=1.01, reapply_grad_s_filter=False):
     """
     This function builds the NCCs for the star, then saves them to a file.
     TODO: This function is a bit of a mess, and should be cleaned up. It should be turned into a class.
@@ -350,29 +350,104 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, reapply_grad_s_f
 
     # Solve for hydrostatic equilibrium for background
     N2_func = interp1d(r_nd, tau_nd**2 * smooth_N2, **interp_kwargs)
-    grad_ln_rho_func = interpolations['grad_ln_rho0']
+    # grad_ln_rho_func = interpolations['grad_ln_rho0']
     ln_rho_func = interpolations['ln_rho0']
     g_phi_func = interpolations['g_phi']
-    # opacity_info_arr = [gff_out, z_frac_out, x_frac_out,ye_out]
-    opacity_func_in = lambda rho, T: opacity_func(rho*rho_nd,T*T_nd,gff=gff_out,z_frac=z_frac_out,x_frac=x_frac_out,ye=ye_out)
-    #assuming rho, T are nondimensionalized inputs, but opacity_func returns a dimensionalized opacity 
-    # rad_diff_func_in = lambda rho,T: (16 * constants.sigma_sb.cgs * (T*T_nd)**3 / (3 * (rho*rho_nd)**2 * cp * opacity_func_in(rho,T))) * (tau_nd / L_nd**2)
-    #assuming rho, T are nondimensionalized inputs, but will return dimensionalized rad_diff so must non-dimensionalize
-    # will have to call HSE_solve_CZ and HSE_solve_RZ instead
-    atmo = HSE_solve(c, d, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, F_conv_func,
-              r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
-              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
 
-    interpolations['ln_rho0'] = atmo['ln_rho']
-    interpolations['Q'] = atmo['Q']
-    interpolations['g'] = atmo['g']
-    interpolations['g_phi'] = atmo['g_phi']
-    interpolations['grad_s0'] = atmo['grad_s']
-    interpolations['s0'] = atmo['s0']
-    interpolations['pom0'] = atmo['pomega']
-    interpolations['grad_ln_pom0'] = atmo['grad_ln_pomega']
+    L_rad_sim = dmr.Luminosity.cgs.value - (L_conv_sim*(r/L_nd)**2 * (4*np.pi)).cgs.value
+    L_rad_sim/= (r/L_nd)**2 * (4*np.pi)
+    F_rad_func = interp1d(r/L_nd, L_rad_sim/lum_nd, **interp_kwargs)
+
+    # opacity_func_in = lambda rho, T: opacity_func(rho*rho_nd.cgs.value,T*T_nd.cgs.value,gff=gff_out,z_frac=z_frac_out,x_frac=x_frac_out,ye=ye_out,dimensionless=True)[0]
+
+    #assuming rho, T are nondimensionalized inputs, but opacity_func returns a dimensionalized opacity 
+    # chi_rad_func = lambda rho,T: (16 * constants.sigma_sb.cgs.value * (T*T_nd.cgs.value)**3 / (3 * (rho*rho_nd.cgs.value)**2 * cp.cgs.value * opacity_func_in(rho,T).cgs.value)) * (tau_nd / L_nd**2).cgs.value
+    def chi_rad_func(rho,T):
+        Cp = nondim_cp*s_nd.cgs.value
+        opacity = 3.68e22*(1-z_frac_out)*(1+x_frac_out)*(rho*rho_nd.cgs.value)*(T*T_nd.cgs.value)**(-7./2.)*gff_out + ye_out*(0.2*(1+x_frac_out))
+        chinum= (16 * constants.sigma_sb.cgs.value * (T*T_nd.cgs.value)**3 ) 
+        chiden= (3 * (rho*rho_nd.cgs.value)**2 * Cp * opacity)
+        chi = (chinum/chiden)* (tau_nd / L_nd**2).cgs.value
+        return chi #nondimensionalized
+    
+    # will have to call HSE_solve_CZ and HSE_solve_RZ instead
+    # atmo = HSE_solve(c, d, bases, g_phi_func, grad_ln_rho_func, ln_rho_func, N2_func, F_conv_func,
+    #           r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
+    #           R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
+
+    stitch_radii2 = [bg_CZ_RZ_transition_default] #set transition point for the CZ + RZ solve for background quantities
+    resolutions2 = [(1,1,128),(1,1,64)] #set resolution at which to solve for these background quantities
+    logger.info('transitioning background solve at {}'.format(stitch_radii2[0]))
+    logger.info('using resolutions B: {}, S: {}'.format(resolutions2[0][-1],resolutions2[1][-1]))
+    c2, d2, bases2, bases_keys2 = make_bases(resolutions2, stitch_radii2, 
+                                            r_bound_nd[-1], dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
+
+    atmo_test_CZ, quantities_CZ = HSE_solve_CZ(c2, d2, bases2, g_phi_func,ln_rho_func, F_conv_func,
+              r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
+              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-6, HSE_tolerance = 1e-5)
+
+    value_to_use = bg_CZ_RZ_transition_default
+    for k, basis in bases2.items():
+        phi, theta, r_basis = d2.local_grids(basis)
+        if r_basis[0][0][0] > bg_CZ_RZ_transition_default-0.01:
+            r_transition=r_basis[0][0][np.where((np.abs(r_basis[0][0]-value_to_use)/value_to_use < 0.01))[0]][0]
+    logger.info('transition point for atmo_test_RZ: {}'.format(r_transition))
+    atmo_test_RZ=HSE_solve_RZ(c2, d2, bases2, quantities_CZ, r_transition, chi_rad_func, F_rad_func, N2_func,
+                r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
+                R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-4)
+
+    # smooth grad_s from atmo_test_RZ, then recalculate grad_ln_rho and pomega from HSE and EOS simultaneously
+    grad_s_smooth = np.copy(atmo_test_RZ['grad_s'](r_nd))
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.01*stitch_radii2[0],width=0.01*stitch_radii2[0])
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.015*stitch_radii2[0],width=0.01*stitch_radii2[0])
+    grad_s_smooth_func = interp1d(r_nd, grad_s_smooth, **interp_kwargs)
+    logger.info('transition point for HSE_EOS_solve: {}'.format(r_transition))
+
+    atmo_test_HSE_EOS=HSE_EOS_solve(c2, d2, bases2, grad_s_smooth_func, 
+              atmo_test_RZ['g'], atmo_test_RZ['ln_rho'], atmo_test_RZ['pomega'], atmo_test_RZ['s0'](r_nd)[0], 
+              r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
+              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-2)
+    # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)
+    delta_grad_ln_rho = atmo_test_RZ['grad_ln_rho'](r_nd)-atmo_test_HSE_EOS['grad_ln_rho'](r_nd)
+    delta_grad_s = atmo_test_RZ['grad_s'](r_nd)-atmo_test_HSE_EOS['grad_s'](r_nd)
+    delta_pomega = atmo_test_RZ['pomega'](r_nd)-atmo_test_HSE_EOS['pomega'](r_nd)
+    delta_grad_pomega = atmo_test_RZ['grad_pomega'](r_nd)-atmo_test_HSE_EOS['grad_pomega'](r_nd)
+    delta_grad_ln_pomega = atmo_test_RZ['grad_ln_pomega'](r_nd)-atmo_test_HSE_EOS['grad_ln_pomega'](r_nd)
+    delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
+    delta_rho = atmo_test_RZ['rho'](r_nd)-atmo_test_HSE_EOS['rho'](r_nd)
+    delta_s = atmo_test_RZ['s0'](r_nd)-atmo_test_HSE_EOS['s0'](r_nd)
+
+    #define pomega_1 and get pomega_2 from delta_pomega:  pomega_1/pomega_smooth = gamma(s_1/c_p+(gamma-1)/gamma ln(rho_1))
+    pomega_1 = atmo_test_HSE_EOS['pomega'](r_nd)*(nondim_gamma1*delta_s/nondim_cp + (nondim_gamma1-1)*delta_ln_rho)
+    pomega_2 = delta_pomega - pomega_1
+    pomega_2_defn = atmo_test_HSE_EOS['pomega'](r_nd)*(np.exp(pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)) - (1+pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)))
+
+    interpolations['ln_rho0'] = atmo_test_HSE_EOS['ln_rho']
+    interpolations['Q'] = atmo_test_RZ['Q']
+    interpolations['g'] = atmo_test_HSE_EOS['g']
+    interpolations['g_phi'] = atmo_test_HSE_EOS['g_phi']
+    interpolations['grad_s0'] = atmo_test_HSE_EOS['grad_s']
+    interpolations['s0'] = atmo_test_HSE_EOS['s0']
+    interpolations['pom0'] = atmo_test_HSE_EOS['pomega']
+    interpolations['grad_ln_pom0'] = atmo_test_HSE_EOS['grad_ln_pomega']
+
+    # use opacity_func to calculate rad_diff = chi
+    ### Recalculate rad_diff using rho, T now smoothed
+    opacity_smooth = opacity_func((interpolations['ln_rho0'](r_nd)*rho_nd.cgs.value),interpolations['pom0']*nondim_R_gas*T_nd.cgs.value,gff_out,z_frac_out,x_frac_out,ye_out,dimensionless=False)
+    rad_diff       = (16 * constants.sigma_sb.cgs * (interpolations['pom0']*nondim_R_gas*T_nd.cgs.value)**3 / (3 * (interpolations['ln_rho0'](r_nd)*rho_nd.cgs.value)**2 * cp * opacity_smooth)).cgs
+    rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
+    sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
     interpolations['kappa_rad'] = interp1d(r_nd, np.exp(interpolations['ln_rho0'](r_nd))*nondim_cp*sim_rad_diff, **interp_kwargs)
     interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient(interpolations['kappa_rad'](r_nd), r_nd), **interp_kwargs)
+
+    # add interpolations of the fluctuations (initial conditions)
+    interpolations['grad_s1'] = interp1d(r_nd, delta_grad_s, **interp_kwargs)
+    interpolations['grad_ln_rho1'] = interp1d(r_nd, delta_grad_ln_rho, **interp_kwargs)
+    interpolations['pomega1'] = interp1d(r_nd, pomega_1, **interp_kwargs)
+    interpolations['pomega2'] = interp1d(r_nd, pomega_2, **interp_kwargs)
+
+    # add interpolations of full background (initial conditions)
+    # interpolations[]
 
     ## Construct Dedalus NCCs
     for ncc in ncc_dict.keys():
