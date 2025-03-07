@@ -555,7 +555,12 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
             logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
-
+    
+    # get g
+    for k, basis in bases.items():
+        namespace['g_phi_{}'.format(k)].change_scales(basis.dealias)
+        namespace['g_phi_in_{}'.format(k)].change_scales(basis.dealias)
+        namespace['g_{}'.format(k)] = -d3.grad(namespace['g_phi_{}'.format(k)])
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
@@ -624,7 +629,7 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     ax8.plot(r, grad_s, label='grad s')
     ax8.set_yscale('log')
     ax8.legend()
-    plt.subplots_adjust(hspace=0.25,wspace=0.25)
+    plt.subplots_adjust(hspace=0.5,wspace=0.25)
     fig.savefig('stratification_CZonly.png', bbox_inches='tight', dpi=300)
     for k, basis in bases.items():
         this_HSE = np.max(np.abs(namespace['HSE_{}'.format(k)].evaluate()['g']))
@@ -1005,7 +1010,12 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
             logger.info('HSE in {}:{:.3e}'.format(k, this_HSE))
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
-
+    
+    #get g
+    for k, basis in bases.items():
+        namespace['g_phi_{}'.format(k)].change_scales(basis.dealias)
+        namespace['g_phi_in_{}'.format(k)].change_scales(basis.dealias)
+        namespace['g_{}'.format(k)] = -d3.grad(namespace['g_phi_{}'.format(k)])
     # now, when stitch together, make sure to combine the one for the CZ with the one for the RZ
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     # Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
@@ -1080,7 +1090,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     ax8.plot(r, grad_s, label='grad s')
     ax8.set_yscale('log')
     ax8.legend()
-    plt.subplots_adjust(hspace=0.25,wspace=0.25)
+    plt.subplots_adjust(hspace=0.4,wspace=0.25)
     fig.savefig('stratification_CZplusRZ.png', bbox_inches='tight', dpi=300)
     #Create interpolators for the atmosphere.
     atmosphere = dict()
@@ -1271,7 +1281,7 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
-    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'pomega', 'rho', 'ln_rho', 's','grad_s0_in','r_vec']
+    fields = ['grad_pomega', 'grad_ln_pomega', 'grad_ln_rho', 'pomega', 'rho', 'ln_rho', 's','grad_s0_in','r_vec','HSE','g_in']
     for f in fields:
         stitch_fields[f] = []
     
@@ -1290,12 +1300,40 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     grad_ln_pom = stitch_fields['grad_ln_pomega'][2,:].ravel()
     grad_ln_rho = stitch_fields['grad_ln_rho'][2,:].ravel()
     grad_s = stitch_fields['grad_s0_in'][2,:].ravel()
+    g = stitch_fields['g_in'][2,:].ravel()
     r = stitch_fields['r_vec'][2,:].ravel()
 
     pom = stitch_fields['pomega'].ravel()
     rho = stitch_fields['rho'].ravel()
     ln_rho = stitch_fields['ln_rho'].ravel()
     s0 = stitch_fields['s'].ravel()
+    HSE = stitch_fields['HSE'][2,:].ravel()
+
+    #Plot the results.
+    fig = plt.figure(figsize=(8,12))
+    ax1 = fig.add_subplot(4,2,1)
+    ax2 = fig.add_subplot(4,2,2)
+    ax3 = fig.add_subplot(4,2,3)
+    ax4 = fig.add_subplot(4,2,4)
+    ax5 = fig.add_subplot(4,2,5)
+    ax6 = fig.add_subplot(4,2,6)
+    ax1.plot(r, grad_pom, label='grad pomega')
+    ax1.legend()
+    ax2.plot(r, grad_ln_rho, label='grad ln rho')
+    ax2.legend()
+    ax3.plot(r, pom/R, label='pomega/R')
+    ax3.plot(r, rho, label='rho')
+    ax3.legend()
+    ax4.plot(r, HSE, label='HSE')
+    ax4.legend()
+    ax5.plot(r, g, label='g')
+    ax5.legend()
+
+    ax6.plot(r, grad_s, label='grad s')
+    ax6.set_yscale('log')
+    ax6.legend()
+    plt.subplots_adjust(hspace=0.5,wspace=0.25)
+    fig.savefig('stratification_HSE_EOS_smoothed.png', bbox_inches='tight', dpi=300)
 
     #Create interpolators for the atmosphere.
     atmosphere = dict()

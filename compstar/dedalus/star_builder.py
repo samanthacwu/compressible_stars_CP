@@ -292,7 +292,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     c, d, bases, bases_keys = make_bases(resolutions, stitch_radii, r_bound_nd[-1], dealias=(1,1,dealias), dtype=dtype, mesh=mesh)
     dedalus_r = OrderedDict()
     for bn in bases.keys():
-        phi, theta, r_vals = bases[bn].global_grids((1, 1, dealias))
+        phi, theta, r_vals = bases[bn].global_grids(dist=d,scales=(1, 1, dealias))
         dedalus_r[bn] = r_vals
 
     # Construct convective flux function which determines how convection is driven
@@ -375,8 +375,9 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     #           r_outer=r_bound_nd[-1], r_stitch=stitch_radii, \
     #           R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1)
 
+    logger.info('starting HSE_solve_CZ')
     stitch_radii2 = [bg_CZ_RZ_transition_default] #set transition point for the CZ + RZ solve for background quantities
-    resolutions2 = [(1,1,128),(1,1,64)] #set resolution at which to solve for these background quantities
+    resolutions2 = [(1,1,256),(1,1,64)] #set resolution at which to solve for these background quantities
     logger.info('transitioning background solve at {}'.format(stitch_radii2[0]))
     logger.info('using resolutions B: {}, S: {}'.format(resolutions2[0][-1],resolutions2[1][-1]))
     c2, d2, bases2, bases_keys2 = make_bases(resolutions2, stitch_radii2, 
@@ -392,40 +393,27 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
         if r_basis[0][0][0] > bg_CZ_RZ_transition_default-0.01:
             r_transition=r_basis[0][0][np.where((np.abs(r_basis[0][0]-value_to_use)/value_to_use < 0.01))[0]][0]
     logger.info('transition point for atmo_test_RZ: {}'.format(r_transition))
+    logger.info('starting HSE_solve_RZ')
     atmo_test_RZ=HSE_solve_RZ(c2, d2, bases2, quantities_CZ, r_transition, chi_rad_func, F_rad_func, N2_func,
                 r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
                 R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-4)
 
     # smooth grad_s from atmo_test_RZ, then recalculate grad_ln_rho and pomega from HSE and EOS simultaneously
     grad_s_smooth = np.copy(atmo_test_RZ['grad_s'](r_nd))
-    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.01*stitch_radii2[0],width=0.01*stitch_radii2[0])
-    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.015*stitch_radii2[0],width=0.01*stitch_radii2[0])
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.02*stitch_radii2[0],width=0.03*stitch_radii2[0])
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.025*stitch_radii2[0],width=0.03*stitch_radii2[0])
     grad_s_smooth_func = interp1d(r_nd, grad_s_smooth, **interp_kwargs)
     logger.info('transition point for HSE_EOS_solve: {}'.format(r_transition))
-
+    logger.info('starting HSE_EOS_solve')
     atmo_test_HSE_EOS=HSE_EOS_solve(c2, d2, bases2, grad_s_smooth_func, 
               atmo_test_RZ['g'], atmo_test_RZ['ln_rho'], atmo_test_RZ['pomega'], atmo_test_RZ['s0'](r_nd)[0], 
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
-              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-2)
-    # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)
-    delta_grad_ln_rho = atmo_test_RZ['grad_ln_rho'](r_nd)-atmo_test_HSE_EOS['grad_ln_rho'](r_nd)
-    delta_grad_s = atmo_test_RZ['grad_s'](r_nd)-atmo_test_HSE_EOS['grad_s'](r_nd)
-    delta_pomega = atmo_test_RZ['pomega'](r_nd)-atmo_test_HSE_EOS['pomega'](r_nd)
-    delta_grad_pomega = atmo_test_RZ['grad_pomega'](r_nd)-atmo_test_HSE_EOS['grad_pomega'](r_nd)
-    delta_grad_ln_pomega = atmo_test_RZ['grad_ln_pomega'](r_nd)-atmo_test_HSE_EOS['grad_ln_pomega'](r_nd)
-    delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
-    delta_rho = atmo_test_RZ['rho'](r_nd)-atmo_test_HSE_EOS['rho'](r_nd)
-    delta_s = atmo_test_RZ['s0'](r_nd)-atmo_test_HSE_EOS['s0'](r_nd)
-
-    #define pomega_1 and get pomega_2 from delta_pomega:  pomega_1/pomega_smooth = gamma(s_1/c_p+(gamma-1)/gamma ln(rho_1))
-    pomega_1 = atmo_test_HSE_EOS['pomega'](r_nd)*(nondim_gamma1*delta_s/nondim_cp + (nondim_gamma1-1)*delta_ln_rho)
-    pomega_2 = delta_pomega - pomega_1
-    pomega_2_defn = atmo_test_HSE_EOS['pomega'](r_nd)*(np.exp(pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)) - (1+pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)))
+              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-3)
 
     interpolations['ln_rho0'] = atmo_test_HSE_EOS['ln_rho']
     interpolations['Q'] = atmo_test_RZ['Q']
-    interpolations['g'] = atmo_test_HSE_EOS['g']
-    interpolations['g_phi'] = atmo_test_HSE_EOS['g_phi']
+    interpolations['g'] = atmo_test_RZ['g']
+    interpolations['g_phi'] = atmo_test_RZ['g_phi']
     interpolations['grad_s0'] = atmo_test_HSE_EOS['grad_s']
     interpolations['s0'] = atmo_test_HSE_EOS['s0']
     interpolations['pom0'] = atmo_test_HSE_EOS['pomega']
@@ -433,21 +421,19 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
 
     # use opacity_func to calculate rad_diff = chi
     ### Recalculate rad_diff using rho, T now smoothed
-    opacity_smooth = opacity_func((interpolations['ln_rho0'](r_nd)*rho_nd.cgs.value),interpolations['pom0']*nondim_R_gas*T_nd.cgs.value,gff_out,z_frac_out,x_frac_out,ye_out,dimensionless=False)
-    rad_diff       = (16 * constants.sigma_sb.cgs * (interpolations['pom0']*nondim_R_gas*T_nd.cgs.value)**3 / (3 * (interpolations['ln_rho0'](r_nd)*rho_nd.cgs.value)**2 * cp * opacity_smooth)).cgs
+
+    opacity_smooth = opacity_func((np.exp(interpolations['ln_rho0'](r_nd))*rho_nd.cgs.value),((interpolations['pom0'](r_nd)/nondim_R_gas)*T_nd.cgs.value),gff_out,z_frac_out,x_frac_out,ye_out,dimensionless=False)
+    rad_diff       = (16 * constants.sigma_sb.cgs * ((interpolations['pom0'](r_nd)/nondim_R_gas)*T_nd.cgs.value)**3 / (3 * (np.exp(interpolations['ln_rho0'](r_nd))*rho_nd.cgs.value)**2 * cp * opacity_smooth)).cgs
     rad_diff_nd = rad_diff * (tau_nd / L_nd**2)
-    sim_rad_diff = np.copy(rad_diff_nd) + rad_diff_cutoff
+    # print(rad_diff_nd, rad_diff_cutoff)
+    sim_rad_diff = rad_diff_nd.cgs.value + rad_diff_cutoff
+    sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
+    print('sim_rad_diff',sim_rad_diff)
     interpolations['kappa_rad'] = interp1d(r_nd, np.exp(interpolations['ln_rho0'](r_nd))*nondim_cp*sim_rad_diff, **interp_kwargs)
     interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient(interpolations['kappa_rad'](r_nd), r_nd), **interp_kwargs)
-
-    # add interpolations of the fluctuations (initial conditions)
-    interpolations['grad_s1'] = interp1d(r_nd, delta_grad_s, **interp_kwargs)
-    interpolations['grad_ln_rho1'] = interp1d(r_nd, delta_grad_ln_rho, **interp_kwargs)
-    interpolations['pomega1'] = interp1d(r_nd, pomega_1, **interp_kwargs)
-    interpolations['pomega2'] = interp1d(r_nd, pomega_2, **interp_kwargs)
-
-    # add interpolations of full background (initial conditions)
-    # interpolations[]
+    interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
+    interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
+    interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
 
     ## Construct Dedalus NCCs
     for ncc in ncc_dict.keys():
@@ -504,8 +490,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
             ncc_dict['grad_s0']['field_{}'.format(bn)]['g']
 
     #reset ln_rho and ln_T interpolations for nice plots
-    interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
-    interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
+    # interpolations['ln_rho0'] = interp1d(r_nd, np.log(rho/rho_nd), **interp_kwargs)
+    # interpolations['ln_T0'] = interp1d(r_nd, np.log(T/T_nd), **interp_kwargs)
 
     #Fixup heating term to make simulation energy-neutral.       
     integral = 0
@@ -722,4 +708,90 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
 
 
 
+    ### save and plot fluctuations
 
+    # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)
+    # delta_grad_ln_rho = atmo_test_RZ['grad_ln_rho'](r_nd)-atmo_test_HSE_EOS['grad_ln_rho'](r_nd)
+    # delta_grad_s = atmo_test_RZ['grad_s'](r_nd)-atmo_test_HSE_EOS['grad_s'](r_nd)
+    # delta_pomega = atmo_test_RZ['pomega'](r_nd)-atmo_test_HSE_EOS['pomega'](r_nd)
+    # delta_grad_pomega = atmo_test_RZ['grad_pomega'](r_nd)-atmo_test_HSE_EOS['grad_pomega'](r_nd)
+    # delta_grad_ln_pomega = atmo_test_RZ['grad_ln_pomega'](r_nd)-atmo_test_HSE_EOS['grad_ln_pomega'](r_nd)
+    # delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
+    # delta_rho = atmo_test_RZ['rho'](r_nd)-atmo_test_HSE_EOS['rho'](r_nd)
+    # delta_s = atmo_test_RZ['s0'](r_nd)-atmo_test_HSE_EOS['s0'](r_nd)
+
+    #define pomega_1 and get pomega_2 from delta_pomega:  pomega_1/pomega_smooth = gamma(s_1/c_p+(gamma-1)/gamma ln(rho_1))
+    # pomega_1 = atmo_test_HSE_EOS['pomega'](r_nd)*(nondim_gamma1*delta_s/nondim_cp + (nondim_gamma1-1)*delta_ln_rho)
+    # pomega_2 = delta_pomega - pomega_1
+    # pomega_2_defn = atmo_test_HSE_EOS['pomega'](r_nd)*(np.exp(pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)) - (1+pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)))\
+        
+    fluctuations_out_file = out_file.replace('star_','star_fluct_')
+    with h5py.File('{:s}'.format(fluctuations_out_file), 'w') as f:
+        # Save output fields.
+        # slicing preserves dimensionality
+        for bn, basis in bases.items():
+            f['r_{}'.format(bn)] = dedalus_r[bn]
+            for ncc in ncc_dict.keys():
+                this_field = ncc_dict[ncc]['field_{}'.format(bn)]
+                if ncc_dict[ncc]['vector']:
+                    f['{}_{}'.format(ncc, bn)] = this_field['g'][:, :1,:1,:]
+                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
+                else:
+                    f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]
+                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
+
+        f['Cp'] = nondim_cp
+        f['R_gas'] = nondim_R_gas
+        f['gamma1'] = nondim_gamma1
+
+        #Save properties of the star, with units.
+        f['L_nd']   = L_nd
+        f['L_nd'].attrs['units'] = str(L_nd.unit)
+        f['rho_nd']  = rho_nd
+        f['rho_nd'].attrs['units']  = str(rho_nd.unit)
+        f['T_nd']  = T_nd
+        f['T_nd'].attrs['units']  = str(T_nd.unit)
+        f['tau_heat'] = tau_heat
+        f['tau_heat'].attrs['units'] = str(tau_heat.unit)
+        f['tau_nd'] = tau_nd 
+        f['tau_nd'].attrs['units'] = str(tau_nd.unit)
+        f['m_nd'] = m_nd 
+        f['m_nd'].attrs['units'] = str(m_nd.unit)
+        f['s_nd'] = s_nd
+        f['s_nd'].attrs['units'] = str(s_nd.unit)
+        f['P_r0']  = dmr.P[0]
+        f['P_r0'].attrs['units']  = str(dmr.P[0].unit)
+        f['H_nd']  = H_nd
+        f['H_nd'].attrs['units']  = str(H_nd.unit)
+        f['H0']  = H0
+        f['H0'].attrs['units']  = str(H0.unit)
+        f['N2max_sim'] = N2max_sim
+        f['N2max_sim'].attrs['units'] = str(N2max_sim.unit)
+        f['N2plateau'] = N2plateau
+        f['N2plateau'].attrs['units'] = str(N2plateau.unit)
+        f['cp_surf'] = cp[sim_bool][-1]
+        f['cp_surf'].attrs['units'] = str(cp[sim_bool][-1].unit)
+        f['r_mesa'] = r
+        f['r_mesa'].attrs['units'] = str(r.unit)
+        f['N2_mesa'] = N2
+        f['N2_mesa'].attrs['units'] = str(N2.unit)
+        f['S1_mesa'] = dmr.lamb_freq(1)
+        f['S1_mesa'].attrs['units'] = str(dmr.lamb_freq(1).unit)
+        f['g_mesa'] = g 
+        f['g_mesa'].attrs['units'] = str(g.unit)
+        f['cp_mesa'] = cp
+        f['cp_mesa'].attrs['units'] = str(cp.unit)
+
+        #TODO: put sim lum back
+        f['lum_r_vals'] = lum_r_vals = np.linspace(r_bound_nd[0], r_bound_nd[-1], 1000)
+        f['sim_lum'] = (4*np.pi*lum_r_vals**2)*F_conv_func(lum_r_vals)
+        f['r_stitch']   = stitch_radii
+        f['Re_shift'] = Re_shift
+        f['r_outer']   = r_bound_nd[-1] 
+        f['max_dt'] = max_dt
+        f['Ma2_r0'] = Ma2_r0
+        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
+                    'Cp', 'R_gas', 'gamma1']:
+            f[k].attrs['units'] = 'dimensionless'
+    logger.info('finished saving initial fluctuations to {}'.format(fluctuations_out_file)) # will load into initial conditions
+    logger.info('We recommend looking at the plots in {}/ to make sure the fluctuations look reasonable'.format(out_dir))
