@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 if __name__ == '__main__':
     # Read options
     out_dir, ncc_file = name_star()
-    out_dir = './'
-    
+    # out_dir = './'
+    out_dir = '/carnegie/nobackup/users/swu/dedalus_runs/massive_star_zams_15Msun_HSE_edit'
+
     ntheta = config.dynamics['ntheta']
     nphi = 2*ntheta
     L_dealias  = config.numerics['L_dealias']
@@ -137,15 +138,23 @@ if __name__ == '__main__':
         write_mode = 'append'
     else:
         # Noise Initial conditions in the inner 80% of the simulation domain.
+        #load in fluctuations
+        initial_fluct_file = ncc_file.replace('star_','star_fluct_')
+
         for bk in compressible.bases_keys:
             variables['s1_{}'.format(bk)].fill_random(layout='g', seed=42, distribution='normal', scale=A0)
             variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
-            #make perturbations pressure-neutral.
-            variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
-            variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
+            #### make perturbations pressure-neutral.
+            # variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
+            # variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
+            # set initial fluctuations
+            with h5py.File(initial_fluct_file, 'r') as f:
+                variables['ln_rho1_{}'.format(bk)] += f['ln_rho1_{}'.format(bk)][0,0,:]
+                variables['s1_{}'.format(bk)]['g'] += f['s1_{}'.format(bk)][0,0,:]
+            
     # Setup output tasks based on outputs.py
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, compressible.coords, variables, compressible.bases, timescales, out_dir=out_dir)
     logger.info('outputs initialized')
@@ -182,33 +191,33 @@ if __name__ == '__main__':
     logger.info('cfl constructed') 
 
     # Main loop
-    start_iter = solver.iteration
-    Re0 = 0
-    try:
-        while solver.proceed:
-            effective_iter = solver.iteration - start_iter
-            timestep = even_analysis_tasks.compute_timestep(my_cfl) #compute nice timestep size for even time sampling, if required.
-            solver.step(timestep)
+    # start_iter = solver.iteration
+    # Re0 = 0
+    # try:
+    #     while solver.proceed:
+    #         effective_iter = solver.iteration - start_iter
+    #         timestep = even_analysis_tasks.compute_timestep(my_cfl) #compute nice timestep size for even time sampling, if required.
+    #         solver.step(timestep)
 
-            if solver.iteration % 10 == 0:
-                Re0 = flow.max('Re_B')
-                this_str = "iteration = {:08d}, t/th = {:f}, t = {:f}, timestep = {:f}, maxRe = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, solver.sim_time, timestep, Re0)
-                logger.info(this_str)
+    #         if solver.iteration % 10 == 0:
+    #             Re0 = flow.max('Re_B')
+    #             this_str = "iteration = {:08d}, t/th = {:f}, t = {:f}, timestep = {:f}, maxRe = {:.4e}".format(solver.iteration, solver.sim_time/t_heat, solver.sim_time, timestep, Re0)
+    #             logger.info(this_str)
 
-            if np.isnan(Re0):
-                logger.info('exiting with NaN')
-                break
-    except:
-        import traceback
-        logger.info('something went wrong in main loop.')
-        logger.info(traceback.format_exc())
-        raise
-    finally:
-        solver.log_stats()
+    #         if np.isnan(Re0):
+    #             logger.info('exiting with NaN')
+    #             break
+    # except:
+    #     import traceback
+    #     logger.info('something went wrong in main loop.')
+    #     logger.info(traceback.format_exc())
+    #     raise
+    # finally:
+    #     solver.log_stats()
 
-        logger.info('making final checkpoint')
-        fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_heat)
-        fcheckpoint.add_tasks(solver.state, layout='g')
-        solver.step(timestep)
+    #     logger.info('making final checkpoint')
+    #     fcheckpoint = solver.evaluator.add_file_handler('{:s}/final_checkpoint'.format(out_dir), max_writes=1, sim_dt=10*t_heat)
+    #     fcheckpoint.add_tasks(solver.state, layout='g')
+    #     solver.step(timestep)
 
 

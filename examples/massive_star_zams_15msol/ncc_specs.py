@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 defaults = OrderedDict()
 #Max coefficient expansion
-defaults['nr_max'] = (60,42,36)
+defaults['nr_max'] = (60,42,36) #(60,42,36)
 defaults['vector'] = False
 defaults['grid_only'] = False
 defaults['get_grad'] = False
@@ -16,7 +16,7 @@ for k in ['nr_post', 'transition_point', 'width']:
 
 
 nccs = OrderedDict()
-for field in ['ln_rho0', 'Q', 'chi_rad', 'kappa_rad', 'nu_diff', 'g_phi',  'grad_s0', 'pom0', 'grad_ln_pom0', 's0']:
+for field in ['ln_rho0', 'Q', 'chi_rad', 'kappa_rad', 'nu_diff', 'g_phi',  'grad_s0', 'grad_ln_rho0','pom0', 'grad_ln_pom0', 's0']:
     nccs[field] = OrderedDict()
     for k, val in defaults.items():
         nccs[field][k] = val
@@ -24,8 +24,8 @@ for field in ['ln_rho0', 'Q', 'chi_rad', 'kappa_rad', 'nu_diff', 'g_phi',  'grad
     if 'grad_' in field:
         nccs[field]['vector'] = True
 
-nccs['ln_rho0']['get_grad'] = True
-nccs['ln_rho0']['grad_name'] = 'grad_ln_rho0'
+# nccs['ln_rho0']['get_grad'] = True
+# nccs['ln_rho0']['grad_name'] = 'grad_ln_rho0'
 
 nccs['Q']['grid_only'] = True
 nccs['Q']['nr_max'] = (60,1,1)
@@ -77,3 +77,12 @@ for ncc in new_keys:
     for k, val in defaults.items():
         nccs[ncc][k] = val
 
+
+initial_flucts = OrderedDict()
+for field in ['ln_rho1', 's1']:
+    initial_flucts[field] = OrderedDict()
+    for k, val in defaults.items():
+        initial_flucts[field][k] = val
+    if 'grad_' in field:
+        initial_flucts[field]['vector'] = True
+#can edit nr_max and stuff if needed

@@ -401,8 +401,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
 
     # smooth grad_s from atmo_test_RZ, then recalculate grad_ln_rho and pomega from HSE and EOS simultaneously
     grad_s_smooth = np.copy(atmo_test_RZ['grad_s'](r_nd))
-    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.02*stitch_radii2[0],width=0.03*stitch_radii2[0])
-    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.025*stitch_radii2[0],width=0.03*stitch_radii2[0])
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.03*stitch_radii2[0],width=0.03*stitch_radii2[0])
+    grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.035*stitch_radii2[0],width=0.03*stitch_radii2[0])
     grad_s_smooth_func = interp1d(r_nd, grad_s_smooth, **interp_kwargs)
     logger.info('transition point for HSE_EOS_solve: {}'.format(r_transition))
     logger.info('starting HSE_EOS_solve')
@@ -412,6 +412,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
               R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-5)
 
     interpolations['ln_rho0'] = atmo_test_HSE_EOS['ln_rho']
+    interpolations['grad_ln_rho0'] = atmo_test_HSE_EOS['grad_ln_rho']
     interpolations['Q'] = atmo_test_RZ['Q']
     interpolations['g'] = atmo_test_RZ['g']
     interpolations['g_phi'] = atmo_test_RZ['g_phi']
@@ -551,7 +552,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
             else:
                 ylabel = ncc
 
-            ### this doesn't really plot the "Mesa Vals", may want to fix this
+            ### this doesn't really plot the "Mesa Vals", just interpolated vs. on dedalus grid values
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, Ns=nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
@@ -707,9 +708,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     plt.savefig('star/ln_thermo_goodness.png')
 #    plt.show()
 
-
-
-    ### save and plot fluctuations
+    #### save and plot fluctuations
 
     # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)
     delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
@@ -718,7 +717,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     interpolations['ln_rho1'] = interp1d(r_nd, delta_ln_rho, **interp_kwargs)
 
     ## Construct Dedalus NCCs
-    for fluct in fluct_dict.keys():
+    for fluct in fluct_dict.keys():        
         for i, bn in enumerate(bases.keys()):
             fluct_dict[fluct]['Nmax_{}'.format(bn)] = fluct_dict[fluct]['nr_max'][i]
             fluct_dict[fluct]['field_{}'.format(bn)] = None
@@ -763,9 +762,8 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
             if fluct in ['ln_rho1', 's1']:
                 interp_func = interpolations[fluct]
                 ylabel = fluct
-
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, Ns=nvals, \
-                        ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
+                        ylabel=ylabel, fig_name=fluct, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
 
     fluct_out_file = out_file.replace('star_','star_fluct_')
