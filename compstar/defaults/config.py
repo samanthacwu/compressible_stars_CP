@@ -9,5 +9,5 @@ from compstar.defaults.outputs import handler_defaults, handlers
 
 if os.path.exists('controls.py'):
     from controls import star, numerics, eigenvalue, dynamics
-    from ncc_specs import defaults, nccs
+    from ncc_specs import defaults, nccs, initial_flucts
     from outputs import handler_defaults, handlers

@@ -631,6 +631,8 @@ def HSE_solve_CZ(coords, dist, bases, g_phi_func, ln_rho_func,  Fconv_func, r_st
     ax8.legend()
     plt.subplots_adjust(hspace=0.5,wspace=0.25)
     fig.savefig('stratification_CZonly.png', bbox_inches='tight', dpi=300)
+    plt.close('all')
+
     for k, basis in bases.items():
         this_HSE = np.max(np.abs(namespace['HSE_{}'.format(k)].evaluate()['g']))
         print('this HSE',this_HSE)
@@ -1092,6 +1094,7 @@ def HSE_solve_RZ(coords, dist, bases, quantities_CZ, r_transition, chi_rad_func,
     ax8.legend()
     plt.subplots_adjust(hspace=0.4,wspace=0.25)
     fig.savefig('stratification_CZplusRZ.png', bbox_inches='tight', dpi=300)
+    plt.close('all')
     #Create interpolators for the atmosphere.
     atmosphere = dict()
     atmosphere['grad_pomega'] = interp1d(r, grad_pom, **interp_kwargs)
@@ -1162,17 +1165,21 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
 
         # Set s0, g inputs.
         namespace['grad_s0_in_{}'.format(k)] = grad_s0_in = dist.VectorField(coords,bases=basis, name='grad_s0_in')
-        grad_s0_in['g'][2] = grad_s_smooth_func(r)
+        grad_s0_in.change_scales(basis.dealias)
+        grad_s0_in['g'][2] = grad_s_smooth_func(r_de)
 
         namespace['g_in_{}'.format(k)] = g_in = dist.VectorField(coords,bases=basis, name='g_in')
-        g_in['g'][2] = g_func(r)
+        g_in.change_scales(basis.dealias)
+        g_in['g'][2] = g_func(r_de)
 
         #set initial guesses for ln_rho, pomega
         namespace['ln_rho_in_{}'.format(k)] = ln_rho_in = dist.Field(bases=basis, name='ln_rho_in')
-        ln_rho_in['g'] = ln_rho_func_in(r)
+        ln_rho_in.change_scales(basis.dealias)
+        ln_rho_in['g'] = ln_rho_func_in(r_de)
 
         namespace['pomega_in_{}'.format(k)] = pomega_in = dist.Field(bases=basis, name='pomega_in')
-        pomega_in['g'] = pomega_func_in(r)
+        pomega_in.change_scales(basis.dealias)
+        pomega_in['g'] = pomega_func_in(r_de)
 
 
         # Create important operations from the fields.
@@ -1334,7 +1341,7 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     ax6.legend()
     plt.subplots_adjust(hspace=0.5,wspace=0.25)
     fig.savefig('stratification_HSE_EOS_smoothed.png', bbox_inches='tight', dpi=300)
-
+    plt.close('all')
     #Create interpolators for the atmosphere.
     atmosphere = dict()
     atmosphere['grad_pomega'] = interp1d(r, grad_pom, **interp_kwargs)

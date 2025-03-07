@@ -172,6 +172,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     # Read in parameters and create output directory
     out_dir, out_file = name_star()
     ncc_dict = config.nccs
+    fluct_dict = config.initial_flucts
 
     # Find the path to the MESA profile file
     package_path = Path(compstar.__file__).resolve().parent
@@ -377,7 +378,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
 
     logger.info('starting HSE_solve_CZ')
     stitch_radii2 = [bg_CZ_RZ_transition_default] #set transition point for the CZ + RZ solve for background quantities
-    resolutions2 = [(1,1,256),(1,1,64)] #set resolution at which to solve for these background quantities
+    resolutions2 = [(1,1,128),(1,1,64)] #set resolution at which to solve for these background quantities
     logger.info('transitioning background solve at {}'.format(stitch_radii2[0]))
     logger.info('using resolutions B: {}, S: {}'.format(resolutions2[0][-1],resolutions2[1][-1]))
     c2, d2, bases2, bases_keys2 = make_bases(resolutions2, stitch_radii2, 
@@ -408,7 +409,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     atmo_test_HSE_EOS=HSE_EOS_solve(c2, d2, bases2, grad_s_smooth_func, 
               atmo_test_RZ['g'], atmo_test_RZ['ln_rho'], atmo_test_RZ['pomega'], atmo_test_RZ['s0'](r_nd)[0], 
               r_outer=r_bound_nd[-1], r_stitch=stitch_radii2, \
-              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-3)
+              R=nondim_R_gas, gamma=nondim_gamma1, G=nondim_G, nondim_radius=1,tolerance=1e-5, HSE_tolerance = 1e-5)
 
     interpolations['ln_rho0'] = atmo_test_HSE_EOS['ln_rho']
     interpolations['Q'] = atmo_test_RZ['Q']
@@ -428,7 +429,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     # print(rad_diff_nd, rad_diff_cutoff)
     sim_rad_diff = rad_diff_nd.cgs.value + rad_diff_cutoff
     sim_nu_diff = config.numerics['prandtl']*rad_diff_cutoff*np.ones_like(sim_rad_diff)
-    print('sim_rad_diff',sim_rad_diff)
+    # print('sim_rad_diff',sim_rad_diff)
     interpolations['kappa_rad'] = interp1d(r_nd, np.exp(interpolations['ln_rho0'](r_nd))*nondim_cp*sim_rad_diff, **interp_kwargs)
     interpolations['grad_kappa_rad'] = interp1d(r_nd, np.gradient(interpolations['kappa_rad'](r_nd), r_nd), **interp_kwargs)
     interpolations['chi_rad'] = interp1d(r_nd, sim_rad_diff, **interp_kwargs)
@@ -550,7 +551,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
             else:
                 ylabel = ncc
 
-    
+            ### this doesn't really plot the "Mesa Vals", may want to fix this
             plot_ncc_figure(rvals, interp_func, dedalus_yvals, Ns=nvals, \
                         ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
                         r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
@@ -711,87 +712,76 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     ### save and plot fluctuations
 
     # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)
-    # delta_grad_ln_rho = atmo_test_RZ['grad_ln_rho'](r_nd)-atmo_test_HSE_EOS['grad_ln_rho'](r_nd)
-    # delta_grad_s = atmo_test_RZ['grad_s'](r_nd)-atmo_test_HSE_EOS['grad_s'](r_nd)
-    # delta_pomega = atmo_test_RZ['pomega'](r_nd)-atmo_test_HSE_EOS['pomega'](r_nd)
-    # delta_grad_pomega = atmo_test_RZ['grad_pomega'](r_nd)-atmo_test_HSE_EOS['grad_pomega'](r_nd)
-    # delta_grad_ln_pomega = atmo_test_RZ['grad_ln_pomega'](r_nd)-atmo_test_HSE_EOS['grad_ln_pomega'](r_nd)
-    # delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
-    # delta_rho = atmo_test_RZ['rho'](r_nd)-atmo_test_HSE_EOS['rho'](r_nd)
-    # delta_s = atmo_test_RZ['s0'](r_nd)-atmo_test_HSE_EOS['s0'](r_nd)
+    delta_ln_rho = atmo_test_RZ['ln_rho'](r_nd)-atmo_test_HSE_EOS['ln_rho'](r_nd)
+    delta_s = atmo_test_RZ['s0'](r_nd)-atmo_test_HSE_EOS['s0'](r_nd)
+    interpolations['s1'] = interp1d(r_nd, delta_s, **interp_kwargs)
+    interpolations['ln_rho1'] = interp1d(r_nd, delta_ln_rho, **interp_kwargs)
 
-    #define pomega_1 and get pomega_2 from delta_pomega:  pomega_1/pomega_smooth = gamma(s_1/c_p+(gamma-1)/gamma ln(rho_1))
-    # pomega_1 = atmo_test_HSE_EOS['pomega'](r_nd)*(nondim_gamma1*delta_s/nondim_cp + (nondim_gamma1-1)*delta_ln_rho)
-    # pomega_2 = delta_pomega - pomega_1
-    # pomega_2_defn = atmo_test_HSE_EOS['pomega'](r_nd)*(np.exp(pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)) - (1+pomega_1/atmo_test_HSE_EOS['pomega'](r_nd)))\
-        
-    fluctuations_out_file = out_file.replace('star_','star_fluct_')
-    with h5py.File('{:s}'.format(fluctuations_out_file), 'w') as f:
+    ## Construct Dedalus NCCs
+    for fluct in fluct_dict.keys():
+        for i, bn in enumerate(bases.keys()):
+            fluct_dict[fluct]['Nmax_{}'.format(bn)] = fluct_dict[fluct]['nr_max'][i]
+            fluct_dict[fluct]['field_{}'.format(bn)] = None
+        if fluct in interpolations.keys():
+            fluct_dict[fluct]['interp_func'] = interpolations[fluct]
+        else:
+            fluct_dict[fluct]['interp_func'] = None
+
+    #Loop over bases, then loop over the flucts that need to be built for each basis
+    for bn, basis in bases.items():
+        rvals = dedalus_r[bn]
+        for fluct in fluct_dict.keys():
+            interp_func = fluct_dict[fluct]['interp_func']
+            #If we have an interpolation function, build the fluct from the interpolator, 
+            # unless we're using the Dedalus gradient of another field.
+            if interp_func is not None and not fluct_dict[fluct]['from_grad']:
+                Nmax = fluct_dict[fluct]['Nmax_{}'.format(bn)]
+                vector = fluct_dict[fluct]['vector']
+                grid_only = fluct_dict[fluct]['grid_only']
+                fluct_dict[fluct]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
+    if plot_nccs:
+        #Plot the initial fluctuations too
+        for fluct in fluct_dict.keys():
+            if fluct_dict[fluct]['interp_func'] is None:
+                continue
+            axhline = None
+            log = False
+            ylim = None
+            rvals = []
+            dedalus_yvals = []
+            nvals = []
+            for bn, basis in bases.items():
+                rvals.append(dedalus_r[bn].ravel())
+                nvals.append(fluct_dict[fluct]['Nmax_{}'.format(bn)])
+                if fluct_dict[fluct]['vector']:
+                    dedalus_yvals.append(np.copy(fluct_dict[fluct]['field_{}'.format(bn)]['g'][2,0,0,:]))
+                else:
+                    dedalus_yvals.append(np.copy(fluct_dict[fluct]['field_{}'.format(bn)]['g'][0,0,:]))
+    
+            interp_func = fluct_dict[fluct]['interp_func']
+            
+            if fluct in ['ln_rho1', 's1']:
+                interp_func = interpolations[fluct]
+                ylabel = fluct
+
+            plot_ncc_figure(rvals, interp_func, dedalus_yvals, Ns=nvals, \
+                        ylabel=ylabel, fig_name=ncc, out_dir=out_dir, log=log, ylim=ylim, \
+                        r_int=stitch_radii, axhline=axhline, ncc_cutoff=config.numerics['ncc_cutoff'])
+
+    fluct_out_file = out_file.replace('star_','star_fluct_')
+    with h5py.File('{:s}'.format(fluct_out_file), 'w') as f:
         # Save output fields.
         # slicing preserves dimensionality
         for bn, basis in bases.items():
             f['r_{}'.format(bn)] = dedalus_r[bn]
-            for ncc in ncc_dict.keys():
-                this_field = ncc_dict[ncc]['field_{}'.format(bn)]
-                if ncc_dict[ncc]['vector']:
-                    f['{}_{}'.format(ncc, bn)] = this_field['g'][:, :1,:1,:]
-                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
+            for fluct in fluct_dict.keys():
+                this_field = fluct_dict[fluct]['field_{}'.format(bn)]
+                if fluct_dict[fluct]['vector']:
+                    f['{}_{}'.format(fluct, bn)] = this_field['g'][:, :1,:1,:]
+                    f['{}_{}'.format(fluct, bn)].attrs['rscale_{}'.format(bn)] = fluct_dict[fluct]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
                 else:
-                    f['{}_{}'.format(ncc, bn)] = this_field['g'][:1,:1,:]
-                    f['{}_{}'.format(ncc, bn)].attrs['rscale_{}'.format(bn)] = ncc_dict[ncc]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
-
-        f['Cp'] = nondim_cp
-        f['R_gas'] = nondim_R_gas
-        f['gamma1'] = nondim_gamma1
-
-        #Save properties of the star, with units.
-        f['L_nd']   = L_nd
-        f['L_nd'].attrs['units'] = str(L_nd.unit)
-        f['rho_nd']  = rho_nd
-        f['rho_nd'].attrs['units']  = str(rho_nd.unit)
-        f['T_nd']  = T_nd
-        f['T_nd'].attrs['units']  = str(T_nd.unit)
-        f['tau_heat'] = tau_heat
-        f['tau_heat'].attrs['units'] = str(tau_heat.unit)
-        f['tau_nd'] = tau_nd 
-        f['tau_nd'].attrs['units'] = str(tau_nd.unit)
-        f['m_nd'] = m_nd 
-        f['m_nd'].attrs['units'] = str(m_nd.unit)
-        f['s_nd'] = s_nd
-        f['s_nd'].attrs['units'] = str(s_nd.unit)
-        f['P_r0']  = dmr.P[0]
-        f['P_r0'].attrs['units']  = str(dmr.P[0].unit)
-        f['H_nd']  = H_nd
-        f['H_nd'].attrs['units']  = str(H_nd.unit)
-        f['H0']  = H0
-        f['H0'].attrs['units']  = str(H0.unit)
-        f['N2max_sim'] = N2max_sim
-        f['N2max_sim'].attrs['units'] = str(N2max_sim.unit)
-        f['N2plateau'] = N2plateau
-        f['N2plateau'].attrs['units'] = str(N2plateau.unit)
-        f['cp_surf'] = cp[sim_bool][-1]
-        f['cp_surf'].attrs['units'] = str(cp[sim_bool][-1].unit)
-        f['r_mesa'] = r
-        f['r_mesa'].attrs['units'] = str(r.unit)
-        f['N2_mesa'] = N2
-        f['N2_mesa'].attrs['units'] = str(N2.unit)
-        f['S1_mesa'] = dmr.lamb_freq(1)
-        f['S1_mesa'].attrs['units'] = str(dmr.lamb_freq(1).unit)
-        f['g_mesa'] = g 
-        f['g_mesa'].attrs['units'] = str(g.unit)
-        f['cp_mesa'] = cp
-        f['cp_mesa'].attrs['units'] = str(cp.unit)
-
-        #TODO: put sim lum back
-        f['lum_r_vals'] = lum_r_vals = np.linspace(r_bound_nd[0], r_bound_nd[-1], 1000)
-        f['sim_lum'] = (4*np.pi*lum_r_vals**2)*F_conv_func(lum_r_vals)
-        f['r_stitch']   = stitch_radii
-        f['Re_shift'] = Re_shift
-        f['r_outer']   = r_bound_nd[-1] 
-        f['max_dt'] = max_dt
-        f['Ma2_r0'] = Ma2_r0
-        for k in ['r_stitch', 'r_outer', 'max_dt', 'Ma2_r0', 'Re_shift', 'lum_r_vals', 'sim_lum',\
-                    'Cp', 'R_gas', 'gamma1']:
-            f[k].attrs['units'] = 'dimensionless'
-    logger.info('finished saving initial fluctuations to {}'.format(fluctuations_out_file)) # will load into initial conditions
-    logger.info('We recommend looking at the plots in {}/ to make sure the fluctuations look reasonable'.format(out_dir))
+                    f['{}_{}'.format(fluct, bn)] = this_field['g'][:1,:1,:]
+                    f['{}_{}'.format(fluct, bn)].attrs['rscale_{}'.format(bn)] = fluct_dict[fluct]['Nmax_{}'.format(bn)]/resolutions[bases_keys == bn][2]
+                    ###
+    logger.info('finished saving initial fluctuations to {}'.format(fluct_out_file))
+    logger.info('We recommend looking at the plots in {}/ to make sure the non-constant coefficients look reasonable'.format(out_dir))
