@@ -437,6 +437,18 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     interpolations['grad_chi_rad'] = interp1d(r_nd, np.gradient(rad_diff_nd, r_nd), **interp_kwargs)
     interpolations['nu_diff'] = interp1d(r_nd, sim_nu_diff, **interp_kwargs)
 
+    plt.figure()
+    
+    for bn, basis in bases.items():
+        global_r = basis.global_grid_radius(d,scale=basis.dealias[2])
+        # print(global_r)
+        HSE_pre_construct = (nondim_gamma1*interpolations['pom0'](global_r)*(interpolations['grad_ln_rho0'](global_r) + interpolations['grad_s0'](global_r) / nondim_cp) - interpolations['g'](global_r))
+
+        plt.plot(global_r[0,0,:], np.abs(HSE_pre_construct)[0,0,:], color='black')
+        
+    # plt.xscale('log')
+    plt.yscale('log')
+    plt.savefig('star/HSE_pre_construct.png')
     ## Construct Dedalus NCCs
     for ncc in ncc_dict.keys():
         for i, bn in enumerate(bases.keys()):
@@ -474,16 +486,41 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax
 
         # Special case for gravity; we build the NCC from the potential, then take the gradient, which is -g.
-        if 'neg_g' in ncc_dict.keys():
-            if 'g' not in ncc_dict.keys():
-                ncc_dict['g'] = OrderedDict()
-            name = 'g'
-            ncc_dict['g']['field_{}'.format(bn)] = (-ncc_dict['neg_g']['field_{}'.format(bn)]).evaluate()
-            ncc_dict['g']['vector'] = True
-            ncc_dict['g']['interp_func'] = interpolations['g']
-            ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
-            ncc_dict['g']['from_grad'] = True 
+        # if 'neg_g' in ncc_dict.keys():
+        #     if 'g' not in ncc_dict.keys():
+        #         ncc_dict['g'] = OrderedDict()
+        #     name = 'g'
+        #     ncc_dict['g']['field_{}'.format(bn)] = (-ncc_dict['neg_g']['field_{}'.format(bn)]).evaluate()
+        #     ncc_dict['g']['vector'] = True
+        #     ncc_dict['g']['interp_func'] = interpolations['g']
+        #     ncc_dict['g']['Nmax_{}'.format(bn)] = ncc_dict['neg_g']['Nmax_{}'.format(bn)]
+        #     ncc_dict['g']['from_grad'] = True 
     
+    HSEs = []
+    rs = []
+    for bn in bases_keys:
+        rs.append(dedalus_r[bn].ravel())
+        grad_ln_rho0 = ncc_dict['grad_ln_rho0']['field_{}'.format(bn)]
+        grad_ln_pom0 = ncc_dict['grad_ln_pom0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        ln_rho0 = ncc_dict['ln_rho0']['field_{}'.format(bn)]
+        gvec = ncc_dict['g']['field_{}'.format(bn)]
+        grad_s0 = ncc_dict['grad_s0']['field_{}'.format(bn)]
+        s0 = ncc_dict['s0']['field_{}'.format(bn)]
+        pom0 = ncc_dict['pom0']['field_{}'.format(bn)]
+        HSE = (nondim_gamma1*pom0*(grad_ln_rho0 + grad_s0 / nondim_cp) - gvec).evaluate()
+        HSEs.append(HSE['g'][2,:])
+    r_dedalus_pre_filter = np.concatenate(rs, axis=-1)
+    HSE_dedalus_pre_filter = np.concatenate(HSEs, axis=-1).ravel()
+    plt.figure()
+    plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    plt.plot(r_dedalus_pre_filter, np.abs(HSE_dedalus_pre_filter),label='dedalus')
+    plt.yscale('log')
+    plt.xlabel('r')
+    plt.ylabel("HSE")
+    plt.legend()
+    plt.savefig('star/HSE_goodness_pre_filter.png')
+
     #Force more zeros in the CZ if requested. Uses all available coefficients in the expansion of grad s0.
     if reapply_grad_s_filter:
         for bn, basis in bases.items():
@@ -679,6 +716,15 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
 
     plt.figure()
     plt.axhline(s_motions/nondim_cp / s_nd, c='k')
+    for bn, basis in bases.items():
+        global_r = basis.global_grid_radius(d,scale=basis.dealias[2])
+        # print(global_r)
+        HSE_pre_construct = (nondim_gamma1*interpolations['pom0'](global_r)*(interpolations['grad_ln_rho0'](global_r) + interpolations['grad_s0'](global_r) / nondim_cp) - interpolations['g'](global_r))
+        if bn == 'B':
+            label='Pre build_nccs'
+        else:
+            label=None
+        plt.plot(global_r[0,0,:], np.abs(HSE_pre_construct)[0,0,:], color='black',label=label)
     plt.plot(r_dedalus, np.abs(HSE_dedalus),label='dedalus')
     plt.yscale('log')
     plt.xlabel('r')
