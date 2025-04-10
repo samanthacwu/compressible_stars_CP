@@ -23,7 +23,7 @@ import compstar.defaults.config as config
 import logging
 logger = logging.getLogger(__name__)
 
-interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
+interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False, 'kind' : 'cubic'}
 
 ### Function definitions
 def plot_ncc_figure(rvals, mesa_func, dedalus_vals, ylabel="", fig_name="", out_dir='.', 
