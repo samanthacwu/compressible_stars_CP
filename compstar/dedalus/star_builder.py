@@ -23,7 +23,7 @@ import compstar.defaults.config as config
 import logging
 logger = logging.getLogger(__name__)
 
-interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False, 'kind' : 'cubic'}
+interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False, 'kind': 'cubic'}
 
 ### Function definitions
 def plot_ncc_figure(rvals, mesa_func, dedalus_vals, ylabel="", fig_name="", out_dir='.', 
@@ -403,7 +403,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     grad_s_smooth = np.copy(atmo_test_RZ['grad_s'](r_nd))
     grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.03*stitch_radii2[0],width=0.03*stitch_radii2[0])
     grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.035*stitch_radii2[0],width=0.03*stitch_radii2[0])
-    grad_s_smooth_func = interp1d(r_nd, grad_s_smooth, **interp_kwargs)
+    grad_s_smooth_func = interp1d(r_nd, grad_s_smooth)
     logger.info('transition point for HSE_EOS_solve: {}'.format(r_transition))
     logger.info('starting HSE_EOS_solve')
     atmo_test_HSE_EOS=HSE_EOS_solve(c2, d2, bases2, grad_s_smooth_func, 
@@ -753,7 +753,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     plt.ylabel("grad_ln_pom0")
     plt.savefig('star/ln_thermo_goodness.png')
 #    plt.show()
-
+    plt.close('all')
     #### save and plot fluctuations
 
     # define fluctuations as RZ (full answer) - HSE_EOS (smoothed background)

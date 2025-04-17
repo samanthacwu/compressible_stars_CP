@@ -10,7 +10,7 @@ from ..tools.general import one_to_zero
 import logging
 logger = logging.getLogger(__name__)
 
-interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False}
+interp_kwargs = {'fill_value' : 'extrapolate', 'bounds_error' : False, 'kind' : 'cubic'}
 
 #first one is not used right now. will use combo of HSE_solve_CZ + HSE_solve_RZ + HSE_EOS_solve for smoothed quantities
 
@@ -1283,8 +1283,15 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
             if this_HSE > HSE_err:
                 HSE_err = this_HSE
 
-    # plt.figure()
+    plt.figure()
+    for k, basis in bases.items():
+        phi_de, theta_de, r_de = dist.local_grids(basis, scales=basis.dealias)
+        # print(namespace['HSE_{}'.format(k)].evaluate()['g'].shape)
+        plt.plot(r_de[0,0,:],np.abs(namespace['HSE_{}'.format(k)].evaluate()['g'][2,0,0,:]))
 
+    plt.yscale('log')
+    plt.savefig('HSE_in_HSE_EOS_solve.png')
+    plt.close()
     # Stitch together the fields for creation of interpolators that span the full simulation domain.
     #Need: grad_pom0, grad_ln_pom0, grad_ln_rho0, grad_s0, g, pom0, rho0, ln_rho0, g_phi
     stitch_fields = OrderedDict()
@@ -1331,7 +1338,8 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     ax3.plot(r, pom/R, label='pomega/R')
     ax3.plot(r, rho, label='rho')
     ax3.legend()
-    ax4.plot(r, HSE, label='HSE')
+    ax4.plot(r, np.abs(HSE), label='HSE')
+    ax4.set_yscale('log')
     ax4.legend()
     ax5.plot(r, g, label='g')
     ax5.legend()
@@ -1348,6 +1356,7 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     atmosphere['grad_ln_pomega'] = interp1d(r, grad_ln_pom, **interp_kwargs)
     atmosphere['grad_ln_rho'] = interp1d(r, grad_ln_rho, **interp_kwargs)
     atmosphere['grad_s'] = interp1d(r, grad_s, **interp_kwargs)
+    atmosphere['g'] = interp1d(r, g, **interp_kwargs)
     atmosphere['pomega'] = interp1d(r, pom, **interp_kwargs)
     atmosphere['rho'] = interp1d(r, rho, **interp_kwargs)
     atmosphere['ln_rho'] = interp1d(r, ln_rho, **interp_kwargs)
