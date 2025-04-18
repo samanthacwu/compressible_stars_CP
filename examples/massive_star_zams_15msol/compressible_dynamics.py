@@ -146,14 +146,10 @@ if __name__ == '__main__':
             variables['s1_{}'.format(bk)].low_pass_filter(scales=0.5)
             variables['s1_{}'.format(bk)]['g'] *= np.sin(variables['theta1_{}'.format(bk)])
             variables['s1_{}'.format(bk)]['g'] *= one_to_zero(variables['r1_{}'.format(bk)], r_outer*0.8, width=r_outer*0.1)
-            #### make perturbations pressure-neutral.
-            # variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
-            # variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
+            ### make perturbations pressure-neutral.
+            variables['ln_rho1_{}'.format(bk)].change_scales(compressible.bases[bk].dealias)
+            variables['ln_rho1_{}'.format(bk)]['g'] = (variables['s1_{}'.format(bk)]/variables['Cp']).evaluate()['g']
 
-            # set initial fluctuations
-            with h5py.File(initial_fluct_file, 'r') as f:
-                variables['ln_rho1_{}'.format(bk)] += f['ln_rho1_{}'.format(bk)][0,0,:]
-                variables['s1_{}'.format(bk)]['g'] += f['s1_{}'.format(bk)][0,0,:]
             
     # Setup output tasks based on outputs.py
     analysis_tasks, even_analysis_tasks = initialize_outputs(solver, compressible.coords, variables, compressible.bases, timescales, out_dir=out_dir)

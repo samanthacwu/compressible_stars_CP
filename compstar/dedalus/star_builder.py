@@ -459,9 +459,10 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
         else:
             ncc_dict[ncc]['interp_func'] = None
 
+    # plt.figure()
     #Loop over bases, then loop over the NCCs that need to be built for each basis
     for bn, basis in bases.items():
-        rvals = dedalus_r[bn]
+        # rvals = dedalus_r[bn]
         for ncc in ncc_dict.keys():
             interp_func = ncc_dict[ncc]['interp_func']
             #If we have an interpolation function, build the NCC from the interpolator, 
@@ -471,6 +472,12 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
                 vector = ncc_dict[ncc]['vector']
                 grid_only = ncc_dict[ncc]['grid_only']
                 ncc_dict[ncc]['field_{}'.format(bn)] = make_NCC(basis, c, d, interp_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
+                # if ncc=='grad_s0':
+                #     print('ncc',ncc)
+                #     rvals = basis.global_grid_radius(d,scale=basis.dealias[2])
+                #     plt.plot(rvals[0,0,:],ncc_dict[ncc]['field_{}'.format(bn)]['g'][2][0,0,:])
+                #     plt.yscale('log')
+                    
                 if ncc_dict[ncc]['get_grad']: #If another NCC needs the gradient of this one, build it
                     name = ncc_dict[ncc]['grad_name']
                     logger.info('getting {}'.format(name))
@@ -484,7 +491,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
                     inv_func = lambda r: 1/interp_func(r)
                     ncc_dict[name]['field_{}'.format(bn)] = make_NCC(basis, c, d, inv_func, Nmax=Nmax, vector=vector, grid_only=grid_only, ncc_cutoff=config.numerics['ncc_cutoff'])
                     ncc_dict[name]['Nmax_{}'.format(bn)] = Nmax
-
+    # plt.savefig('grad_s0_test.png')
         # Special case for gravity; we build the NCC from the potential, then take the gradient, which is -g.
         # if 'neg_g' in ncc_dict.keys():
         #     if 'g' not in ncc_dict.keys():
