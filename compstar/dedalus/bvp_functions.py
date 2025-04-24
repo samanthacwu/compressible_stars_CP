@@ -1357,8 +1357,8 @@ def HSE_EOS_solve(coords, dist, bases, grad_s_smooth_func, g_func, ln_rho_func_i
     atmosphere['grad_ln_rho'] = interp1d(r, grad_ln_rho, **interp_kwargs)
     atmosphere['grad_s'] = interp1d(r, grad_s, **interp_kwargs)
     atmosphere['g'] = interp1d(r, g, **interp_kwargs)
-    atmosphere['pomega'] = interp1d(r, pom, **interp_kwargs)
+    atmosphere['pomega'] = interp1d(r, pom,**interp_kwargs)
     atmosphere['rho'] = interp1d(r, rho, **interp_kwargs)
-    atmosphere['ln_rho'] = interp1d(r, ln_rho, **interp_kwargs)
+    atmosphere['ln_rho'] = interp1d(r, ln_rho, fill_value='extrapolate',bounds_error=False)
     atmosphere['s0'] = interp1d(r, s0, **interp_kwargs)
     return atmosphere

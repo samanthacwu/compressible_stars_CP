@@ -148,8 +148,9 @@ def make_NCC(basis, coords, dist, interp_func, Nmax=32, vector=False, grid_only=
         this_field.change_scales(scales)
         this_field['g'] = interp_func(rvals)
     if not grid_only:
-        this_field.change_scales(scales_small)
-        this_field['g']
+        # print(scales_small)
+        # this_field.change_scales(scales_small)
+        # this_field['g']
         this_field['c'][np.abs(this_field['c']) < ncc_cutoff] = 0
         this_field.change_scales(basis.dealias)
     return this_field
@@ -403,7 +404,7 @@ def build_nccs(plot_nccs=False, grad_s_transition_default=0.03, bg_CZ_RZ_transit
     grad_s_smooth = np.copy(atmo_test_RZ['grad_s'](r_nd))
     grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.03*stitch_radii2[0],width=0.03*stitch_radii2[0])
     grad_s_smooth*=zero_to_one(r_nd.cgs.value,1.035*stitch_radii2[0],width=0.03*stitch_radii2[0])
-    grad_s_smooth_func = interp1d(r_nd, grad_s_smooth)
+    grad_s_smooth_func = interp1d(r_nd, grad_s_smooth,**interp_kwargs) #,fill_value='extrapolate', bounds_error=False, kind='linear'
     logger.info('transition point for HSE_EOS_solve: {}'.format(r_transition))
     logger.info('starting HSE_EOS_solve')
     atmo_test_HSE_EOS=HSE_EOS_solve(c2, d2, bases2, grad_s_smooth_func, 
